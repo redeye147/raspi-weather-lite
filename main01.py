@@ -58,45 +58,6 @@ def get_git_version_str():
         return ""
 
 # ==========================================================
-# 天気コード　　を取り出す関数
-# ==========================================================
-def _pick_weather_code(item: dict):
-    """hourly/daily の dict から '天気コード' らしき値を拾う（キー名揺れ対応）"""
-    for k in ("code", "weather_code", "wx_code", "jma_code", "weathercode"):
-        if k in item and item[k] not in (None, ""):
-            return item[k]
-    return None
-
-def print_weather_codes(hourly: list, daily: list, label: str = ""):
-    """時間天気（セルごと）と週間（日ごと）の天気コードをターミナルへ表示"""
-    ts = datetime.datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
-    print("\n" + "=" * 60)
-    print(f"[{ts}] WEATHER CODES {label}".strip())
-    print("-" * 60)
-
-    # 時間天気（セルごと）
-    print("[HOURLY] time -> code")
-    if not hourly:
-        print("  (no hourly data)")
-    else:
-        for i, h in enumerate(hourly):
-            t = h.get("time") or h.get("dt") or h.get("datetime") or f"idx={i}"
-            c = _pick_weather_code(h)
-            print(f"  {t} -> {c}")
-
-    # 週間（日ごと）
-    print("[DAILY] date -> code")
-    if not daily:
-        print("  (no daily data)")
-    else:
-        for i, d in enumerate(daily):
-            day = d.get("date") or d.get("day") or f"idx={i}"
-            c = _pick_weather_code(d)
-            print(f"  {day} -> {c}")
-
-    print("=" * 60 + "\n")
-
-# ==========================================================
 # ログローテーション（E61cと同等）
 # ==========================================================
 def setup_logging():
@@ -193,19 +154,20 @@ def main():
     import json as _json
     _cfg_path = os.path.join(os.path.dirname(__file__), "config.json")
     _default_airport = "centrair"
+    _default_interval = 2.0
     try:
-        _default_airport = _json.load(open(_cfg_path)).get("airport", "centrair")
+        _cfg = _json.load(open(_cfg_path))
+        _default_airport = _cfg.get("airport", "centrair")
+        _default_interval = float(_cfg.get("interval_hours", 2.0))
     except Exception:
         pass
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--airport", choices=["narita", "haneda", "centrair", "kanku"], default=_default_airport)
     parser.add_argument("--jma", action="store_true", default=True)
-    parser.add_argument("--interval-hours", type=float, default=2.0)
+    parser.add_argument("--interval-hours", type=float, default=_default_interval)
     parser.add_argument("--no-hdmi-refresh", action="store_true")
     args, unknown = parser.parse_known_args()
-
-    print("JMA FLAG:", args.jma, flush=True)
 
     airport = args.airport
     cfg = AIRPORT_CONFIG.get(airport)
@@ -214,9 +176,7 @@ def main():
 
     AIRPORT_LABELS = {"narita": "成田空港", "haneda": "羽田空港", "centrair": "中部国際空港", "kanku": "関西国際空港"}
     airport_label = AIRPORT_LABELS.get(airport, airport)
-
-    print("AIRPORT KEY:", airport, flush=True)
-    print("AIRPORT LABEL:", airport_label, flush=True)
+    logging.info(f"起動: airport={airport} interval={args.interval_hours}h")
 
     # -------------------------
     # pygame 初期化
@@ -284,12 +244,6 @@ def main():
     # -------------------------
     KEN1_PATH = os.path.join(ICON_DIR, "ken1.png")
     KEN6_PATH = os.path.join(ICON_DIR, "ken6.png")
-
-    # ★ 追加（ここ）
-    print("CONFIG FILE =", __file__, flush=True)
-    print("ICON_DIR =", ICON_DIR, flush=True)
-    print("KEN1_PATH =", KEN1_PATH, flush=True)
-    print("KEN6_PATH =", KEN6_PATH, flush=True)
 
     ken_img = None
     ken_key_last = None
@@ -389,11 +343,10 @@ def main():
     # -------------------------
     # 初回天気取得
     # -------------------------
+    fetch_ok = True
     try:
         if args.jma:
             hourly, om_daily = fetch_weather_openmeteo(cfg["latitude"], cfg["longitude"])
-            print("DEBUG HOURLY LEN:", len(hourly), flush=True)
-
             _, jma_daily = fetch_weather_jma(cfg["office_code"], cfg["area_codes"])
 
             om_map = {d["date"]: d for d in om_daily}
@@ -408,22 +361,17 @@ def main():
                 daily.append(d)
         else:
             hourly, daily = fetch_weather_openmeteo(cfg["latitude"], cfg["longitude"])
-            print("DEBUG HOURLY LEN (UPDATE):", len(hourly), flush=True)
 
         last_weather_update = datetime.datetime.now(JST)
         weather_updated_text = last_weather_update.strftime("天気更新 %H:%M")
-
-        #天気コード
-        print_weather_codes(hourly, daily, label="(initial)")
+        logging.info("初回天気取得成功")
 
     except Exception as e:
-        print("=== FETCH FAILED ===", flush=True)
-        print("ERROR:", e, flush=True)
-
         logging.error(f"Initial fetch failed: {e}")
         hourly, daily = load_cached_weather()
         last_weather_update = datetime.datetime.now(JST)
         weather_updated_text = last_weather_update.strftime("天気更新 %H:%M")
+        fetch_ok = False
 
     last_time_update_minute = -1
     xdotool = shutil.which("xdotool")
@@ -549,10 +497,13 @@ def main():
                     last_weather_update = now
                     weather_updated_text = now.strftime("天気更新 %H:%M")
                     work_summary = build_work_summary(hourly)
+                    fetch_ok = True
                     needs_redraw = True
 
                 except Exception as e:
                     logging.error(f"Periodic fetch failed: {e}")
+                    fetch_ok = False
+                    needs_redraw = True
             else:
                 pygame.time.wait(60000)
 
@@ -591,7 +542,8 @@ def main():
             sunrise_str,
             sunset_str,
             work_summary,
-            cpu_text
+            cpu_text,
+            fetch_ok=fetch_ok
         )
 
         draw_header(

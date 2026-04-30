@@ -34,8 +34,6 @@ SESS = session_with_retry()
 # Open-Meteo取得（E61cそのまま）
 # =====================================================
 def fetch_weather_openmeteo(latitude=LATITUDE, longitude=LONGITUDE):
-    
-    print("=== FETCH START ===", flush=True)
 
     # 既存キャッシュを読む（あれば）
     cached_hourly = {}
@@ -137,10 +135,7 @@ def fetch_weather_openmeteo(latitude=LATITUDE, longitude=LONGITUDE):
                 "wind": "--",
             })
 
-        #======================
-
-
-    # -------- daily ----------
+        # -------- daily ----------
     dd = data.get("daily", {}) or {}
     d_times = dd.get("time", []) or []
 
@@ -184,11 +179,6 @@ def fetch_weather_openmeteo(latitude=LATITUDE, longitude=LONGITUDE):
             )
     except:
         pass
-    #fetch_weather_openmeteo() の最後あたりに一時的に：
-    print("NOW:", datetime.datetime.now(JST), "FIRST:", hourly[0]["date"], hourly[0]["hour"], flush=True)
-    for h in hourly:
-        print(h["date"], h["hour"])
-
     return hourly, daily
 
 
@@ -284,7 +274,6 @@ def fetch_weather_jma(office_code, target_area_codes):
         weekday = WEEKDAY_JP[d.weekday()]
 
         code = daily_codes.get(d, "100")
-        print("JMA RAW CODE:", d, code) 
         pop_str = (
             f"{max(daily_pops[d])}%"
             if daily_pops.get(d)

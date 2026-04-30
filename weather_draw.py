@@ -117,17 +117,24 @@ def draw_weather(
     sunrise_str,
     sunset_str,
     work_summary,
-    cpu_text
+    cpu_text,
+    fetch_ok: bool = True
 ):
 
     screen.fill((255, 255, 255))
 
-    if not hasattr(draw_weather, "_dbg_once"):
-        print("DEBUG(draw_weather) warning_text:", repr(warning_text), flush=True)
-        print("DEBUG(draw_weather) headline_text:", (repr(headline_text)[:120]), flush=True)
-        draw_weather._dbg_once = True
-
     margin_x = int(width * 0.05)
+
+    # -------------------------
+    # 通信エラーバナー（fetch失敗時）
+    # -------------------------
+    if not fetch_ok:
+        err_surf = get_font(base_font_path, 20, bold=True).render(
+            "通信エラー：キャッシュデータを表示しています", True, (255, 255, 255)
+        )
+        bar_h = err_surf.get_height() + 8
+        pygame.draw.rect(screen, (180, 0, 0), (0, 0, width, bar_h))
+        screen.blit(err_surf, ((width - err_surf.get_width()) // 2, 4))
     data_cols = len(hourly)
     total_cols = 1 + data_cols
     col_w = int((width - margin_x * 2) // max(2, total_cols))
