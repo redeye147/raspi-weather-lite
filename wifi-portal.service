@@ -1,0 +1,13 @@
+[Unit]
+Description=Weather Signage WiFi Portal
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+ExecStart=/usr/bin/python3 /home/pi/raspi-weather-lite/wifi_portal.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
