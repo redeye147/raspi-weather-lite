@@ -1,7 +1,7 @@
 import socket
 import datetime
 import pygame
-from utils import JST, get_japanese_weekday  # 既にあるなら合わせて調整
+from utils import JST, get_japanese_weekday, get_font
 
 def get_ip_last3():
     try:
@@ -40,15 +40,12 @@ def draw_header(
         f"（{get_japanese_weekday(now)}） "
         f"{now.strftime('%H:%M')}"
     )
-    title_font = pygame.font.Font(base_font_path, int(height * 0.14))
-    title_font.set_bold(True)
-    title_surf = title_font.render(date_str, True, (0, 0, 0))
+    title_surf = get_font(base_font_path, int(height * 0.14), bold=True).render(date_str, True, (0, 0, 0))
     screen.blit(title_surf, ((width - title_surf.get_width()) // 2, top_margin))
 
     # ===== 2) 2行目 =====
-    small_font = pygame.font.Font(base_font_path, int(height * 0.035))
     info = f"{airport_label}  日の出:{sunrise_str} / 日の入り:{sunset_str}  "
-    info_surf = small_font.render(info, True, (0, 0, 0))
+    info_surf = get_font(base_font_path, int(height * 0.035)).render(info, True, (0, 0, 0))
 
     y2 = top_margin + title_surf.get_height() + line_gap
     x2 = max(10, (width - info_surf.get_width()) // 2)

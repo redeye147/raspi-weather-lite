@@ -26,7 +26,7 @@ import subprocess
 
 from header import draw_header
 from weather_draw import draw_weather
-from utils import get_sunrise_sunset_str, build_work_summary, JST
+from utils import get_sunrise_sunset_str, build_work_summary, JST, get_local_ip, make_qr_surface
 from jma_alerts import get_overview_and_warning
 
 from config import AIRPORT_CONFIG, LOG_FILE, ICON_DIR
@@ -58,49 +58,10 @@ def get_git_version_str():
         return ""
 
 # ==========================================================
-# 天気コード　　を取り出す関数
-# ==========================================================
-def _pick_weather_code(item: dict):
-    """hourly/daily の dict から '天気コード' らしき値を拾う（キー名揺れ対応）"""
-    for k in ("code", "weather_code", "wx_code", "jma_code", "weathercode"):
-        if k in item and item[k] not in (None, ""):
-            return item[k]
-    return None
-
-def print_weather_codes(hourly: list, daily: list, label: str = ""):
-    """時間天気（セルごと）と週間（日ごと）の天気コードをターミナルへ表示"""
-    ts = datetime.datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
-    print("\n" + "=" * 60)
-    print(f"[{ts}] WEATHER CODES {label}".strip())
-    print("-" * 60)
-
-    # 時間天気（セルごと）
-    print("[HOURLY] time -> code")
-    if not hourly:
-        print("  (no hourly data)")
-    else:
-        for i, h in enumerate(hourly):
-            t = h.get("time") or h.get("dt") or h.get("datetime") or f"idx={i}"
-            c = _pick_weather_code(h)
-            print(f"  {t} -> {c}")
-
-    # 週間（日ごと）
-    print("[DAILY] date -> code")
-    if not daily:
-        print("  (no daily data)")
-    else:
-        for i, d in enumerate(daily):
-            day = d.get("date") or d.get("day") or f"idx={i}"
-            c = _pick_weather_code(d)
-            print(f"  {day} -> {c}")
-
-    print("=" * 60 + "\n")
-
-# ==========================================================
 # ログローテーション（E61cと同等）
 # ==========================================================
 def setup_logging():
-    log_path = "/home/pi/project02/displayraspi_log.txt"  # ←書ける場所に固定
+    log_path = "/home/pi/raspi-weather-lite/displayraspi_log.txt"  # ←書ける場所に固定
     handler = logging.handlers.TimedRotatingFileHandler(
         log_path,
         when="midnight",
@@ -193,19 +154,20 @@ def main():
     import json as _json
     _cfg_path = os.path.join(os.path.dirname(__file__), "config.json")
     _default_airport = "centrair"
+    _default_interval = 2.0
     try:
-        _default_airport = _json.load(open(_cfg_path)).get("airport", "centrair")
+        _cfg = _json.load(open(_cfg_path))
+        _default_airport = _cfg.get("airport", "centrair")
+        _default_interval = float(_cfg.get("interval_hours", 2.0))
     except Exception:
         pass
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--airport", choices=["narita", "haneda", "centrair", "kanku"], default=_default_airport)
     parser.add_argument("--jma", action="store_true", default=True)
-    parser.add_argument("--interval-hours", type=float, default=2.0)
+    parser.add_argument("--interval-hours", type=float, default=_default_interval)
     parser.add_argument("--no-hdmi-refresh", action="store_true")
     args, unknown = parser.parse_known_args()
-
-    print("JMA FLAG:", args.jma, flush=True)
 
     airport = args.airport
     cfg = AIRPORT_CONFIG.get(airport)
@@ -214,9 +176,7 @@ def main():
 
     AIRPORT_LABELS = {"narita": "成田空港", "haneda": "羽田空港", "centrair": "中部国際空港", "kanku": "関西国際空港"}
     airport_label = AIRPORT_LABELS.get(airport, airport)
-
-    print("AIRPORT KEY:", airport, flush=True)
-    print("AIRPORT LABEL:", airport_label, flush=True)
+    logging.info(f"起動: airport={airport} interval={args.interval_hours}h")
 
     # -------------------------
     # pygame 初期化
@@ -280,16 +240,17 @@ def main():
         git_surf = None
 
     # -------------------------
+    # QRコード生成（WiFiポータルURL）
+    # -------------------------
+    _local_ip = get_local_ip()
+    qr_surf = make_qr_surface(f"http://{_local_ip}:8080", max_size=54) if _local_ip else None
+    _qr_date = None  # 日付変更時に再生成するための記録
+
+    # -------------------------
     # KEN画像（display確立後にロード）
     # -------------------------
     KEN1_PATH = os.path.join(ICON_DIR, "ken1.png")
     KEN6_PATH = os.path.join(ICON_DIR, "ken6.png")
-
-    # ★ 追加（ここ）
-    print("CONFIG FILE =", __file__, flush=True)
-    print("ICON_DIR =", ICON_DIR, flush=True)
-    print("KEN1_PATH =", KEN1_PATH, flush=True)
-    print("KEN6_PATH =", KEN6_PATH, flush=True)
 
     ken_img = None
     ken_key_last = None
@@ -389,11 +350,10 @@ def main():
     # -------------------------
     # 初回天気取得
     # -------------------------
+    fetch_ok = True
     try:
         if args.jma:
             hourly, om_daily = fetch_weather_openmeteo(cfg["latitude"], cfg["longitude"])
-            print("DEBUG HOURLY LEN:", len(hourly), flush=True)
-
             _, jma_daily = fetch_weather_jma(cfg["office_code"], cfg["area_codes"])
 
             om_map = {d["date"]: d for d in om_daily}
@@ -408,44 +368,49 @@ def main():
                 daily.append(d)
         else:
             hourly, daily = fetch_weather_openmeteo(cfg["latitude"], cfg["longitude"])
-            print("DEBUG HOURLY LEN (UPDATE):", len(hourly), flush=True)
 
         last_weather_update = datetime.datetime.now(JST)
         weather_updated_text = last_weather_update.strftime("天気更新 %H:%M")
-
-        #天気コード
-        print_weather_codes(hourly, daily, label="(initial)")
+        logging.info("初回天気取得成功")
 
     except Exception as e:
-        print("=== FETCH FAILED ===", flush=True)
-        print("ERROR:", e, flush=True)
-
         logging.error(f"Initial fetch failed: {e}")
         hourly, daily = load_cached_weather()
         last_weather_update = datetime.datetime.now(JST)
         weather_updated_text = last_weather_update.strftime("天気更新 %H:%M")
+        fetch_ok = False
 
     last_time_update_minute = -1
     xdotool = shutil.which("xdotool")
+
+    # ---- Pi Zero W 最適化: dirty flag / キャッシュ用変数 ----
+    needs_redraw = False       # 描画が必要なときだけ True にする
+    last_drawn_minute = -1     # 直近に描画した分（minute != で再描画）
+    _sunrise_date = None       # 日の出/入り計算済み日付
+    sunrise_str, sunset_str = "", ""
+    work_summary = build_work_summary(hourly)  # 天気更新時だけ再計算
 
     # ==========================================================
     # メインループ
     # ==========================================================
     while True:
         now = datetime.datetime.now(JST)
+        needs_redraw = False
 
         # -------------------------
-        # CPU率を10秒ごとに更新 ← ここに移動（修正箇所）
+        # CPU率を10秒ごとに更新
         # -------------------------
         if time.time() - last_cpu_update >= 10:
-            cpu = psutil.cpu_percent(interval=None)   # ブロックしない
+            cpu = psutil.cpu_percent(interval=None)
             cpu_text = f"{cpu:.0f}%"
             last_cpu_update = time.time()
+            needs_redraw = True
 
         # -------------------------
-        # 1分ごとヘッダー更新（画面焼き付き防止）
+        # 分が変わったら再描画（時計更新 + 焼き付き防止）
         # -------------------------
-        if now.minute != last_time_update_minute:
+        if now.minute != last_drawn_minute:
+            needs_redraw = True
             last_time_update_minute = now.minute
             if xdotool:
                 os.system("xdotool key Shift_L")
@@ -459,6 +424,7 @@ def main():
                 path = KEN6_PATH if ken_key == "ken6" else KEN1_PATH
                 ken_img = load_ken_image(path, scale_h=100)
                 ken_key_last = ken_key
+                needs_redraw = True
                 print("KEN switched:", ken_key, flush=True)
             except Exception as e:
                 print("KEN switch error:", ken_key, repr(e), flush=True)
@@ -491,7 +457,9 @@ def main():
 
                     logging.info("23:50定時更新実施")
                     weather_updated_text = now.strftime("天気更新 %H:%M")
+                    work_summary = build_work_summary(hourly)
                     main._updated_2350_date = today_str
+                    needs_redraw = True
                 except Exception as e:
                     logging.error(f"23:50更新失敗: {e}")
 
@@ -502,11 +470,10 @@ def main():
             try:
                 new_warn, new_head = fetch_warning_data(airport)
                 warning_text = new_warn
-                # headline_text は overview優先なら更新しない / warning優先なら new_head を入れる
                 last_jma_update = time.time()
+                needs_redraw = True
             except Exception as e:
                 logging.error(f"JMA更新失敗: {e}")
-                # warning_text は変更しない
 
         # -------------------------
         # 定期更新（interval-hours）
@@ -536,23 +503,45 @@ def main():
 
                     last_weather_update = now
                     weather_updated_text = now.strftime("天気更新 %H:%M")
+                    work_summary = build_work_summary(hourly)
+                    fetch_ok = True
+                    needs_redraw = True
 
                 except Exception as e:
                     logging.error(f"Periodic fetch failed: {e}")
+                    fetch_ok = False
+                    needs_redraw = True
             else:
                 pygame.time.wait(60000)
 
         # -------------------------
-        # 表示用計算
+        # 日の出/日の入り（日付変更時のみ再計算）
         # -------------------------
-        sunrise_str, sunset_str = get_sunrise_sunset_str(cfg["latitude"], cfg["longitude"])
-        work_summary = build_work_summary(hourly)
+        if now.date() != _sunrise_date:
+            sunrise_str, sunset_str = get_sunrise_sunset_str(cfg["latitude"], cfg["longitude"])
+            _sunrise_date = now.date()
+            needs_redraw = True
 
-        #print("DEBUG warning_text passed to draw_weather:", warning_text, flush=True)
-        #print("PASS warning_text:", warning_text, flush=True)
         # -------------------------
-        # 描画（flipはここで1回だけ）
+        # QRコード（日付変更 or IP変化時に再生成）
         # -------------------------
+        if now.date() != _qr_date:
+            _cur_ip = get_local_ip()
+            if _cur_ip:
+                qr_surf = make_qr_surface(f"http://{_cur_ip}:8080", max_size=54)
+            _qr_date = now.date()
+
+        # -------------------------
+        # 描画（変化があった時だけ）
+        # -------------------------
+        if not needs_redraw:
+            for event in pygame.event.get():
+                if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                    pygame.quit()
+                    return
+            pygame.time.wait(10000)
+            continue
+
         draw_weather(
             screen,
             width,
@@ -569,7 +558,9 @@ def main():
             sunrise_str,
             sunset_str,
             work_summary,
-            cpu_text
+            cpu_text,
+            fetch_ok=fetch_ok,
+            qr_surf=qr_surf
         )
 
         draw_header(
@@ -598,6 +589,7 @@ def main():
             )
 
         pygame.display.flip()
+        last_drawn_minute = now.minute
 
         # -------------------------
         # ESC終了
@@ -607,7 +599,7 @@ def main():
                 pygame.quit()
                 return
 
-        pygame.time.wait(2000)
+        pygame.time.wait(10000)
 
 
 def run_forever():
