@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+weather_cache.json
+cache/
+displayraspi_log.txt
+.DS_Store

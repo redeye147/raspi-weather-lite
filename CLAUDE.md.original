@@ -1,0 +1,68 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project Overview
+
+Raspberry Pi weather signage system that displays weather information on a fullscreen pygame display. Designed to run continuously on a Raspberry Pi connected to a monitor (e.g., at an airport or public display).
+
+## Running the Application
+
+```bash
+# Run with Open-Meteo data (default)
+cd project02
+python main01.py --airport centrair
+
+# Run with JMA daily forecast blended in
+python main01.py --airport centrair --jma
+
+# Other airport options: narita, haneda
+python main01.py --airport narita
+python main01.py --airport haneda
+
+# Adjust weather refresh interval (default: 2 hours)
+python main01.py --airport centrair --interval-hours 1.0
+```
+
+The entry point is `run_forever()` in `main01.py`, which wraps `main()` in a crash-recovery loop.
+
+## Dependencies
+
+Python packages: `pygame`, `requests`, `psutil`, `pytz`, `astral`
+
+System font required: `/usr/share/fonts/opentype/ipafont-gothic/ipag.ttf` (IPA Gothic, Japanese)
+
+Optional system tool: `xdotool` (used for screen burn-in prevention via simulated keypress)
+
+## Architecture (project02/)
+
+- **`main01.py`** — Entry point. Owns the pygame display lifecycle, main loop, and orchestrates all modules. Handles update scheduling (2-hour interval, forced 23:50 refresh), KEN mascot image switching (ken1/ken6 at noon), and CPU monitoring.
+
+- **`config.py`** — All configuration: airport coordinates/JMA codes, icon paths, log paths, cache path, Open-Meteo WMO→JMA weather code mapping (`CODE_MAPPING`), and display label constants.
+
+- **`fetch_weather.py`** — Data fetching. `fetch_weather_openmeteo()` fetches from Open-Meteo API and caches to `weather_cache.json`. `fetch_weather_jma()` fetches daily forecasts from JMA. `load_cached_weather()` is the fallback if APIs fail. Hourly data uses `get_target_datetimes()` from utils to pick the display time slots.
+
+- **`jma_alerts.py`** — Fetches JMA overview text (`overview_forecast`) and warning/advisory data. Caches to `cache/jma_overview.json`. Used for the headline/updated text shown on screen.
+
+- **`weather_draw.py`** — Renders the main weather panel (hourly table + 5-day weekly forecast) using pygame. Loads weather icons from `weather_icons/` by JMA code number (e.g., `100.png`).
+
+- **`header.py`** — Renders the header bar (airport name, current time, sunrise/sunset).
+
+- **`utils.py`** — Shared utilities: `JST` timezone, HTTP session with retry, sunrise/sunset via `astral`, `get_target_datetimes()` for selecting display hours, `build_work_summary()` for wind/rain work-condition text.
+
+## Weather Icon System
+
+Icons are stored in `project02/weather_icons/` as PNG files named by JMA weather code (e.g., `100.png` = clear, `200.png` = cloudy, `300.png` = rain, `400.png` = snow). Open-Meteo WMO codes are mapped to JMA codes via `CODE_MAPPING` in `config.py`.
+
+## Data Sources
+
+- **Open-Meteo** (`api.open-meteo.com`) — Hourly weather (temperature, precipitation, wind, weather code) and daily forecasts. No API key required.
+- **JMA** (`www.jma.go.jp/bosai/`) — Official Japanese Meteorological Agency. Used for daily forecast codes/temps (`/forecast/data/forecast/{office_code}.json`), warning/advisory data (`/bosai/warning/data/warning/{pref_code}.json`), and overview text (`/bosai/forecast/data/overview_forecast/{office_code}.json`).
+
+## Logging
+
+Log file: `/home/pi/project02/displayraspi_log.txt` (hardcoded path, rotating daily, 7-day retention). This path assumes deployment on a Raspberry Pi as user `pi`.
+
+## Legacy Code
+
+`01天気掲示板（構造化）/` contains the older prototype with a different module structure (`main03.py`, `weather_draw_A.py`, etc.). The active codebase is `project02/`.
