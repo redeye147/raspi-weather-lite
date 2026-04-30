@@ -329,21 +329,16 @@ def main():
         cache_json_path=jma_cache_path
     )
 
-    # ---- get_overview_and_warning の直後に追加 ----
-    try:
-        warning_text, headline_text = fetch_warning_data(airport)
-        last_jma_update = time.time()
-    except Exception as e:
-        logging.error(f"初回警報取得失敗: {e}")
-
     # 概況と発表時刻は overview から
     headline_text = jma_data.get("headline", "")
     updated_text  = jma_data.get("updated", "")
 
-    # 警報・注意報は warning JSON（fetch_warning_data）を唯一のソースにする
-    warning_text, _headline_from_warning = fetch_warning_data(airport)
-    # ※ headline は overview の方を使うなら上書きしない
-
+    # 警報・注意報（fetch_warning_data を起動時1回だけ呼ぶ）
+    try:
+        warning_text, _ = fetch_warning_data(airport)
+    except Exception as e:
+        logging.error(f"初回警報取得失敗: {e}")
+        warning_text = "警報取得失敗"
     last_jma_update = time.time()
     weather_updated_text = ""
 
@@ -413,7 +408,7 @@ def main():
             needs_redraw = True
             last_time_update_minute = now.minute
             if xdotool:
-                os.system("xdotool key Shift_L")
+                subprocess.run([xdotool, "key", "Shift_L"], capture_output=True)
 
         # -------------------------
         # KEN画像（12時だけ ken6 に切替）
