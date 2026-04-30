@@ -26,7 +26,7 @@ import subprocess
 
 from header import draw_header
 from weather_draw import draw_weather
-from utils import get_sunrise_sunset_str, build_work_summary, JST
+from utils import get_sunrise_sunset_str, build_work_summary, JST, get_local_ip, make_qr_surface
 from jma_alerts import get_overview_and_warning
 
 from config import AIRPORT_CONFIG, LOG_FILE, ICON_DIR
@@ -238,6 +238,13 @@ def main():
         git_surf = git_font.render(git_version_str, True, (150, 150, 150))
     else:
         git_surf = None
+
+    # -------------------------
+    # QRコード生成（WiFiポータルURL）
+    # -------------------------
+    _local_ip = get_local_ip()
+    qr_surf = make_qr_surface(f"http://{_local_ip}:8080", max_size=54) if _local_ip else None
+    _qr_date = None  # 日付変更時に再生成するための記録
 
     # -------------------------
     # KEN画像（display確立後にロード）
@@ -516,6 +523,15 @@ def main():
             needs_redraw = True
 
         # -------------------------
+        # QRコード（日付変更 or IP変化時に再生成）
+        # -------------------------
+        if now.date() != _qr_date:
+            _cur_ip = get_local_ip()
+            if _cur_ip:
+                qr_surf = make_qr_surface(f"http://{_cur_ip}:8080", max_size=54)
+            _qr_date = now.date()
+
+        # -------------------------
         # 描画（変化があった時だけ）
         # -------------------------
         if not needs_redraw:
@@ -543,7 +559,8 @@ def main():
             sunset_str,
             work_summary,
             cpu_text,
-            fetch_ok=fetch_ok
+            fetch_ok=fetch_ok,
+            qr_surf=qr_surf
         )
 
         draw_header(

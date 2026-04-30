@@ -76,6 +76,42 @@ def get_last_ip_octet():
         return "?"
 
 
+def get_local_ip() -> str:
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return ""
+
+
+def make_qr_surface(url: str, max_size: int = 54):
+    """QRコードをpygame.Surfaceとして生成する（Pillowなし）。失敗時はNoneを返す。"""
+    try:
+        import qrcode as _qrcode
+        qr = _qrcode.QRCode(border=1)
+        qr.add_data(url)
+        qr.make(fit=True)
+        matrix = qr.get_matrix()
+        n = len(matrix)
+        pixel = max(1, max_size // n)
+        size = n * pixel
+        surf = pygame.Surface((size, size))
+        surf.fill((255, 255, 255))
+        for row_i, row in enumerate(matrix):
+            for col_i, val in enumerate(row):
+                if val:
+                    pygame.draw.rect(
+                        surf, (0, 0, 0),
+                        (col_i * pixel, row_i * pixel, pixel, pixel)
+                    )
+        return surf
+    except Exception:
+        return None
+
+
 # =========================
 # ISO変換
 # =========================

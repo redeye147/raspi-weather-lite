@@ -19,6 +19,7 @@ from utils import (
     get_last_ip_octet,
     get_japanese_weekday,
     get_font,
+    make_qr_surface,
 )
 
 # ==========================================
@@ -40,7 +41,8 @@ def draw_today_title_bar(
     base_font_path,
     airport_name=None,
     weather_updated_text="",
-    cpu_text=""
+    cpu_text="",
+    qr_surf=None
 ):
     pygame.draw.rect(screen, (255, 255, 255), (x, y, w, h))
 
@@ -61,11 +63,12 @@ def draw_today_title_bar(
 
     status_font = get_font(base_font_path, 18)
     status_color = (80, 80, 80)
-
     status_surf = status_font.render(status, True, status_color) if status else None
     status_w = status_surf.get_width() if status_surf else 0
 
-    max_left_w = w - 16 - status_w - 12
+    qr_w = (qr_surf.get_width() + 6) if qr_surf else 0
+
+    max_left_w = w - 16 - status_w - 12 - qr_w
     if max_left_w < 50:
         max_left_w = 50
 
@@ -78,8 +81,18 @@ def draw_today_title_bar(
 
     title_surf = title_font.render(title_draw, True, (0, 0, 0))
     screen.blit(title_surf, (x + 8, y + (h - title_surf.get_height()) // 2))
+
+    # QRコードを最右端に配置
+    if qr_surf:
+        qr_x = x + w - qr_surf.get_width() - 4
+        qr_y = y + (h - qr_surf.get_height()) // 2
+        screen.blit(qr_surf, (qr_x, qr_y))
+        right_edge = qr_x - 6
+    else:
+        right_edge = x + w - 8
+
     if status_surf:
-        screen.blit(status_surf, (x + w - status_w - 8,
+        screen.blit(status_surf, (right_edge - status_w,
                                   y + (h - status_surf.get_height()) // 2))
 
 
@@ -118,7 +131,8 @@ def draw_weather(
     sunset_str,
     work_summary,
     cpu_text,
-    fetch_ok: bool = True
+    fetch_ok: bool = True,
+    qr_surf=None
 ):
 
     screen.fill((255, 255, 255))
@@ -166,7 +180,7 @@ def draw_weather(
     # =========================================================
     # 固定見出し「今日の天気」
     # =========================================================
-    title_bar_h = 34
+    title_bar_h = 62 if qr_surf else 34
     draw_today_title_bar(
         screen,
         margin_x,
@@ -176,7 +190,8 @@ def draw_weather(
         base_font_path,
         airport_name=None,
         weather_updated_text=weather_updated_text,
-        cpu_text=cpu_text
+        cpu_text=cpu_text,
+        qr_surf=qr_surf
     )
     y_offset += title_bar_h + 8
 
