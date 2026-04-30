@@ -100,7 +100,7 @@ def print_weather_codes(hourly: list, daily: list, label: str = ""):
 # ログローテーション（E61cと同等）
 # ==========================================================
 def setup_logging():
-    log_path = "/home/pi/project02/displayraspi_log.txt"  # ←書ける場所に固定
+    log_path = "/home/pi/raspi-weather-lite/displayraspi_log.txt"  # ←書ける場所に固定
     handler = logging.handlers.TimedRotatingFileHandler(
         log_path,
         when="midnight",
