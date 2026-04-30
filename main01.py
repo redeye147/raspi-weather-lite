@@ -428,24 +428,34 @@ def main():
     last_time_update_minute = -1
     xdotool = shutil.which("xdotool")
 
+    # ---- Pi Zero W 最適化: dirty flag / キャッシュ用変数 ----
+    needs_redraw = False       # 描画が必要なときだけ True にする
+    last_drawn_minute = -1     # 直近に描画した分（minute != で再描画）
+    _sunrise_date = None       # 日の出/入り計算済み日付
+    sunrise_str, sunset_str = "", ""
+    work_summary = build_work_summary(hourly)  # 天気更新時だけ再計算
+
     # ==========================================================
     # メインループ
     # ==========================================================
     while True:
         now = datetime.datetime.now(JST)
+        needs_redraw = False
 
         # -------------------------
-        # CPU率を10秒ごとに更新 ← ここに移動（修正箇所）
+        # CPU率を10秒ごとに更新
         # -------------------------
         if time.time() - last_cpu_update >= 10:
-            cpu = psutil.cpu_percent(interval=None)   # ブロックしない
+            cpu = psutil.cpu_percent(interval=None)
             cpu_text = f"{cpu:.0f}%"
             last_cpu_update = time.time()
+            needs_redraw = True
 
         # -------------------------
-        # 1分ごとヘッダー更新（画面焼き付き防止）
+        # 分が変わったら再描画（時計更新 + 焼き付き防止）
         # -------------------------
-        if now.minute != last_time_update_minute:
+        if now.minute != last_drawn_minute:
+            needs_redraw = True
             last_time_update_minute = now.minute
             if xdotool:
                 os.system("xdotool key Shift_L")
@@ -459,6 +469,7 @@ def main():
                 path = KEN6_PATH if ken_key == "ken6" else KEN1_PATH
                 ken_img = load_ken_image(path, scale_h=100)
                 ken_key_last = ken_key
+                needs_redraw = True
                 print("KEN switched:", ken_key, flush=True)
             except Exception as e:
                 print("KEN switch error:", ken_key, repr(e), flush=True)
@@ -491,7 +502,9 @@ def main():
 
                     logging.info("23:50定時更新実施")
                     weather_updated_text = now.strftime("天気更新 %H:%M")
+                    work_summary = build_work_summary(hourly)
                     main._updated_2350_date = today_str
+                    needs_redraw = True
                 except Exception as e:
                     logging.error(f"23:50更新失敗: {e}")
 
@@ -502,11 +515,10 @@ def main():
             try:
                 new_warn, new_head = fetch_warning_data(airport)
                 warning_text = new_warn
-                # headline_text は overview優先なら更新しない / warning優先なら new_head を入れる
                 last_jma_update = time.time()
+                needs_redraw = True
             except Exception as e:
                 logging.error(f"JMA更新失敗: {e}")
-                # warning_text は変更しない
 
         # -------------------------
         # 定期更新（interval-hours）
@@ -536,6 +548,8 @@ def main():
 
                     last_weather_update = now
                     weather_updated_text = now.strftime("天気更新 %H:%M")
+                    work_summary = build_work_summary(hourly)
+                    needs_redraw = True
 
                 except Exception as e:
                     logging.error(f"Periodic fetch failed: {e}")
@@ -543,16 +557,24 @@ def main():
                 pygame.time.wait(60000)
 
         # -------------------------
-        # 表示用計算
+        # 日の出/日の入り（日付変更時のみ再計算）
         # -------------------------
-        sunrise_str, sunset_str = get_sunrise_sunset_str(cfg["latitude"], cfg["longitude"])
-        work_summary = build_work_summary(hourly)
+        if now.date() != _sunrise_date:
+            sunrise_str, sunset_str = get_sunrise_sunset_str(cfg["latitude"], cfg["longitude"])
+            _sunrise_date = now.date()
+            needs_redraw = True
 
-        #print("DEBUG warning_text passed to draw_weather:", warning_text, flush=True)
-        #print("PASS warning_text:", warning_text, flush=True)
         # -------------------------
-        # 描画（flipはここで1回だけ）
+        # 描画（変化があった時だけ）
         # -------------------------
+        if not needs_redraw:
+            for event in pygame.event.get():
+                if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                    pygame.quit()
+                    return
+            pygame.time.wait(10000)
+            continue
+
         draw_weather(
             screen,
             width,
@@ -598,6 +620,7 @@ def main():
             )
 
         pygame.display.flip()
+        last_drawn_minute = now.minute
 
         # -------------------------
         # ESC終了
@@ -607,7 +630,7 @@ def main():
                 pygame.quit()
                 return
 
-        pygame.time.wait(2000)
+        pygame.time.wait(10000)
 
 
 def run_forever():

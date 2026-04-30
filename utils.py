@@ -22,6 +22,21 @@ JST = ZoneInfo("Asia/Tokyo")
 
 WEEKDAY_JP = ["月", "火", "水", "木", "金", "土", "日"]
 
+# =========================
+# フォントキャッシュ（Pi Zero W 向け最適化）
+# =========================
+_font_cache: dict = {}
+
+def get_font(path: str, size: int, bold: bool = False) -> pygame.font.Font:
+    """フォントオブジェクトをキャッシュして返す。毎フレーム生成を防ぐ。"""
+    key = (path, size, bold)
+    if key not in _font_cache:
+        f = pygame.font.Font(path, size)
+        if bold:
+            f.set_bold(True)
+        _font_cache[key] = f
+    return _font_cache[key]
+
 
 # =========================
 # セッション（リトライ付き）
