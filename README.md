@@ -132,6 +132,23 @@ QRコードをスキャンすると直接アクセスできます。
 - **空港変更**: ドロップダウンから選択して「保存して再起動」
 - **WiFi変更**: SSIDをスキャン一覧から選択してパスワードを入力
 
+### WiFi 設定モード（オフライン時の AP 起動）
+
+WiFi 未設定の Pi に **USB WiFi ドングル** を挿しておくと、起動時に WiFi 接続できなかった場合のみ
+ドングル（`wlan1`）を AP にして、スマホから直接設定できる**キャプティブポータル**を起動します。
+
+詳しくは [`wifi_setup/README.md`](wifi_setup/README.md) を参照。
+
+```bash
+cd /home/pi/raspi-weather-lite/wifi_setup
+chmod +x install.sh
+./install.sh
+```
+
+- AP SSID: `WeatherSetup` / PW: `setup1234`
+- ポータル URL: `http://192.168.50.1/`（接続後ブラウザが自動で開く）
+- ハードウェア例: 10Gtek WD-1513B (RTL8710BU, VID:PID `0bda:b711`)
+
 ## ファイル構成
 
 ```
@@ -146,6 +163,7 @@ raspi-weather-lite/
 ├── config.json          # 実行時設定（空港・更新間隔）
 ├── wifi_portal.py       # WiFi設定ポータル（Flask）
 ├── wifi-portal.service  # systemdユニットファイル
+├── wifi_setup/          # WiFi 設定モード（AP + キャプティブポータル）
 └── weather_icons/       # 天気アイコン画像
 ```
 

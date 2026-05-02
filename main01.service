@@ -1,0 +1,16 @@
+[Unit]
+Description=Weather Signage Display
+After=network.target wifi-setup-auto.service
+Wants=wifi-setup-auto.service
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/raspi-weather-lite
+ExecStart=/usr/bin/python3 /home/pi/raspi-weather-lite/main01.py
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

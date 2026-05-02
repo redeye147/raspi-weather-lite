@@ -1,0 +1,13 @@
+[Unit]
+Description=WiFi Setup Mode (AP + Captive Portal)
+After=network.target NetworkManager.service
+ConditionPathExists=/sys/class/net/wlan1
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/home/pi/raspi-weather-lite/wifi_setup/start_ap.sh
+ExecStop=/home/pi/raspi-weather-lite/wifi_setup/stop_ap.sh
+
+[Install]
+WantedBy=multi-user.target

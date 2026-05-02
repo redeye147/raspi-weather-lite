@@ -1,0 +1,8 @@
+# WD-1513B (RTL8710BU) 用 udev ルール
+# 自動起動は wifi-setup-auto.service（起動時のWiFi接続状態で判定）に移行したため、
+# 挿入時の自動トリガーは廃止。
+# 抜去時のみ、もし設定モード中なら停止する（安全装置）。
+
+# モードスイッチ後の VID:PID = 0bda:b711
+ACTION=="remove", SUBSYSTEM=="usb", ENV{PRODUCT}=="bda/b711/*", \
+  RUN+="/bin/systemctl stop wifi-setup-mode.service"
