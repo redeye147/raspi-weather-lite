@@ -26,7 +26,6 @@ def _load_config() -> dict:
 
 
 def _save_config(updates: dict) -> None:
-    """既存キーを保持しながら updates だけ上書き保存する。"""
     cfg = _load_config()
     cfg.update(updates)
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
@@ -34,24 +33,21 @@ def _save_config(updates: dict) -> None:
 
 
 # ==========================================
-# 起動時 WiFi スキャン
+# WiFi スキャン（wlan0 指定、APモード中でも動作）
 # ==========================================
-def scan_and_save() -> None:
+def _scan_ssids() -> list:
+    """wlan0 でWiFiスキャンを実行してSSIDリストを返す。"""
     try:
         result = subprocess.run(
-            ["nmcli", "-t", "-f", "SSID", "dev", "wifi", "list"],
+            ["nmcli", "-t", "-f", "SSID", "dev", "wifi", "list", "ifname", "wlan0"],
             capture_output=True, text=True, timeout=10
         )
         ssids = list(dict.fromkeys(
             s.strip() for s in result.stdout.strip().splitlines() if s.strip()
         ))
-        with open("/tmp/ssid_list.json", "w") as f:
-            json.dump(ssids, f)
+        return ssids
     except Exception:
-        pass
-
-
-scan_and_save()
+        return []
 
 
 # ==========================================
@@ -77,6 +73,7 @@ HTML = """<!DOCTYPE html>
   .badge-connected { font-size: 13px; color: #10b981; margin-bottom: 4px; }
   .badge-disconnected { font-size: 13px; color: #ef4444; margin-bottom: 4px; }
   .section-box { background: #1e2233; border-radius: 10px; padding: 14px; margin-top: 12px; }
+  .scanning { font-size: 13px; color: #888; }
 </style>
 </head><body>
 <h2>天気サイネージ 設定</h2>
@@ -95,12 +92,12 @@ HTML = """<!DOCTYPE html>
 <div class="section-box">
   <h3>📶 WiFi 設定</h3>
   <label>SSID</label>
-  <select id="ssid-select" onchange="onSelectChange()">
-    <option value="">-- スキャン中... --</option>
+  <p id="scan-status" class="scanning">🔄 スキャン中...</p>
+  <select id="ssid-select" onchange="onSelectChange()" style="display:none">
   </select>
   <input id="manual-ssid" placeholder="SSIDを手入力">
   <label>パスワード</label>
-  <input id="pw" type="password" placeholder="パスワード（未入力の場合は変更しません）">
+  <input id="pw" type="password" placeholder="パスワード（未入力の場合はWiFiは変更しません）">
 </div>
 
 <button id="save-btn" onclick="save()">保存して再起動</button>
@@ -124,34 +121,47 @@ async function init() {
     if (st.airport) {
       document.getElementById('airport').value = st.airport;
     }
-    loadSSIDs();
   } catch(e) {
     document.getElementById('msg').textContent = '接続エラー: ' + e;
   }
+  loadSSIDs();
 }
 
 async function loadSSIDs() {
+  const status = document.getElementById('scan-status');
+  const sel    = document.getElementById('ssid-select');
+  status.textContent = '🔄 スキャン中...';
   try {
     const ssids = await fetch('/scan').then(r => r.json());
-    const sel = document.getElementById('ssid-select');
-    // 現在接続中のSSIDを先頭に表示
-    if (currentSsid) {
-      const cur = document.createElement('option');
-      cur.value = currentSsid;
-      cur.textContent = currentSsid + ' (現在接続中)';
-      sel.appendChild(cur);
+    sel.innerHTML = '';
+
+    if (ssids.length === 0 && !currentSsid) {
+      status.textContent = '⚠️ SSIDが見つかりません。手入力を選択してください。';
+      const manual = document.createElement('option');
+      manual.value = '__manual__'; manual.textContent = '手入力';
+      sel.appendChild(manual);
+    } else {
+      status.textContent = '';
+      // 現在接続中のSSIDを先頭に
+      if (currentSsid) {
+        const cur = document.createElement('option');
+        cur.value = currentSsid;
+        cur.textContent = currentSsid + ' (現在接続中)';
+        sel.appendChild(cur);
+      }
+      ssids.filter(s => s !== currentSsid).forEach(ssid => {
+        const opt = document.createElement('option');
+        opt.value = ssid; opt.textContent = ssid;
+        sel.appendChild(opt);
+      });
+      const manual = document.createElement('option');
+      manual.value = '__manual__'; manual.textContent = '手入力（リストにない場合）';
+      sel.appendChild(manual);
     }
-    ssids.filter(s => s !== currentSsid).forEach(ssid => {
-      const opt = document.createElement('option');
-      opt.value = ssid; opt.textContent = ssid;
-      sel.appendChild(opt);
-    });
-    const manual = document.createElement('option');
-    manual.value = '__manual__';
-    manual.textContent = '手入力（リストにない場合）';
-    sel.appendChild(manual);
+    sel.style.display = 'block';
   } catch(e) {
-    document.getElementById('msg').textContent = 'スキャン失敗: ' + e;
+    status.textContent = 'スキャン失敗。手入力で入力してください。';
+    document.getElementById('manual-ssid').style.display = 'block';
   }
 }
 
@@ -175,7 +185,6 @@ async function save() {
   btn.disabled = true;
   btn.textContent = '保存中...';
   try {
-    // SSIDまたはPWが入力されている場合はWiFi変更も実行
     if (ssid && pw) {
       const res = await fetch('/save', {
         method: 'POST',
@@ -184,7 +193,6 @@ async function save() {
       });
       document.getElementById('msg').textContent = await res.text();
     } else {
-      // 空港のみ変更
       const res = await fetch('/save-airport', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -214,7 +222,6 @@ init();
 @app.route("/ncsi.txt")
 @app.route("/success.txt")
 def captive_portal_redirect():
-    """スマホが接続直後にアクセスする検出URLをポータルへ転送する。"""
     return redirect("/", 302)
 
 
@@ -247,11 +254,9 @@ def status():
 
 @app.route("/scan")
 def scan():
-    path = "/tmp/ssid_list.json"
-    if not os.path.exists(path):
-        return jsonify([])
-    with open(path) as f:
-        return jsonify(json.load(f))
+    """wlan0 で即時スキャンしてSSIDリストを返す。"""
+    ssids = _scan_ssids()
+    return jsonify(ssids)
 
 
 @app.route("/save-airport", methods=["POST"])
