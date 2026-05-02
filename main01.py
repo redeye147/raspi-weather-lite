@@ -94,40 +94,82 @@ def is_wifi_connected() -> bool:
 
 
 # ==========================================================
-# APモード案内画面
+# APモードアクティブ確認
+# ==========================================================
+def is_ap_mode_active() -> bool:
+    """start_ap.sh が /run/wifi-setup/state を作成・stop_ap.sh が削除する。"""
+    return os.path.exists("/run/wifi-setup/state")
+
+
+# ==========================================================
+# APモード案内画面（QRコード2枚）
 # ==========================================================
 def show_ap_screen(screen):
+    import json as _json
+
+    ssid       = "WeatherSetup"
+    password   = "setup1234"
+    portal_url = "http://192.168.50.1/"
+
+    try:
+        with open("/run/wifi-setup/state") as f:
+            st = _json.load(f)
+            ssid       = st.get("ssid",     ssid)
+            password   = st.get("password", password)
+            portal_url = st.get("url",      portal_url)
+    except Exception:
+        pass
+
     screen.fill((10, 12, 20))
     w, h = screen.get_size()
 
-    lines = [
-        ("WiFi 未設定", 48, (255, 215, 0), True),
-        ("", 20, (255, 255, 255), False),
-        ("以下のWiFiに接続してください", 28, (200, 200, 200), False),
-        ("", 10, (255, 255, 255), False),
-        ("SSID: raspi-weather-setup", 32, (255, 255, 255), True),
-        ("パスワード: setup1234", 32, (255, 255, 255), False),
-        ("", 20, (255, 255, 255), False),
-        ("接続後、ブラウザで以下にアクセス", 28, (200, 200, 200), False),
-        ("http://192.168.50.5:8080", 36, (100, 200, 255), True),
-    ]
+    # QRコード生成
+    wifi_qr = make_qr_surface(f"WIFI:S:{ssid};T:WPA;P:{password};;", max_size=160)
+    url_qr  = make_qr_surface(portal_url, max_size=160)
 
-    total_h = sum(
-        pygame.font.Font(BASE_FONT, size).get_height() + 4 if text else size
-        for text, size, _, _ in lines
-    )
-    y = (h - total_h) // 2
+    # タイトル
+    font_title = pygame.font.Font(BASE_FONT, 42)
+    font_title.set_bold(True)
+    title_surf = font_title.render("WiFi 設定モード", True, (255, 215, 0))
+    title_y = 28
+    screen.blit(title_surf, ((w - title_surf.get_width()) // 2, title_y))
 
-    for text, size, color, bold in lines:
+    # QRコード配置（左：WiFi接続用、右：ポータルURL用）
+    qr_size = 160
+    gap     = 80
+    qr_y    = title_y + title_surf.get_height() + 24
+    left_x  = (w - qr_size * 2 - gap) // 2
+    right_x = left_x + qr_size + gap
+
+    if wifi_qr:
+        screen.blit(wifi_qr, (left_x, qr_y))
+    if url_qr:
+        screen.blit(url_qr, (right_x, qr_y))
+
+    # QRラベル
+    font_label = pygame.font.Font(BASE_FONT, 22)
+    label_y = qr_y + qr_size + 6
+    for x, text in [(left_x, "① WiFi接続"), (right_x, "② 設定ページ")]:
+        s = font_label.render(text, True, (180, 220, 255))
+        screen.blit(s, (x + (qr_size - s.get_width()) // 2, label_y))
+
+    # 接続情報テキスト
+    info_y = label_y + font_label.get_height() + 20
+    for text, color, bold in [
+        (f"SSID: {ssid}",      (255, 255, 255), True),
+        (f"PW:   {password}",  (200, 200, 200), False),
+        ("",                    (0,   0,   0),  False),
+        (f"URL: {portal_url}", (100, 200, 255), True),
+    ]:
         if not text:
-            y += size
+            info_y += 12
             continue
-        font = pygame.font.Font(BASE_FONT, size)
+        f = pygame.font.Font(BASE_FONT, 26)
         if bold:
-            font.set_bold(True)
-        surf = font.render(text, True, color)
-        screen.blit(surf, ((w - surf.get_width()) // 2, y))
-        y += surf.get_height() + 4
+            f.set_bold(True)
+        s = f.render(text, True, color)
+        screen.blit(s, ((w - s.get_width()) // 2, info_y))
+        info_y += s.get_height() + 4
 
     pygame.display.flip()
 
@@ -196,27 +238,17 @@ def main():
     width, height = screen.get_size()
 
     # -------------------------
-    # APモード待機（WiFi未接続時）
+    # APモード待機（WiFi未接続 または APモードアクティブ時）
     # -------------------------
-    if not is_wifi_connected():
-        import json
-        result = subprocess.run(
-            ["nmcli", "-t", "-f", "SSID", "dev", "wifi", "list"],
-            capture_output=True, text=True
-        )
-        ssids = list(dict.fromkeys(
-            s.strip() for s in result.stdout.strip().splitlines() if s.strip()
-        ))
-        with open("/tmp/ssid_list.json", "w") as f:
-            json.dump(ssids, f)
-
+    if not is_wifi_connected() or is_ap_mode_active():
         show_ap_screen(screen)
-        while not is_wifi_connected():
-            pygame.time.wait(10000)  # 10秒ごとに再確認
+        while not is_wifi_connected() or is_ap_mode_active():
+            pygame.time.wait(5000)
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     pygame.quit()
                     return
+            show_ap_screen(screen)
         # WiFi接続確認後、通常の天気表示へ続く
 
     # --- CPU表示（10秒更新）---
@@ -391,6 +423,21 @@ def main():
     while True:
         now = datetime.datetime.now(JST)
         needs_redraw = False
+
+        # -------------------------
+        # APモードが途中で起動した場合（手動 systemctl start wifi-setup-mode）
+        # -------------------------
+        if is_ap_mode_active():
+            show_ap_screen(screen)
+            while is_ap_mode_active():
+                pygame.time.wait(5000)
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        pygame.quit()
+                        return
+                show_ap_screen(screen)
+            needs_redraw = True
+            continue
 
         # -------------------------
         # CPU率を10秒ごとに更新

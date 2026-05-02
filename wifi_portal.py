@@ -4,7 +4,7 @@ wifi_portal.py
 ポート: 8080
 """
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, redirect
 import json
 import os
 import subprocess
@@ -188,6 +188,20 @@ async function save() {
 init();
 </script>
 </body></html>"""
+
+
+# ==========================================
+# キャプティブポータル自動検出（Android / iOS / Windows）
+# ==========================================
+@app.route("/generate_204")
+@app.route("/gen_204")
+@app.route("/hotspot-detect.html")
+@app.route("/connecttest.txt")
+@app.route("/ncsi.txt")
+@app.route("/success.txt")
+def captive_portal_redirect():
+    """スマホが接続直後にアクセスする検出URLをポータルへ転送する。"""
+    return redirect("/", 302)
 
 
 # ==========================================
