@@ -67,6 +67,16 @@ if [ -f "${PROJECT_DIR}/wifi-portal.service" ]; then
   sudo systemctl enable wifi-portal.service
 fi
 
+# 9) main01.service の配置（天気表示を systemd で起動、X不要）
+if [ -f "${PROJECT_DIR}/main01.service" ]; then
+  sudo cp "${PROJECT_DIR}/main01.service" /etc/systemd/system/
+  sudo systemctl daemon-reload
+  sudo systemctl enable main01.service
+  # .bashrc / .xinitrc の main01.py 起動行をコメントアウト（重複起動防止）
+  sed -i 's|^\([[:space:]]*\)python3 main01.py|\1# python3 main01.py  # moved to systemd main01.service|g' \
+      /home/pi/.bashrc /home/pi/.xinitrc 2>/dev/null || true
+fi
+
 echo ""
 echo "=== インストール完了 ==="
 echo ""
