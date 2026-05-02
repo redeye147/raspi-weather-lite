@@ -521,7 +521,7 @@ def main():
         # 定期更新（interval-hours）
         # -------------------------
         if (now - last_weather_update).total_seconds() >= args.interval_hours * 3600:
-            if 4 < now.hour <= 23:
+            if 5 < now.hour <= 23:
                 try:
                     if args.jma:
                         hourly, om_daily = fetch_weather_openmeteo(cfg["latitude"], cfg["longitude"])
