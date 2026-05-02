@@ -4,7 +4,7 @@ wifi_portal.py
 ポート: 8080
 """
 
-from flask import Flask, request, jsonify, redirect
+from flask import Flask, request, jsonify, redirect, make_response
 import json
 import os
 import subprocess
@@ -32,6 +32,13 @@ def _save_config(updates: dict) -> None:
         json.dump(cfg, f, indent=2, ensure_ascii=False)
 
 
+def _no_cache(response):
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
+
 # ==========================================
 # WiFi スキャン（wlan0 指定、APモード中でも動作）
 # ==========================================
@@ -42,10 +49,9 @@ def _scan_ssids() -> list:
             ["nmcli", "-t", "-f", "SSID", "dev", "wifi", "list", "ifname", "wlan0"],
             capture_output=True, text=True, timeout=10
         )
-        ssids = list(dict.fromkeys(
+        return list(dict.fromkeys(
             s.strip() for s in result.stdout.strip().splitlines() if s.strip()
         ))
-        return ssids
     except Exception:
         return []
 
@@ -134,7 +140,6 @@ async function loadSSIDs() {
   try {
     const ssids = await fetch('/scan').then(r => r.json());
     sel.innerHTML = '';
-
     if (ssids.length === 0 && !currentSsid) {
       status.textContent = '⚠️ SSIDが見つかりません。手入力を選択してください。';
       const manual = document.createElement('option');
@@ -142,7 +147,6 @@ async function loadSSIDs() {
       sel.appendChild(manual);
     } else {
       status.textContent = '';
-      // 現在接続中のSSIDを先頭に
       if (currentSsid) {
         const cur = document.createElement('option');
         cur.value = currentSsid;
@@ -183,7 +187,7 @@ async function save() {
   const pw      = document.getElementById('pw').value.trim();
   const btn = document.getElementById('save-btn');
   btn.disabled = true;
-  btn.textContent = '保存中...';
+  btn.textContent = '保官中...';
   try {
     if (ssid && pw) {
       const res = await fetch('/save', {
@@ -230,7 +234,7 @@ def captive_portal_redirect():
 # ==========================================
 @app.route("/")
 def index():
-    return HTML
+    return _no_cache(make_response(HTML))
 
 
 @app.route("/status")
@@ -245,18 +249,16 @@ def status():
         ssid = ""
         connected = False
     cfg = _load_config()
-    return jsonify({
+    return _no_cache(jsonify({
         "connected": connected,
         "ssid": ssid,
         "airport": cfg.get("airport", "centrair")
-    })
+    }))
 
 
 @app.route("/scan")
 def scan():
-    """wlan0 で即時スキャンしてSSIDリストを返す。"""
-    ssids = _scan_ssids()
-    return jsonify(ssids)
+    return _no_cache(jsonify(_scan_ssids()))
 
 
 @app.route("/save-airport", methods=["POST"])
@@ -277,9 +279,9 @@ def save():
     if not ssid:
         return "SSIDを入力してください", 400
     _save_config({"airport": airport})
-    subprocess.run([
-        "nmcli", "dev", "wifi", "connect", ssid, "password", pw
-    ])
+    subprocess.run(
+        ["nmcli", "dev", "wifi", "connect", ssid, "password", pw]
+    )
     subprocess.Popen(["bash", "-c", "sleep 3 && sudo reboot"])
     return "設定完了！Piが再起動します。しばらくお待ちください..."
 
