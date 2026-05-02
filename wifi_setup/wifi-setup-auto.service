@@ -1,0 +1,13 @@
+[Unit]
+Description=Auto-trigger WiFi Setup Mode if no WiFi at boot
+After=NetworkManager.service network.target
+Wants=NetworkManager.service
+ConditionPathExists=/home/pi/raspi-weather-lite/wifi_setup/check_wifi_on_boot.sh
+
+[Service]
+Type=oneshot
+ExecStart=/home/pi/raspi-weather-lite/wifi_setup/check_wifi_on_boot.sh
+RemainAfterExit=no
+
+[Install]
+WantedBy=multi-user.target
