@@ -1,4 +1,4 @@
-"""
+"""  
 wifi_portal.py
 スマホ・PCブラウザから空港設定・WiFi設定ができる Web UI（Flask）
 ポート: 8080
@@ -186,8 +186,11 @@ async function save() {
   const ssid    = getSSID();
   const pw      = document.getElementById('pw').value.trim();
   const btn = document.getElementById('save-btn');
+  const msg = document.getElementById('msg');
   btn.disabled = true;
-  btn.textContent = '保官中...';
+  btn.textContent = '保存中...';
+  msg.className = '';
+  msg.textContent = '';
   try {
     if (ssid && pw) {
       const res = await fetch('/save', {
@@ -195,19 +198,36 @@ async function save() {
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({ ssid, pw, airport })
       });
-      document.getElementById('msg').textContent = await res.text();
+      const text = await res.text();
+      if (res.ok) {
+        msg.className = 'ok';
+        msg.style.color = '#10b981';
+      } else {
+        msg.className = 'err';
+        msg.style.color = '#ef4444';
+        btn.disabled = false;
+        btn.textContent = '保存して再起動';
+      }
+      msg.textContent = text;
     } else {
       const res = await fetch('/save-airport', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({ airport })
       });
-      document.getElementById('msg').textContent = await res.text();
+      const text = await res.text();
+      msg.style.color = res.ok ? '#10b981' : '#ef4444';
+      msg.textContent = text;
+      if (!res.ok) {
+        btn.disabled = false;
+        btn.textContent = '保存して再起動';
+      }
     }
   } catch(e) {
-    document.getElementById('msg').textContent = 'エラー: ' + e;
+    msg.style.color = '#ef4444';
+    msg.textContent = 'エラー: ' + e;
     btn.disabled = false;
-    btn.textContent = '保官して再起動';
+    btn.textContent = '保存して再起動';
   }
 }
 
@@ -270,8 +290,15 @@ def save_airport():
     return "空港を変更しました。Piが再起動します。しばらくお待ちください..."
 
 
+_reboot_scheduled = False
+
+
 @app.route("/save", methods=["POST"])
 def save():
+    global _reboot_scheduled
+    if _reboot_scheduled:
+        return "再起動中です。しばらくお待ちください...", 200
+
     data = request.get_json()
     ssid    = data.get("ssid",    "").strip()
     pw      = data.get("pw",      "").strip()
@@ -279,13 +306,27 @@ def save():
     if not ssid:
         return "SSIDを入力してください", 400
     _save_config({"airport": airport})
-    result = subprocess.run(
-        ["sudo", "nmcli", "dev", "wifi", "connect", ssid, "password", pw],
-        capture_output=True, text=True, timeout=30
-    )
-    app.logger.info(f"nmcli connect: rc={result.returncode} out={result.stdout.strip()} err={result.stderr.strip()}")
-    if result.returncode != 0:
-        return f"WiFi接続失敗: {result.stderr.strip() or result.stdout.strip()}", 500
+
+    # すでに同じSSIDに接続済みなら nmcli 再接続をスキップ
+    try:
+        current_ssid = subprocess.run(
+            ["iwgetid", "-r"], capture_output=True, text=True, timeout=3
+        ).stdout.strip()
+    except Exception:
+        current_ssid = ""
+
+    if current_ssid != ssid:
+        result = subprocess.run(
+            ["sudo", "nmcli", "dev", "wifi", "connect", ssid, "password", pw],
+            capture_output=True, text=True, timeout=30
+        )
+        app.logger.info(f"nmcli connect: rc={result.returncode} out={result.stdout.strip()} err={result.stderr.strip()}")
+        if result.returncode != 0:
+            return f"WiFi接続失敗: {result.stderr.strip() or result.stdout.strip()}", 500
+    else:
+        app.logger.info(f"Already connected to {ssid}, skipping nmcli reconnect")
+
+    _reboot_scheduled = True
     subprocess.Popen(["bash", "-c", "sleep 5 && sudo reboot"])
     return "設定完了！Piが再起動します。しばらくお待ちください..."
 
