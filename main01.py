@@ -175,6 +175,43 @@ def show_ap_screen(screen):
 
 
 # ==========================================================
+# ドングル未接続案内画面
+# ==========================================================
+def show_no_dongle_screen(screen):
+    screen.fill((10, 12, 20))
+    w, h = screen.get_size()
+
+    lines = [
+        ("WiFiに接続できません", 42, (255, 80, 80), True),
+        ("", 40, None, False),
+        ("USBドングルを接続してください", 38, (255, 255, 255), True),
+        ("", 24, None, False),
+        ("ドングルを挿すと自動で設定モードが起動します", 26, (160, 160, 160), False),
+    ]
+
+    total_h = 0
+    for text, size, _, _ in lines:
+        if text:
+            total_h += pygame.font.Font(BASE_FONT, size).get_height() + 8
+        else:
+            total_h += size
+
+    y = (h - total_h) // 2
+    for text, size, color, bold in lines:
+        if not text:
+            y += size
+            continue
+        f = pygame.font.Font(BASE_FONT, size)
+        if bold:
+            f.set_bold(True)
+        s = f.render(text, True, color)
+        screen.blit(s, ((w - s.get_width()) // 2, y))
+        y += s.get_height() + 8
+
+    pygame.display.flip()
+
+
+# ==========================================================
 # KEN画像ロード（display確立後に実行すること）
 # ==========================================================
 def load_ken_image(path: str, scale_h: int = 100) -> pygame.Surface:
@@ -232,32 +269,34 @@ def main():
     pygame.mouse.set_visible(False)
 
     screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
-    #screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN | pygame.NOFRAME)
     pygame.display.set_caption("Weather Signage")
 
     width, height = screen.get_size()
 
     # -------------------------
-    # APモード待機（WiFi未接続 または APモードアクティブ時）
+    # WiFi接続チェック（4ケース分岐）
+    # ケース1,2: WiFi OK → そのまま天気表示へ
+    # ケース3: WiFi NG + APモードあり(ドングルあり) → QR設定画面
+    # ケース4: WiFi NG + APモードなし(ドングルなし) → ドングル未接続案内画面
     # -------------------------
     if not is_wifi_connected() or is_ap_mode_active():
-        show_ap_screen(screen)
-        while not is_wifi_connected() or is_ap_mode_active():
+        while True:
+            if is_wifi_connected() and not is_ap_mode_active():
+                break  # 接続完了 → 天気表示へ
+            if is_ap_mode_active():
+                show_ap_screen(screen)   # ケース3
+            else:
+                show_no_dongle_screen(screen)  # ケース4
             pygame.time.wait(5000)
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     pygame.quit()
                     return
-            show_ap_screen(screen)
-        # WiFi接続確認後、通常の天気表示へ続く
 
     # --- CPU表示（10秒更新）---
     cpu_text = "--"          # 表示用（例: "23%"）
     last_cpu_update = 0
-    # psutilは最初の1回だけ"初期化"しておくと値が安定
     psutil.cpu_percent(interval=None)
-
-    # ↑ CPU更新ブロックをここから削除してループ内へ移動
 
     icon_cache = {}
 
@@ -287,7 +326,6 @@ def main():
     ken_img = None
     ken_key_last = None
 
-    # 起動時は ken1 をロード
     ken_key_last = "ken1"
     try:
         ken_img = load_ken_image(KEN1_PATH, scale_h=100)
@@ -411,11 +449,11 @@ def main():
     xdotool = shutil.which("xdotool")
 
     # ---- Pi Zero W 最適化: dirty flag / キャッシュ用変数 ----
-    needs_redraw = False       # 描画が必要なときだけ True にする
-    last_drawn_minute = -1     # 直近に描画した分（minute != で再描画）
-    _sunrise_date = None       # 日の出/入り計算済み日付
+    needs_redraw = False
+    last_drawn_minute = -1
+    _sunrise_date = None
     sunrise_str, sunset_str = "", ""
-    work_summary = build_work_summary(hourly)  # 天気更新時だけ再計算
+    work_summary = build_work_summary(hourly)
 
     # ==========================================================
     # メインループ
@@ -540,7 +578,6 @@ def main():
                     else:
                         hourly, daily = fetch_weather_openmeteo(cfg["latitude"], cfg["longitude"])
 
-                        # 任意：警報も合わせて更新したい場合
                         warning_text, headline_text = fetch_warning_data(airport)
 
                     last_weather_update = now
@@ -609,8 +646,8 @@ def main():
             screen, width, height, BASE_FONT,
             airport_label,
             sunrise_str, sunset_str,
-            "",   # weather_updated_text（ヘッダーには出さない）
-            ""    # cpu_text（ヘッダーには出さない）
+            "",
+            ""
         )
 
         # KEN（右下）
