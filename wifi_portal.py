@@ -279,10 +279,14 @@ def save():
     if not ssid:
         return "SSIDを入力してください", 400
     _save_config({"airport": airport})
-    subprocess.run(
-        ["nmcli", "dev", "wifi", "connect", ssid, "password", pw]
+    result = subprocess.run(
+        ["sudo", "nmcli", "dev", "wifi", "connect", ssid, "password", pw],
+        capture_output=True, text=True, timeout=30
     )
-    subprocess.Popen(["bash", "-c", "sleep 3 && sudo reboot"])
+    app.logger.info(f"nmcli connect: rc={result.returncode} out={result.stdout.strip()} err={result.stderr.strip()}")
+    if result.returncode != 0:
+        return f"WiFi接続失敗: {result.stderr.strip() or result.stdout.strip()}", 500
+    subprocess.Popen(["bash", "-c", "sleep 5 && sudo reboot"])
     return "設定完了！Piが再起動します。しばらくお待ちください..."
 
 
