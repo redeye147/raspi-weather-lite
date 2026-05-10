@@ -1,6 +1,6 @@
 # raspi-weather-lite
 
-Raspberry Pi Zero W 向けに最適化した空港向け天気サイネージ表示システムです。
+空港向け天気サイネージ表示システムです。Raspberry Pi Zero W / Zero 2W / Pi 3 / Pi 4 に対応しています。
 
 ![スクリーンショットイメージ](weather_icons/100.png)
 
@@ -23,14 +23,37 @@ Raspberry Pi Zero W 向けに最適化した空港向け天気サイネージ表
 
 ## 動作環境
 
-- **ハードウェア**: Raspberry Pi Zero W
-- **OS**: Raspberry Pi OS Lite 32-bit（Bullseye / Bookworm）
+- **ハードウェア**: Raspberry Pi Zero W / Zero 2W / Pi 3 / Pi 4
+- **OS**: Raspberry Pi OS Lite 32-bit（Bookworm 推奨）
 - **Python**: 3.11+
 - **ディスプレイ**: HDMI接続（解像度不問、フルスクリーン表示）
 
 ## セットアップ
 
-### 1. 依存パッケージのインストール
+### 1コマンドで完了
+
+OS を書き込んだ Pi に SSH 接続し、以下を実行するだけです。
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/redeye147/raspi-weather-lite/main/setup.sh)
+```
+
+空港を選択すると、パッケージインストール・クローン・自動起動・WiFiポータル登録まですべて自動で行います。最後に再起動すると天気画面が表示されます。
+
+### OS書き込み時の準備（Raspberry Pi Imager）
+
+Imager の「詳細設定」で以下を事前設定しておくと SSH で接続できます。
+
+| 項目 | 設定値 |
+|------|--------|
+| ユーザー名 | `pi` |
+| WiFi | SSID・パスワード |
+| SSH | 有効（パスワード認証） |
+| OS | Raspberry Pi OS **Lite** (32-bit) |
+
+### 手動セットアップ（参考）
+
+#### 依存パッケージ
 
 ```bash
 sudo apt update
@@ -38,20 +61,18 @@ sudo apt install -y \
   python3-pygame python3-requests python3-psutil \
   python3-flask python3-pip \
   fonts-ipafont \
-  xorg xinit x11-xserver-utils xdotool \
-  network-manager
+  network-manager git
 
-pip3 install "astral>=2.0" qrcode --break-system-packages
+pip3 install "astral>=2.0" qrcode pillow pytz --break-system-packages
 ```
 
-### 2. リポジトリのクローン
+#### リポジトリのクローン
 
 ```bash
-git clone https://github.com/redeye147/raspi-weather-lite.git
-cd raspi-weather-lite
+git clone https://github.com/redeye147/raspi-weather-lite.git /home/pi/raspi-weather-lite
 ```
 
-### 3. 設定ファイル
+#### 設定ファイル
 
 `config.json` で空港と更新間隔を指定します（WiFiポータルからも変更可能）。
 
@@ -62,45 +83,32 @@ cd raspi-weather-lite
 }
 ```
 
-### 4. 自動起動設定（startx）
-
-SSHではなくHDMIコンソールから自動的に天気画面を起動するため、`~/.profile` に以下を追記します。
+#### 自動起動設定（X不要・kmsdrm直接描画）
 
 ```bash
-# ~/.profile
-if [ -z "$DISPLAY" ] && [ "$(tty)" = "/dev/tty1" ]; then
-  startx
+# コンソール自動ログイン
+sudo raspi-config nonint do_boot_behaviour B2
+
+# videoグループに追加（kmsdrm描画に必要）
+sudo usermod -a -G video,render pi
+```
+
+`~/.profile` に追記します。
+
+```bash
+if [ "$(tty)" = "/dev/tty1" ]; then
+    export SDL_VIDEODRIVER=kmsdrm
+    exec python3 /home/pi/raspi-weather-lite/main01.py
 fi
 ```
 
-`~/.xinitrc` を作成します。
+#### WiFiポータル（systemd）
 
 ```bash
-#!/bin/bash
-xset s off
-xset -dpms
-xset s noblank
-exec python3 /home/pi/raspi-weather-lite/main01.py
-```
-
-raspi-config でコンソール自動ログインを有効にしておきます。
-
-```bash
-sudo raspi-config
-# System Options → Boot / Auto Login → Console Autologin
-```
-
-### 5. WiFiポータル（systemd）
-
-```bash
-sudo cp wifi-portal.service /etc/systemd/system/
+sudo cp /home/pi/raspi-weather-lite/wifi-portal.service /etc/systemd/system/
 sudo systemctl enable wifi-portal
 sudo systemctl start wifi-portal
-```
 
-`sudo reboot` なしで `reboot` を実行できるように権限を付与します。
-
-```bash
 echo 'pi ALL=(ALL) NOPASSWD: /sbin/reboot' | sudo tee /etc/sudoers.d/pi-reboot
 ```
 
@@ -153,6 +161,7 @@ chmod +x install.sh
 
 ```
 raspi-weather-lite/
+├── setup.sh             # 1コマンドセットアップスクリプト
 ├── main01.py            # メインループ（起動・描画制御）
 ├── weather_draw.py      # 天気画面描画
 ├── header.py            # ヘッダー描画（日付・時刻・日の出）
