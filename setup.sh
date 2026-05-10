@@ -35,7 +35,7 @@ sudo apt install -y \
   fonts-ipafont \
   xorg xinit x11-xserver-utils xdotool \
   network-manager git
-pip3 install "astral>=2.0" qrcode pillow --break-system-packages -q
+pip3 install "astral>=2.0" qrcode pillow pytz --break-system-packages -q
 
 # ── [2/6] リポジトリ ───────────────────────────────
 echo -e "\n${YELLOW}[2/6] リポジトリをクローン中...${NC}"
