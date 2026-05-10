@@ -52,7 +52,7 @@ def get_git_version_str():
         date_ = subprocess.check_output(
             ["git", "log", "-1", "--format=%ci"],
             cwd=cwd, stderr=subprocess.DEVNULL
-        ).decode().strip()[:16]   # "YYYY-MM-DD HH:MM"
+        ).decode().strip()[:16]
         return f"{hash_}  {date_}"
     except Exception:
         return ""
@@ -61,7 +61,7 @@ def get_git_version_str():
 # ログローテーション（E61cと同等）
 # ==========================================================
 def setup_logging():
-    log_path = "/home/pi/raspi-weather-lite/displayraspi_log.txt"  # ←書ける場所に固定
+    log_path = "/home/pi/raspi-weather-lite/displayraspi_log.txt"
     handler = logging.handlers.TimedRotatingFileHandler(
         log_path,
         when="midnight",
@@ -74,7 +74,6 @@ def setup_logging():
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.INFO)
 
-    # 多重登録防止
     if root_logger.handlers:
         root_logger.handlers.clear()
     root_logger.addHandler(handler)
@@ -90,7 +89,7 @@ def is_wifi_connected() -> bool:
         )
         return bool(result.stdout.strip())
     except Exception:
-        return True  # エラー時は接続済みとみなす（フェールセーフ）
+        return True
 
 
 # ==========================================================
@@ -123,18 +122,15 @@ def show_ap_screen(screen):
     screen.fill((10, 12, 20))
     w, h = screen.get_size()
 
-    # QRコード生成
     wifi_qr = make_qr_surface(f"WIFI:S:{ssid};T:WPA;P:{password};;", max_size=160)
     url_qr  = make_qr_surface(portal_url, max_size=160)
 
-    # タイトル
     font_title = pygame.font.Font(BASE_FONT, 42)
     font_title.set_bold(True)
     title_surf = font_title.render("WiFi 設定モード", True, (255, 215, 0))
     title_y = 28
     screen.blit(title_surf, ((w - title_surf.get_width()) // 2, title_y))
 
-    # QRコード配置（左：WiFi接続用、右：ポータルURL用）
     qr_size = 160
     gap     = 80
     qr_y    = title_y + title_surf.get_height() + 24
@@ -146,14 +142,12 @@ def show_ap_screen(screen):
     if url_qr:
         screen.blit(url_qr, (right_x, qr_y))
 
-    # QRラベル
     font_label = pygame.font.Font(BASE_FONT, 22)
     label_y = qr_y + qr_size + 6
     for x, text in [(left_x, "① WiFi接続"), (right_x, "② 設定ページ")]:
         s = font_label.render(text, True, (180, 220, 255))
         screen.blit(s, (x + (qr_size - s.get_width()) // 2, label_y))
 
-    # 接続情報テキスト
     info_y = label_y + font_label.get_height() + 20
     for text, color, bold in [
         (f"SSID: {ssid}",      (255, 255, 255), True),
@@ -246,6 +240,8 @@ def main():
     parser.add_argument("--jma", action="store_true", default=True)
     parser.add_argument("--interval-hours", type=float, default=_default_interval)
     parser.add_argument("--no-hdmi-refresh", action="store_true")
+    parser.add_argument("--test-case", type=int, choices=[3, 4], default=None,
+                        help="テスト用: 3=QR設定画面, 4=ドングル未接続画面 を強制表示（ESCで終了）")
     args, unknown = parser.parse_known_args()
 
     airport = args.airport
@@ -274,6 +270,22 @@ def main():
     width, height = screen.get_size()
 
     # -------------------------
+    # テストモード（--test-case 3 or 4）
+    # -------------------------
+    if args.test_case is not None:
+        if args.test_case == 3:
+            show_ap_screen(screen)
+        else:
+            show_no_dongle_screen(screen)
+        while True:
+            pygame.time.wait(200)
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit(); return
+                if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                    pygame.quit(); return
+
+    # -------------------------
     # WiFi接続チェック（4ケース分岐）
     # ケース1,2: WiFi OK → そのまま天気表示へ
     # ケース3: WiFi NG + APモードあり(ドングルあり) → QR設定画面
@@ -282,11 +294,11 @@ def main():
     if not is_wifi_connected() or is_ap_mode_active():
         while True:
             if is_wifi_connected() and not is_ap_mode_active():
-                break  # 接続完了 → 天気表示へ
+                break
             if is_ap_mode_active():
-                show_ap_screen(screen)   # ケース3
+                show_ap_screen(screen)
             else:
-                show_no_dongle_screen(screen)  # ケース4
+                show_no_dongle_screen(screen)
             pygame.time.wait(5000)
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
@@ -294,15 +306,12 @@ def main():
                     return
 
     # --- CPU表示（10秒更新）---
-    cpu_text = "--"          # 表示用（例: "23%"）
+    cpu_text = "--"
     last_cpu_update = 0
     psutil.cpu_percent(interval=None)
 
     icon_cache = {}
 
-    # -------------------------
-    # gitバージョン表示用サーフェス（1回だけ生成）
-    # -------------------------
     git_version_str = get_git_version_str()
     if git_version_str:
         git_font = pygame.font.Font(BASE_FONT, 16)
@@ -310,22 +319,14 @@ def main():
     else:
         git_surf = None
 
-    # -------------------------
-    # QRコード生成（WiFiポータルURL）
-    # -------------------------
     _local_ip = get_local_ip()
     qr_surf = make_qr_surface(f"http://{_local_ip}:8080", max_size=54) if _local_ip else None
-    _qr_date = None  # 日付変更時に再生成するための記録
+    _qr_date = None
 
-    # -------------------------
-    # KEN画像（display確立後にロード）
-    # -------------------------
     KEN1_PATH = os.path.join(ICON_DIR, "ken1.png")
     KEN6_PATH = os.path.join(ICON_DIR, "ken6.png")
 
     ken_img = None
-    ken_key_last = None
-
     ken_key_last = "ken1"
     try:
         ken_img = load_ken_image(KEN1_PATH, scale_h=100)
@@ -334,9 +335,6 @@ def main():
         ken_img = None
         ken_key_last = None
 
-    # =========================
-    # 警報取得（市町村コード版）
-    # =========================
     HEADERS = {"User-Agent": "Mozilla/5.0"}
 
     AIRPORT_WARNING = {
@@ -387,9 +385,6 @@ def main():
 
         return " / ".join(warning_list), headline
 
-    # -------------------------
-    # JMA初回取得（overview/warning）
-    # -------------------------
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     jma_cache_path = os.path.join(BASE_DIR, f"jma_{airport}.json")
 
@@ -399,11 +394,9 @@ def main():
         cache_json_path=jma_cache_path
     )
 
-    # 概況と発表時刻は overview から
     headline_text = jma_data.get("headline", "")
     updated_text  = jma_data.get("updated", "")
 
-    # 警報・注意報（fetch_warning_data を起動時1回だけ呼ぶ）
     try:
         warning_text, _ = fetch_warning_data(airport)
     except Exception as e:
@@ -412,9 +405,6 @@ def main():
     last_jma_update = time.time()
     weather_updated_text = ""
 
-    # -------------------------
-    # 初回天気取得
-    # -------------------------
     fetch_ok = True
     try:
         if args.jma:
@@ -448,7 +438,6 @@ def main():
     last_time_update_minute = -1
     xdotool = shutil.which("xdotool")
 
-    # ---- Pi Zero W 最適化: dirty flag / キャッシュ用変数 ----
     needs_redraw = False
     last_drawn_minute = -1
     _sunrise_date = None
@@ -462,9 +451,6 @@ def main():
         now = datetime.datetime.now(JST)
         needs_redraw = False
 
-        # -------------------------
-        # APモードが途中で起動した場合（手動 systemctl start wifi-setup-mode）
-        # -------------------------
         if is_ap_mode_active():
             show_ap_screen(screen)
             while is_ap_mode_active():
@@ -477,27 +463,18 @@ def main():
             needs_redraw = True
             continue
 
-        # -------------------------
-        # CPU率を10秒ごとに更新
-        # -------------------------
         if time.time() - last_cpu_update >= 10:
             cpu = psutil.cpu_percent(interval=None)
             cpu_text = f"{cpu:.0f}%"
             last_cpu_update = time.time()
             needs_redraw = True
 
-        # -------------------------
-        # 分が変わったら再描画（時計更新 + 焼き付き防止）
-        # -------------------------
         if now.minute != last_drawn_minute:
             needs_redraw = True
             last_time_update_minute = now.minute
             if xdotool:
                 subprocess.run([xdotool, "key", "Shift_L"], capture_output=True)
 
-        # -------------------------
-        # KEN画像（12時だけ ken6 に切替）
-        # -------------------------
         ken_key = "ken6" if now.hour == 12 else "ken1"
         if ken_key != ken_key_last:
             try:
@@ -511,9 +488,6 @@ def main():
                 ken_img = None
                 ken_key_last = None
 
-        # -------------------------
-        # 23:50 定時更新
-        # -------------------------
         if now.hour == 23 and now.minute == 50:
             today_str = now.strftime("%Y-%m-%d")
             if getattr(main, "_updated_2350_date", "") != today_str:
@@ -543,9 +517,6 @@ def main():
                 except Exception as e:
                     logging.error(f"23:50更新失敗: {e}")
 
-        # -------------------------
-        # JMAアラート1時間更新
-        # -------------------------
         if time.time() - last_jma_update > 3600:
             try:
                 new_warn, new_head = fetch_warning_data(airport)
@@ -555,9 +526,6 @@ def main():
             except Exception as e:
                 logging.error(f"JMA更新失敗: {e}")
 
-        # -------------------------
-        # 定期更新（interval-hours）
-        # -------------------------
         if (now - last_weather_update).total_seconds() >= args.interval_hours * 3600:
             if 5 < now.hour <= 23:
                 try:
@@ -577,7 +545,6 @@ def main():
                             daily.append(d)
                     else:
                         hourly, daily = fetch_weather_openmeteo(cfg["latitude"], cfg["longitude"])
-
                         warning_text, headline_text = fetch_warning_data(airport)
 
                     last_weather_update = now
@@ -593,26 +560,17 @@ def main():
             else:
                 pygame.time.wait(60000)
 
-        # -------------------------
-        # 日の出/日の入り（日付変更時のみ再計算）
-        # -------------------------
         if now.date() != _sunrise_date:
             sunrise_str, sunset_str = get_sunrise_sunset_str(cfg["latitude"], cfg["longitude"])
             _sunrise_date = now.date()
             needs_redraw = True
 
-        # -------------------------
-        # QRコード（日付変更 or IP変化時に再生成）
-        # -------------------------
         if now.date() != _qr_date:
             _cur_ip = get_local_ip()
             if _cur_ip:
                 qr_surf = make_qr_surface(f"http://{_cur_ip}:8080", max_size=54)
             _qr_date = now.date()
 
-        # -------------------------
-        # 描画（変化があった時だけ）
-        # -------------------------
         if not needs_redraw:
             for event in pygame.event.get():
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
@@ -622,57 +580,33 @@ def main():
             continue
 
         draw_weather(
-            screen,
-            width,
-            height,
-            hourly,
-            daily,
-            icon_cache,
-            BASE_FONT,
-            warning_text,
-            headline_text,
-            updated_text,
-            weather_updated_text,
-            airport_label,
-            sunrise_str,
-            sunset_str,
-            work_summary,
-            cpu_text,
-            fetch_ok=fetch_ok,
-            qr_surf=qr_surf
+            screen, width, height,
+            hourly, daily, icon_cache, BASE_FONT,
+            warning_text, headline_text, updated_text,
+            weather_updated_text, airport_label,
+            sunrise_str, sunset_str, work_summary, cpu_text,
+            fetch_ok=fetch_ok, qr_surf=qr_surf
         )
 
         draw_header(
             screen, width, height, BASE_FONT,
-            airport_label,
-            sunrise_str, sunset_str,
-            "",
-            ""
+            airport_label, sunrise_str, sunset_str, "", ""
         )
 
-        # KEN（右下）
         if ken_img is not None:
             margin = 30
-            screen.blit(
-                ken_img,
+            screen.blit(ken_img,
                 (width - ken_img.get_width() - margin,
-                 height - ken_img.get_height() - margin)
-            )
+                 height - ken_img.get_height() - margin))
 
-        # gitバージョン（右下隅）
         if git_surf is not None:
-            screen.blit(
-                git_surf,
+            screen.blit(git_surf,
                 (width - git_surf.get_width() - 8,
-                 height - git_surf.get_height() - 4)
-            )
+                 height - git_surf.get_height() - 4))
 
         pygame.display.flip()
         last_drawn_minute = now.minute
 
-        # -------------------------
-        # ESC終了
-        # -------------------------
         for event in pygame.event.get():
             if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                 pygame.quit()
