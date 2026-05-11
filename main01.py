@@ -2,10 +2,10 @@
 # -*- coding: utf-8 -*-
 """
 main01.py
-E61c 完全互換100%版（整理版）
 - flip/update は main 側で 1回だけ
 - KEN画像は main 側で常時表示（12時は ken6）
 - KENロードは display確立（set_mode）後に実行（surface invalid 対策）
+- 天気取得はバックグラウンドスレッドで実行（メインループのハング防止）
 """
 
 import sys
@@ -20,6 +20,8 @@ import shutil
 import logging
 import logging.handlers
 import traceback
+import threading
+import socket
 import requests
 import psutil
 import subprocess
@@ -39,6 +41,90 @@ from fetch_weather import (
 
 BASE_FONT = "/usr/share/fonts/opentype/ipafont-gothic/ipag.ttf"
 
+# ネットワーク取得の最大待ち時間（秒）
+# これを超えたらスレッドを放棄してキャッシュ表示に切り替える
+FETCH_TIMEOUT = 30
+
+# TCPレベルのタイムアウト（requests の timeout 設定が効かない場合の保険）
+socket.setdefaulttimeout(15)
+
+
+# ==========================================================
+# バックグラウンド天気取得クラス
+# ==========================================================
+class WeatherFetcher:
+    """天気データをバックグラウンドスレッドで取得する。
+    メインループをブロックしないため、ネットワークハングがあっても
+    画面更新・ESC応答・SSH接続は維持される。
+    """
+
+    def __init__(self, cfg, args):
+        self._cfg = cfg
+        self._args = args
+        self._thread = None
+        self._result = None
+        self._ok = False
+        self._event = threading.Event()
+        self._started_at = 0.0
+
+    def start(self):
+        """フェッチスレッドを開始する。既に実行中なら何もしない。"""
+        if self._thread and self._thread.is_alive():
+            return
+        self._result = None
+        self._ok = False
+        self._event.clear()
+        self._started_at = time.time()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def _run(self):
+        try:
+            cfg, args = self._cfg, self._args
+            if args.jma:
+                hourly, om_daily = fetch_weather_openmeteo(cfg["latitude"], cfg["longitude"])
+                _, jma_daily = fetch_weather_jma(cfg["office_code"], cfg["area_codes"])
+                om_map = {d["date"]: d for d in om_daily}
+                daily = []
+                for d in jma_daily[:5]:
+                    od = om_map.get(d.get("date"))
+                    if od:
+                        if d.get("pop") in ("-%", "", None):
+                            d["pop"] = od.get("pop")
+                        if d.get("temp") in ("-/-", "", None):
+                            d["temp"] = od.get("temp")
+                    daily.append(d)
+            else:
+                hourly, daily = fetch_weather_openmeteo(cfg["latitude"], cfg["longitude"])
+            self._result = (hourly, daily)
+            self._ok = True
+        except Exception as e:
+            logging.error(f"WeatherFetcher error: {e}")
+            self._ok = False
+        finally:
+            self._event.set()
+
+    def poll(self):
+        """(done, hourly, daily, ok) を返す。実行中なら done=False。
+        FETCH_TIMEOUT を超えたらタイムアウトとして done=True, ok=False を返す。
+        """
+        if self._thread is None:
+            return False, None, None, None
+        if self._event.is_set():
+            self._thread = None
+            if self._ok and self._result:
+                return True, self._result[0], self._result[1], True
+            return True, None, None, False
+        if time.time() - self._started_at > FETCH_TIMEOUT:
+            logging.error(f"WeatherFetcher: タイムアウト ({FETCH_TIMEOUT}秒) スレッドを放棄")
+            self._thread = None  # daemon=True なので自動終了
+            return True, None, None, False
+        return False, None, None, None
+
+    def is_running(self):
+        return self._thread is not None and self._thread.is_alive()
+
+
 # ==========================================================
 # gitバージョン情報取得（起動時1回）
 # ==========================================================
@@ -57,8 +143,9 @@ def get_git_version_str():
     except Exception:
         return ""
 
+
 # ==========================================================
-# ログローテーション（E61cと同等）
+# ログローテーション
 # ==========================================================
 def setup_logging():
     log_path = "/home/pi/raspi-weather-lite/displayraspi_log.txt"
@@ -70,13 +157,12 @@ def setup_logging():
     )
     formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
     handler.setFormatter(formatter)
-
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.INFO)
-
     if root_logger.handlers:
         root_logger.handlers.clear()
     root_logger.addHandler(handler)
+
 
 # ==========================================================
 # WiFi接続確認
@@ -96,7 +182,6 @@ def is_wifi_connected() -> bool:
 # APモードアクティブ確認
 # ==========================================================
 def is_ap_mode_active() -> bool:
-    """start_ap.sh が /run/wifi-setup/state を作成・stop_ap.sh が削除する。"""
     return os.path.exists("/run/wifi-setup/state")
 
 
@@ -270,7 +355,7 @@ def main():
     width, height = screen.get_size()
 
     # -------------------------
-    # テストモード（--test-case 3 or 4）
+    # テストモード
     # -------------------------
     if args.test_case is not None:
         if args.test_case == 3:
@@ -286,10 +371,7 @@ def main():
                     pygame.quit(); return
 
     # -------------------------
-    # WiFi接続チェック（4ケース分岐）
-    # ケース1,2: WiFi OK → そのまま天気表示へ
-    # ケース3: WiFi NG + APモードあり(ドングルあり) → QR設定画面
-    # ケース4: WiFi NG + APモードなし(ドングルなし) → ドングル未接続案内画面
+    # WiFi接続チェック
     # -------------------------
     if not is_wifi_connected() or is_ap_mode_active():
         while True:
@@ -305,7 +387,9 @@ def main():
                     pygame.quit()
                     return
 
-    # --- CPU表示（10秒更新）---
+    # -------------------------
+    # 各種初期化
+    # -------------------------
     cpu_text = "--"
     last_cpu_update = 0
     psutil.cpu_percent(interval=None)
@@ -382,7 +466,6 @@ def main():
 
         if not warning_list:
             return "警報・注意報なし", headline
-
         return " / ".join(warning_list), headline
 
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -405,12 +488,14 @@ def main():
     last_jma_update = time.time()
     weather_updated_text = ""
 
+    # -------------------------
+    # 初回天気取得（同期）
+    # -------------------------
     fetch_ok = True
     try:
         if args.jma:
             hourly, om_daily = fetch_weather_openmeteo(cfg["latitude"], cfg["longitude"])
             _, jma_daily = fetch_weather_jma(cfg["office_code"], cfg["area_codes"])
-
             om_map = {d["date"]: d for d in om_daily}
             daily = []
             for d in jma_daily[:5]:
@@ -444,6 +529,12 @@ def main():
     sunrise_str, sunset_str = "", ""
     work_summary = build_work_summary(hourly)
 
+    # -------------------------
+    # バックグラウンドフェッチャー初期化
+    # -------------------------
+    fetcher = WeatherFetcher(cfg, args)
+    _fetch_pending = False  # フェッチスレッドが実行中かどうか
+
     # ==========================================================
     # メインループ
     # ==========================================================
@@ -451,6 +542,7 @@ def main():
         now = datetime.datetime.now(JST)
         needs_redraw = False
 
+        # APモード中
         if is_ap_mode_active():
             show_ap_screen(screen)
             while is_ap_mode_active():
@@ -463,18 +555,21 @@ def main():
             needs_redraw = True
             continue
 
+        # CPU更新（10秒ごと）
         if time.time() - last_cpu_update >= 10:
             cpu = psutil.cpu_percent(interval=None)
             cpu_text = f"{cpu:.0f}%"
             last_cpu_update = time.time()
             needs_redraw = True
 
+        # 分更新
         if now.minute != last_drawn_minute:
             needs_redraw = True
             last_time_update_minute = now.minute
             if xdotool:
                 subprocess.run([xdotool, "key", "Shift_L"], capture_output=True)
 
+        # KEN画像切替（12時）
         ken_key = "ken6" if now.hour == 12 else "ken1"
         if ken_key != ken_key_last:
             try:
@@ -482,89 +577,67 @@ def main():
                 ken_img = load_ken_image(path, scale_h=100)
                 ken_key_last = ken_key
                 needs_redraw = True
-                print("KEN switched:", ken_key, flush=True)
             except Exception as e:
-                print("KEN switch error:", ken_key, repr(e), flush=True)
                 ken_img = None
                 ken_key_last = None
 
+        # 23:50 定時更新（バックグラウンド）
         if now.hour == 23 and now.minute == 50:
             today_str = now.strftime("%Y-%m-%d")
-            if getattr(main, "_updated_2350_date", "") != today_str:
-                try:
-                    if args.jma:
-                        hourly, om_daily = fetch_weather_openmeteo(cfg["latitude"], cfg["longitude"])
-                        _, jma_daily = fetch_weather_jma(cfg["office_code"], cfg["area_codes"])
+            if getattr(main, "_updated_2350_date", "") != today_str and not _fetch_pending:
+                fetcher.start()
+                _fetch_pending = True
+                main._updated_2350_date = today_str
+                logging.info("23:50定時取得開始")
 
-                        om_map = {d["date"]: d for d in om_daily}
-                        daily = []
-                        for d in jma_daily[:5]:
-                            od = om_map.get(d.get("date"))
-                            if od:
-                                if d.get("pop") in ("-%", "", None):
-                                    d["pop"] = od.get("pop")
-                                if d.get("temp") in ("-/-", "", None):
-                                    d["temp"] = od.get("temp")
-                            daily.append(d)
-                    else:
-                        hourly, daily = fetch_weather_openmeteo(cfg["latitude"], cfg["longitude"])
-
-                    logging.info("23:50定時更新実施")
-                    weather_updated_text = now.strftime("天気更新 %H:%M")
-                    work_summary = build_work_summary(hourly)
-                    main._updated_2350_date = today_str
-                    needs_redraw = True
-                except Exception as e:
-                    logging.error(f"23:50更新失敗: {e}")
-
+        # 警報更新（1時間ごと、timeout=5で短いのでメインスレッドで実行）
         if time.time() - last_jma_update > 3600:
             try:
-                new_warn, new_head = fetch_warning_data(airport)
+                new_warn, _ = fetch_warning_data(airport)
                 warning_text = new_warn
                 last_jma_update = time.time()
                 needs_redraw = True
             except Exception as e:
                 logging.error(f"JMA更新失敗: {e}")
 
-        if (now - last_weather_update).total_seconds() >= args.interval_hours * 3600:
+        # 定期天気取得（バックグラウンド）
+        if not _fetch_pending and (now - last_weather_update).total_seconds() >= args.interval_hours * 3600:
             if 5 < now.hour <= 23:
-                try:
-                    if args.jma:
-                        hourly, om_daily = fetch_weather_openmeteo(cfg["latitude"], cfg["longitude"])
-                        _, jma_daily = fetch_weather_jma(cfg["office_code"], cfg["area_codes"])
+                fetcher.start()
+                _fetch_pending = True
+                logging.info("定期天気取得開始")
+            else:
+                # 深夜帯はスキップして last_weather_update をずらし再チェックを防ぐ
+                last_weather_update = now
 
-                        om_map = {d["date"]: d for d in om_daily}
-                        daily = []
-                        for d in jma_daily[:5]:
-                            od = om_map.get(d.get("date"))
-                            if od:
-                                if d.get("pop") in ("-%", "", None):
-                                    d["pop"] = od.get("pop")
-                                if d.get("temp") in ("-/-", "", None):
-                                    d["temp"] = od.get("temp")
-                            daily.append(d)
-                    else:
-                        hourly, daily = fetch_weather_openmeteo(cfg["latitude"], cfg["longitude"])
-                        warning_text, headline_text = fetch_warning_data(airport)
-
+        # フェッチ結果ポーリング
+        if _fetch_pending:
+            done, new_hourly, new_daily, ok = fetcher.poll()
+            if done:
+                _fetch_pending = False
+                if ok and new_hourly is not None:
+                    hourly = new_hourly
+                    daily = new_daily
                     last_weather_update = now
                     weather_updated_text = now.strftime("天気更新 %H:%M")
                     work_summary = build_work_summary(hourly)
                     fetch_ok = True
-                    needs_redraw = True
-
-                except Exception as e:
-                    logging.error(f"Periodic fetch failed: {e}")
+                    logging.info("天気取得完了")
+                else:
+                    # 失敗 → 30分後に再試行
+                    last_weather_update = now - datetime.timedelta(hours=args.interval_hours) \
+                                              + datetime.timedelta(minutes=30)
                     fetch_ok = False
-                    needs_redraw = True
-            else:
-                pygame.time.wait(60000)
+                    logging.error("天気取得失敗またはタイムアウト。30分後に再試行")
+                needs_redraw = True
 
+        # 日の出計算（日付変更時のみ）
         if now.date() != _sunrise_date:
             sunrise_str, sunset_str = get_sunrise_sunset_str(cfg["latitude"], cfg["longitude"])
             _sunrise_date = now.date()
             needs_redraw = True
 
+        # QRコード更新（日付変更時のみ）
         if now.date() != _qr_date:
             _cur_ip = get_local_ip()
             if _cur_ip:
