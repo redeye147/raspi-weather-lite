@@ -26,18 +26,19 @@ echo -e "空港: ${GREEN}$AIRPORT${NC}"
 
 REPO_DIR="/home/pi/raspi-weather-lite"
 
-# ── [1/5] パッケージ ───────────────────────────────
-echo -e "\n${YELLOW}[1/5] パッケージをインストール中...${NC}"
+# ── [1/6] パッケージ ───────────────────────────────
+echo -e "\n${YELLOW}[1/6] パッケージをインストール中...${NC}"
 sudo apt update -qq
 sudo apt install -y \
   python3-pygame python3-requests python3-psutil \
   python3-flask python3-pip \
   fonts-ipafont \
-  network-manager git
+  network-manager git \
+  watchdog
 pip3 install "astral>=2.0" qrcode pillow pytz --break-system-packages -q
 
-# ── [2/5] リポジトリ ───────────────────────────────
-echo -e "\n${YELLOW}[2/5] リポジトリをクローン中...${NC}"
+# ── [2/6] リポジトリ ───────────────────────────────
+echo -e "\n${YELLOW}[2/6] リポジトリをクローン中...${NC}"
 if [ -d "$REPO_DIR/.git" ]; then
   echo "既存リポジトリを更新します"
   git -C "$REPO_DIR" pull
@@ -45,8 +46,8 @@ else
   git clone https://github.com/redeye147/raspi-weather-lite.git "$REPO_DIR"
 fi
 
-# ── [3/5] 設定ファイル ─────────────────────────────
-echo -e "\n${YELLOW}[3/5] 設定ファイルを作成中...${NC}"
+# ── [3/6] 設定ファイル ─────────────────────────────
+echo -e "\n${YELLOW}[3/6] 設定ファイルを作成中...${NC}"
 cat > "$REPO_DIR/config.json" << EOF
 {
   "airport": "$AIRPORT",
@@ -54,16 +55,12 @@ cat > "$REPO_DIR/config.json" << EOF
 }
 EOF
 
-# ── [4/5] 自動起動（kmsdrm / X不要）─────────────────
-echo -e "\n${YELLOW}[4/5] 自動起動を設定中...${NC}"
+# ── [4/6] 自動起動（kmsdrm / X不要）─────────────────
+echo -e "\n${YELLOW}[4/6] 自動起動を設定中...${NC}"
 
-# コンソール自動ログイン有効化
 sudo raspi-config nonint do_boot_behaviour B2
-
-# videoグループ追加（kmsdrm描画に必要）
 sudo usermod -a -G video,render pi
 
-# .profile を設定（startx不要・直接kmsdrm描画）
 PROFILE="$HOME/.profile"
 if ! grep -q "SDL_VIDEODRIVER" "$PROFILE" 2>/dev/null; then
   cat >> "$PROFILE" << 'PROFILE_EOF'
@@ -75,15 +72,30 @@ fi
 PROFILE_EOF
 fi
 
-# ── [5/5] WiFiポータル systemd ────────────────────
-echo -e "\n${YELLOW}[5/5] WiFiポータルをsystemdに登録中...${NC}"
+# ── [5/6] WiFiポータル systemd ────────────────────
+echo -e "\n${YELLOW}[5/6] WiFiポータルをsystemdに登録中...${NC}"
 sudo cp "$REPO_DIR/wifi-portal.service" /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable wifi-portal
 sudo systemctl start wifi-portal
-
-# reboot権限
 echo 'pi ALL=(ALL) NOPASSWD: /sbin/reboot' | sudo tee /etc/sudoers.d/pi-reboot > /dev/null
+
+# ── [6/6] watchdog ────────────────────────────────
+echo -e "\n${YELLOW}[6/6] watchdogを設定中...${NC}"
+
+cfg=/boot/firmware/config.txt
+if ! grep -q "dtparam=watchdog=on" "$cfg" 2>/dev/null; then
+  echo 'dtparam=watchdog=on' | sudo tee -a "$cfg" > /dev/null
+fi
+
+sudo tee /etc/watchdog.conf > /dev/null << 'EOF'
+watchdog-device = /dev/watchdog
+watchdog-timeout = 15
+max-load-1 = 24
+min-memory = 1
+EOF
+
+sudo systemctl enable watchdog > /dev/null 2>&1
 
 # ── 完了 ──────────────────────────────────────────
 echo -e "\n${GREEN}✓ セットアップ完了！${NC}"
