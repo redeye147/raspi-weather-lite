@@ -23,7 +23,7 @@ _setup_watchdog() {
     local cfg=/boot/firmware/config.txt
     if ! grep -q "dtparam=watchdog=on" "$cfg" 2>/dev/null; then
         echo 'dtparam=watchdog=on' | sudo tee -a "$cfg" > /dev/null
-        echo "  DTパラメータを追加しました"
+        echo "  DTパラメータを追加しました（再起動後に有効）"
     fi
 
     sudo tee /etc/watchdog.conf > /dev/null << 'EOF'
@@ -34,8 +34,9 @@ min-memory = 1
 EOF
 
     sudo systemctl enable watchdog > /dev/null 2>&1
-    sudo systemctl restart watchdog
-    echo -e "  ${GREEN}watchdog 設定完了${NC}"
+    # /dev/watchdog は再起動後に有効になるため起動失敗は無視する
+    sudo systemctl restart watchdog 2>/dev/null || true
+    echo -e "  ${GREEN}watchdog 設定完了（再起動後に有効）${NC}"
 }
 
 if systemctl is-active --quiet watchdog 2>/dev/null; then
