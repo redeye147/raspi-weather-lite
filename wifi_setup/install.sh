@@ -72,9 +72,13 @@ if [ -f "${PROJECT_DIR}/main01.service" ]; then
   sudo cp "${PROJECT_DIR}/main01.service" /etc/systemd/system/
   sudo systemctl daemon-reload
   sudo systemctl enable main01.service
-  # .bashrc / .xinitrc の main01.py 起動行をコメントアウト（重複起動防止）
-  sed -i 's|^\([[:space:]]*\)python3 main01.py|\1# python3 main01.py  # moved to systemd main01.service|g' \
-      /home/pi/.bashrc /home/pi/.xinitrc 2>/dev/null || true
+  # .bashrc / .xinitrc / .profile の main01.py 起動行をコメントアウト（重複起動防止）
+  for _f in /home/pi/.bashrc /home/pi/.xinitrc /home/pi/.profile /home/pi/.bash_profile; do
+    [ -f "$_f" ] || continue
+    sed -i \
+      's|^\([[:space:]]*\)\(exec \)\{0,1\}python3 \(/home/pi/raspi-weather-lite/\)\{0,1\}main01\.py|\1# &  # moved to systemd main01.service|g' \
+      "$_f" || true
+  done
 fi
 
 echo ""
