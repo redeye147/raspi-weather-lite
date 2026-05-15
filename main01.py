@@ -360,6 +360,10 @@ def main():
     parser.add_argument("--no-hdmi-refresh", action="store_true")
     parser.add_argument("--test-case", type=int, choices=[3, 4], default=None,
                         help="テスト用: 3=QR設定画面, 4=ドングル未接続画面 を強制表示（ESCで終了）")
+    parser.add_argument("--wbgt-test", type=float, default=None,
+                        help="テスト用: WBGT値を強制指定（例: --wbgt-test 33.5）")
+    parser.add_argument("--wbgt-alert", action="store_true",
+                        help="テスト用: 熱中症警戒アラート発令バナーを強制表示")
     args, unknown = parser.parse_known_args()
 
     airport = args.airport
@@ -640,7 +644,21 @@ def main():
         # WBGT 熱中症リスク更新（1時間ごと）
         if time.time() - last_wbgt_update > 3600:
             try:
-                _, wbgt_alert, wbgt_level_info = fetch_wbgt(airport)
+                if args.wbgt_test is not None:
+                    # テストモード: 指定された値から level_info を生成
+                    from fetch_wbgt import WBGT_LEVELS
+                    v = args.wbgt_test
+                    wbgt_level_info = None
+                    for threshold, label, bg, fg in WBGT_LEVELS:
+                        if v >= threshold:
+                            wbgt_level_info = {"label": label, "bg": bg, "fg": fg, "value": v}
+                            break
+                    wbgt_alert = args.wbgt_alert or (v >= 33)
+                    logging.info(f"WBGT テストモード: value={v} alert={wbgt_alert}")
+                else:
+                    _, wbgt_alert, wbgt_level_info = fetch_wbgt(airport)
+                    if args.wbgt_alert:
+                        wbgt_alert = True
                 last_wbgt_update = time.time()
                 needs_redraw = True
             except Exception as e:
