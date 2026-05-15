@@ -4,15 +4,15 @@
 
 set +e
 
-# ─── ステップ1: NetworkManager の online 状態を待つ（最大60秒） ───
+# ─── ステップ1: NetworkManager の online 状態を待つ（最大20秒） ───
 if command -v nm-online > /dev/null 2>&1; then
-    logger -t wifi-setup-auto "Waiting for NetworkManager to come online (nm-online -t 60)..."
-    nm-online -t 60 -q
+    logger -t wifi-setup-auto "Waiting for NetworkManager to come online (nm-online -t 20)..."
+    nm-online -t 20 -q
     logger -t wifi-setup-auto "nm-online finished (rc=$?)"
 fi
 
-# ─── ステップ2: wlan0 の接続を確認＋追加ポーリング（最大60秒） ───
-TIMEOUT=60
+# ─── ステップ2: wlan0 の接続を確認＋追加ポーリング（最大20秒） ───
+TIMEOUT=20
 INTERVAL=2
 ELAPSED=0
 
@@ -33,5 +33,5 @@ if [ ! -e /sys/class/net/wlan1 ]; then
     exit 1
 fi
 
-logger -t wifi-setup-auto "wlan0 not connected after ~120s total - entering setup mode"
+logger -t wifi-setup-auto "wlan0 not connected after ~40s total - entering setup mode"
 exec systemctl start wifi-setup-mode

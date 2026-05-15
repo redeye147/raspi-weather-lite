@@ -186,6 +186,37 @@ def is_ap_mode_active() -> bool:
 
 
 # ==========================================================
+# USB WiFiドングル(wlan1)接続確認
+# ==========================================================
+def has_wlan1() -> bool:
+    return os.path.exists("/sys/class/net/wlan1")
+
+
+# ==========================================================
+# APモード自動起動
+# ==========================================================
+_last_ap_trigger_time = 0.0
+
+def trigger_ap_mode() -> bool:
+    global _last_ap_trigger_time
+    # 連続トリガ防止（60秒以内の再呼び出しは無視）
+    if time.time() - _last_ap_trigger_time < 60:
+        return False
+    try:
+        subprocess.Popen(
+            ["sudo", "systemctl", "start", "wifi-setup-mode"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        _last_ap_trigger_time = time.time()
+        logging.info("wifi-setup-mode 自動起動をトリガ")
+        return True
+    except Exception as e:
+        logging.error(f"wifi-setup-mode 起動失敗: {e}")
+        return False
+
+
+# ==========================================================
 # APモード案内画面（QRコード2枚）
 # ==========================================================
 def show_ap_screen(screen):
@@ -379,6 +410,9 @@ def main():
                 break
             if is_ap_mode_active():
                 show_ap_screen(screen)
+            elif has_wlan1():
+                trigger_ap_mode()
+                show_ap_screen(screen)
             else:
                 show_no_dongle_screen(screen)
             pygame.time.wait(5000)
@@ -525,6 +559,7 @@ def main():
 
     needs_redraw = False
     last_drawn_minute = -1
+    last_wifi_check = time.time()
     _sunrise_date = None
     sunrise_str, sunset_str = "", ""
     work_summary = build_work_summary(hourly)
@@ -554,6 +589,13 @@ def main():
                 show_ap_screen(screen)
             needs_redraw = True
             continue
+
+        # WiFi切断監視（30秒ごと）→ ドングル接続時は AP モード自動起動
+        if time.time() - last_wifi_check >= 30:
+            last_wifi_check = time.time()
+            if not is_wifi_connected() and has_wlan1() and not is_ap_mode_active():
+                logging.warning("WiFi切断検出 → AP モード自動起動")
+                trigger_ap_mode()
 
         # CPU更新（10秒ごと）
         if time.time() - last_cpu_update >= 10:
