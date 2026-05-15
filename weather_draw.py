@@ -99,13 +99,14 @@ def draw_today_title_bar(
 # ==========================================
 # 熱中症バッジ描画
 # ==========================================
-def draw_wbgt_badge(screen, width, base_font_path, level_info: dict):
-    """右上に WBGT レベルバッジを表示。level_info が None なら何もしない。"""
+def draw_wbgt_badge(screen, width, height, base_font_path, level_info: dict):
+    """ヘッダー直下の右端に WBGT レベルバッジを表示。level_info が None なら何もしない。"""
     if level_info is None:
         return
-    bw, bh = 200, 72
+    header_h = int(height * 0.25)
+    bw, bh = 200, 68
     bx = width - bw - 8
-    by = 8
+    by = header_h + 6
     pygame.draw.rect(screen, level_info["bg"], (bx, by, bw, bh), border_radius=10)
     pygame.draw.rect(screen, level_info["fg"], (bx, by, bw, bh), width=2, border_radius=10)
     f_small = get_font(base_font_path, 18)
@@ -114,8 +115,8 @@ def draw_wbgt_badge(screen, width, base_font_path, level_info: dict):
     lvl_s = f_large.render(level_info["label"], True, level_info["fg"])
     val_s = f_small.render(f"WBGT {level_info['value']:.1f}℃", True, level_info["fg"])
     screen.blit(lbl_s, (bx + (bw - lbl_s.get_width()) // 2, by + 4))
-    screen.blit(lvl_s, (bx + (bw - lvl_s.get_width()) // 2, by + 26))
-    screen.blit(val_s, (bx + (bw - val_s.get_width()) // 2, by + 52))
+    screen.blit(lvl_s, (bx + (bw - lvl_s.get_width()) // 2, by + 24))
+    screen.blit(val_s, (bx + (bw - val_s.get_width()) // 2, by + 50))
 
 
 def draw_alert_banner(screen, width, header_h, base_font_path):

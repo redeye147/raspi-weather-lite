@@ -567,10 +567,21 @@ def main():
     last_drawn_minute = -1
     last_wifi_check = time.time()
     _sunrise_date = None
-    wbgt_level_info = None
-    wbgt_alert = False
-    last_wbgt_update = 0.0
     sunrise_str, sunset_str = "", ""
+
+    # WBGT 初期化（テストモード時は起動直後から適用）
+    wbgt_alert = args.wbgt_alert
+    wbgt_level_info = None
+    if args.wbgt_test is not None:
+        from fetch_wbgt import WBGT_LEVELS
+        v = args.wbgt_test
+        for threshold, label, bg, fg in WBGT_LEVELS:
+            if v >= threshold:
+                wbgt_level_info = {"label": label, "bg": bg, "fg": fg, "value": v}
+                break
+        wbgt_alert = wbgt_alert or (v >= 33)
+        logging.info(f"WBGT テストモード(初期): value={v} level={wbgt_level_info and wbgt_level_info['label']}")
+    last_wbgt_update = 0.0 if args.wbgt_test is None else time.time()
     work_summary = build_work_summary(hourly)
 
     # -------------------------
@@ -641,24 +652,12 @@ def main():
                 main._updated_2350_date = today_str
                 logging.info("23:50定時取得開始")
 
-        # WBGT 熱中症リスク更新（1時間ごと）
-        if time.time() - last_wbgt_update > 3600:
+        # WBGT 熱中症リスク更新（1時間ごと、テストモード時はスキップ）
+        if args.wbgt_test is None and time.time() - last_wbgt_update > 3600:
             try:
-                if args.wbgt_test is not None:
-                    # テストモード: 指定された値から level_info を生成
-                    from fetch_wbgt import WBGT_LEVELS
-                    v = args.wbgt_test
-                    wbgt_level_info = None
-                    for threshold, label, bg, fg in WBGT_LEVELS:
-                        if v >= threshold:
-                            wbgt_level_info = {"label": label, "bg": bg, "fg": fg, "value": v}
-                            break
-                    wbgt_alert = args.wbgt_alert or (v >= 33)
-                    logging.info(f"WBGT テストモード: value={v} alert={wbgt_alert}")
-                else:
-                    _, wbgt_alert, wbgt_level_info = fetch_wbgt(airport)
-                    if args.wbgt_alert:
-                        wbgt_alert = True
+                _, wbgt_alert, wbgt_level_info = fetch_wbgt(airport)
+                if args.wbgt_alert:
+                    wbgt_alert = True
                 last_wbgt_update = time.time()
                 needs_redraw = True
             except Exception as e:
@@ -742,8 +741,8 @@ def main():
             airport_label, sunrise_str, sunset_str, "", ""
         )
 
-        # WBGT バッジ（ヘッダー右上に重ねて表示）
-        draw_wbgt_badge(screen, width, BASE_FONT, wbgt_level_info)
+        # WBGT バッジ（ヘッダー直下右端）
+        draw_wbgt_badge(screen, width, height, BASE_FONT, wbgt_level_info)
 
         if ken_img is not None:
             margin = 30
