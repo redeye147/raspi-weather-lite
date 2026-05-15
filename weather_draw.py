@@ -97,6 +97,41 @@ def draw_today_title_bar(
 
 
 # ==========================================
+# 熱中症バッジ描画
+# ==========================================
+def draw_wbgt_badge(screen, width, base_font_path, level_info: dict):
+    """右上に WBGT レベルバッジを表示。level_info が None なら何もしない。"""
+    if level_info is None:
+        return
+    bw, bh = 200, 72
+    bx = width - bw - 8
+    by = 8
+    pygame.draw.rect(screen, level_info["bg"], (bx, by, bw, bh), border_radius=10)
+    pygame.draw.rect(screen, level_info["fg"], (bx, by, bw, bh), width=2, border_radius=10)
+    f_small = get_font(base_font_path, 18)
+    f_large = get_font(base_font_path, 28, bold=True)
+    lbl_s = f_small.render("熱中症リスク", True, level_info["fg"])
+    lvl_s = f_large.render(level_info["label"], True, level_info["fg"])
+    val_s = f_small.render(f"WBGT {level_info['value']:.1f}℃", True, level_info["fg"])
+    screen.blit(lbl_s, (bx + (bw - lbl_s.get_width()) // 2, by + 4))
+    screen.blit(lvl_s, (bx + (bw - lvl_s.get_width()) // 2, by + 26))
+    screen.blit(val_s, (bx + (bw - val_s.get_width()) // 2, by + 52))
+
+
+def draw_alert_banner(screen, width, header_h, base_font_path):
+    """ヘッダー直下に熱中症警戒アラートバナーを表示。"""
+    bh = 44
+    by = header_h
+    pygame.draw.rect(screen, (160, 0, 0), (0, by, width, bh))
+    pygame.draw.line(screen, (255, 60, 60), (0, by), (width, by), 3)
+    pygame.draw.line(screen, (255, 60, 60), (0, by + bh - 1), (width, by + bh - 1), 2)
+    f = get_font(base_font_path, 26, bold=True)
+    text = "熱中症警戒アラート発令中 ─ こまめな水分補給を！日陰で休憩を！"
+    s = f.render(text, True, (255, 255, 180))
+    screen.blit(s, ((width - s.get_width()) // 2, by + (bh - s.get_height()) // 2))
+
+
+# ==========================================
 # アイコン読み込み＋スケール（キャッシュ付き）
 # ==========================================
 def _load_scaled_icon(icon_path: str, w: int, h: int, icon_cache: dict):
@@ -132,12 +167,21 @@ def draw_weather(
     work_summary,
     cpu_text,
     fetch_ok: bool = True,
-    qr_surf=None
+    qr_surf=None,
+    wbgt_level_info=None,
+    wbgt_alert: bool = False,
 ):
 
     screen.fill((255, 255, 255))
 
     margin_x = int(width * 0.05)
+    header_h = int(height * 0.25)
+
+    # -------------------------
+    # 熱中症警戒アラートバナー（ヘッダー直下）
+    # -------------------------
+    if wbgt_alert:
+        draw_alert_banner(screen, width, header_h, base_font_path)
 
     # -------------------------
     # 通信エラーバナー（fetch失敗時）

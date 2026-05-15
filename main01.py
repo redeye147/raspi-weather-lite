@@ -27,7 +27,8 @@ import psutil
 import subprocess
 
 from header import draw_header
-from weather_draw import draw_weather
+from weather_draw import draw_weather, draw_wbgt_badge
+from fetch_wbgt import fetch_wbgt
 from utils import get_sunrise_sunset_str, build_work_summary, JST, get_local_ip, make_qr_surface
 from jma_alerts import get_overview_and_warning
 
@@ -562,6 +563,9 @@ def main():
     last_drawn_minute = -1
     last_wifi_check = time.time()
     _sunrise_date = None
+    wbgt_level_info = None
+    wbgt_alert = False
+    last_wbgt_update = 0.0
     sunrise_str, sunset_str = "", ""
     work_summary = build_work_summary(hourly)
 
@@ -633,6 +637,15 @@ def main():
                 main._updated_2350_date = today_str
                 logging.info("23:50定時取得開始")
 
+        # WBGT 熱中症リスク更新（1時間ごと）
+        if time.time() - last_wbgt_update > 3600:
+            try:
+                _, wbgt_alert, wbgt_level_info = fetch_wbgt(airport)
+                last_wbgt_update = time.time()
+                needs_redraw = True
+            except Exception as e:
+                logging.error(f"WBGT更新失敗: {e}")
+
         # 警報更新（1時間ごと、timeout=5で短いのでメインスレッドで実行）
         if time.time() - last_jma_update > 3600:
             try:
@@ -701,13 +714,18 @@ def main():
             warning_text, headline_text, updated_text,
             weather_updated_text, airport_label,
             sunrise_str, sunset_str, work_summary, cpu_text,
-            fetch_ok=fetch_ok, qr_surf=qr_surf
+            fetch_ok=fetch_ok, qr_surf=qr_surf,
+            wbgt_level_info=wbgt_level_info,
+            wbgt_alert=wbgt_alert,
         )
 
         draw_header(
             screen, width, height, BASE_FONT,
             airport_label, sunrise_str, sunset_str, "", ""
         )
+
+        # WBGT バッジ（ヘッダー右上に重ねて表示）
+        draw_wbgt_badge(screen, width, BASE_FONT, wbgt_level_info)
 
         if ken_img is not None:
             margin = 30
