@@ -135,10 +135,11 @@ def get_git_version_str():
             ["git", "rev-parse", "--short", "HEAD"],
             cwd=cwd, stderr=subprocess.DEVNULL
         ).decode().strip()
-        date_ = subprocess.check_output(
-            ["git", "log", "-1", "--format=%ci"],
+        ts = subprocess.check_output(
+            ["git", "log", "-1", "--format=%ct"],
             cwd=cwd, stderr=subprocess.DEVNULL
-        ).decode().strip()[:16]
+        ).decode().strip()
+        date_ = datetime.datetime.fromtimestamp(int(ts), JST).strftime("%Y-%m-%d %H:%M")
         return f"{hash_}  {date_}"
     except Exception:
         return ""
