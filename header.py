@@ -19,7 +19,8 @@ def draw_header(
     airport_label,
     sunrise_str, sunset_str,
     weather_updated_text,
-    cpu_text="--"
+    cpu_text="--",
+    wbgt_level_info=None,
 ):
     now = datetime.datetime.now(JST)
 
@@ -50,3 +51,22 @@ def draw_header(
     y2 = top_margin + title_surf.get_height() + line_gap
     x2 = max(10, (width - info_surf.get_width()) // 2)
     screen.blit(info_surf, (x2, y2))
+
+    # ===== 3) WBGT バッジ（2行目の右端、ヘッダー内） =====
+    if wbgt_level_info:
+        f_small = get_font(base_font_path, int(height * 0.028))
+        f_large = get_font(base_font_path, int(height * 0.045), bold=True)
+        lbl_s = f_small.render("熱中症", True, wbgt_level_info["fg"])
+        lvl_s = f_large.render(wbgt_level_info["label"], True, wbgt_level_info["fg"])
+        val_s = f_small.render(f"WBGT {wbgt_level_info['value']:.1f}℃", True, wbgt_level_info["fg"])
+        bw = max(lbl_s.get_width(), lvl_s.get_width(), val_s.get_width()) + 20
+        bh = header_h - y2 - 4
+        bx = width - bw - 8
+        by = y2
+        pygame.draw.rect(screen, wbgt_level_info["bg"], (bx, by, bw, bh), border_radius=8)
+        pygame.draw.rect(screen, wbgt_level_info["fg"], (bx, by, bw, bh), width=2, border_radius=8)
+        inner_h = lbl_s.get_height() + lvl_s.get_height() + val_s.get_height() + 4
+        ty = by + (bh - inner_h) // 2
+        for surf in (lbl_s, lvl_s, val_s):
+            screen.blit(surf, (bx + (bw - surf.get_width()) // 2, ty))
+            ty += surf.get_height() + 2

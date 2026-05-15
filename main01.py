@@ -27,7 +27,7 @@ import psutil
 import subprocess
 
 from header import draw_header
-from weather_draw import draw_weather, draw_wbgt_badge
+from weather_draw import draw_weather
 from fetch_wbgt import fetch_wbgt
 from utils import get_sunrise_sunset_str, build_work_summary, JST, get_local_ip, make_qr_surface
 from jma_alerts import get_overview_and_warning
@@ -738,11 +738,9 @@ def main():
 
         draw_header(
             screen, width, height, BASE_FONT,
-            airport_label, sunrise_str, sunset_str, "", ""
+            airport_label, sunrise_str, sunset_str, "", "",
+            wbgt_level_info=wbgt_level_info,
         )
-
-        # WBGT バッジ（ヘッダー直下右端）
-        draw_wbgt_badge(screen, width, height, BASE_FONT, wbgt_level_info)
 
         if ken_img is not None:
             margin = 30
