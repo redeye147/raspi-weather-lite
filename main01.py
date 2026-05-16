@@ -669,6 +669,13 @@ def main():
             try:
                 new_warn, _ = fetch_warning_data(airport)
                 warning_text = new_warn
+                jma_data = get_overview_and_warning(
+                    office_code=cfg["office_code"],
+                    area_codes=cfg["area_codes"],
+                    cache_json_path=jma_cache_path,
+                )
+                headline_text = jma_data.get("headline", "")
+                updated_text  = jma_data.get("updated", "")
                 last_jma_update = time.time()
                 needs_redraw = True
             except Exception as e:
