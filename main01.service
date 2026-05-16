@@ -10,6 +10,7 @@ Group=root
 WorkingDirectory=/home/pi/raspi-weather-lite
 Environment=SDL_VIDEODRIVER=kmsdrm
 Environment=SDL_AUDIODRIVER=dummy
+ExecStartPre=/bin/sh -c 'printf "\033[?25l" > /dev/tty1'
 ExecStart=/usr/bin/python3 /home/pi/raspi-weather-lite/main01.py
 Restart=on-failure
 RestartSec=10
