@@ -58,7 +58,7 @@ def draw_header(
     # ===== 1) 大きい日付時刻（バッジを除いた領域の中央） =====
     date_str = (
         f"{now.month}月{now.day}日"
-        f"（{get_japanese_weekday(now)}） "
+        f"({get_japanese_weekday(now)})"
         f"{now.strftime('%H:%M')}"
     )
     title_surf = get_font(base_font_path, int(height * 0.14), bold=True).render(date_str, True, (0, 0, 0))

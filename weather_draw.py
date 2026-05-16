@@ -204,15 +204,15 @@ def draw_weather(
     y_offset = int(height * 0.25)
     # バナー表示時はその分だけ天気コンテンツ全体を下にずらす
     if wbgt_alert:
-        y_offset += ALERT_BANNER_H + 6
+        y_offset += ALERT_BANNER_H + 2
 
     row_heights = [
-        int(height * 0.06),  # 日付
-        int(height * 0.03),  # 時刻
-        int(height * 0.08),  # アイコン
-        int(height * 0.04),  # 降水
-        int(height * 0.04),  # 気温
-        int(height * 0.06),  # 風速
+        int(height * 0.055),  # 日付
+        int(height * 0.030),  # 時刻
+        int(height * 0.075),  # アイコン
+        int(height * 0.040),  # 降水
+        int(height * 0.040),  # 気温
+        int(height * 0.055),  # 風速
     ]
 
     # =========================================================
@@ -226,12 +226,12 @@ def draw_weather(
         f"作業注意情報：{work_summary}", True, summary_color
     )
     screen.blit(summary_surf, (margin_x, y_offset))
-    y_offset += summary_surf.get_height() + 8
+    y_offset += summary_surf.get_height() + 4
 
     # =========================================================
     # 固定見出し「今日の天気」
     # =========================================================
-    title_bar_h = 62 if qr_surf else 34
+    title_bar_h = 54 if qr_surf else 30
     draw_today_title_bar(
         screen,
         margin_x,
@@ -244,7 +244,7 @@ def draw_weather(
         cpu_text=cpu_text,
         qr_surf=qr_surf
     )
-    y_offset += title_bar_h + 8
+    y_offset += title_bar_h + 4
 
     # ==========================================
     # 時間別テーブル
@@ -337,7 +337,7 @@ def draw_weather(
                         (0, 0, 0)
                     )
                     val_surf  = get_font(base_font_path, 26, bold=v >= 5).render(str(int(v)), True, wcolor)
-                    unit_surf = get_font(base_font_path, 24).render(" m", True, wcolor)
+                    unit_surf = get_font(base_font_path, 24).render(" m/s", True, wcolor)
                     x_pos = x + 5
                     y_pos = y + (row_heights[row_idx] - val_surf.get_height()) // 2
                     screen.blit(val_surf,  (x_pos, y_pos))
@@ -353,14 +353,14 @@ def draw_weather(
                     (x + 5, y + (row_heights[row_idx] - text_surf.get_height()) // 2)
                 )
 
-    y_offset += sum(row_heights) + 40
+    y_offset += sum(row_heights) + 8
 
     # ==========================================
     # 週間予報
     # ==========================================
     week_title_surf = get_font(base_font_path, 28, bold=True).render("１週間の天気", True, (0, 0, 0))
     screen.blit(week_title_surf, (margin_x, y_offset))
-    y_offset += week_title_surf.get_height() + 10
+    y_offset += week_title_surf.get_height() + 4
 
     week_row_heights = [int(height * r) for r in [0.06, 0.08, 0.04, 0.06]]
 
