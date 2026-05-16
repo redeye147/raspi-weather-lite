@@ -60,12 +60,12 @@ def draw_header(
         lvl_s = f_large.render(wbgt_level_info["label"], True, wbgt_level_info["fg"])
         val_s = f_small.render(f"WBGT {wbgt_level_info['value']:.1f}℃", True, wbgt_level_info["fg"])
         bw = max(lbl_s.get_width(), lvl_s.get_width(), val_s.get_width()) + 20
-        bh = header_h - y2 - 4
+        inner_h = lbl_s.get_height() + lvl_s.get_height() + val_s.get_height() + 4
+        bh = inner_h + 12
         bx = width - bw - 8
-        by = y2
+        by = header_h - bh - 4
         pygame.draw.rect(screen, wbgt_level_info["bg"], (bx, by, bw, bh), border_radius=8)
         pygame.draw.rect(screen, wbgt_level_info["fg"], (bx, by, bw, bh), width=2, border_radius=8)
-        inner_h = lbl_s.get_height() + lvl_s.get_height() + val_s.get_height() + 4
         ty = by + (bh - inner_h) // 2
         for surf in (lbl_s, lvl_s, val_s):
             screen.blit(surf, (bx + (bw - surf.get_width()) // 2, ty))
