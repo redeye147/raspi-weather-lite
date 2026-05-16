@@ -151,6 +151,24 @@ def get_git_version_str():
 
 
 # ==========================================================
+# WBGT試験用サマリー生成
+# ==========================================================
+def _wbgt_test_summary(wbgt: float) -> str:
+    """--wbgt-test 引数で指定されたWBGT値に応じた作業注意サマリーを返す。"""
+    if wbgt >= 31:
+        level = "危険"
+    elif wbgt >= 28:
+        level = "厳重警戒"
+    elif wbgt >= 25:
+        level = "警戒"
+    elif wbgt >= 21:
+        level = "注意"
+    else:
+        level = "ほぼ安全"
+    return f"[WBGT試験] WBGT {wbgt:.0f}℃ → 熱中症{level}"
+
+
+# ==========================================================
 # ログローテーション
 # ==========================================================
 def setup_logging():
@@ -364,6 +382,8 @@ def main():
     parser.add_argument("--no-hdmi-refresh", action="store_true")
     parser.add_argument("--test-case", type=int, choices=[3, 4], default=None,
                         help="テスト用: 3=QR設定画面, 4=ドングル未接続画面 を強制表示（ESCで終了）")
+    parser.add_argument("--wbgt-test", type=float, default=None, metavar="WBGT",
+                        help="WBGT値(℃)を指定して作業注意情報の表示をテスト（例: --wbgt-test 35）")
     args, unknown = parser.parse_known_args()
 
     airport = args.airport
@@ -577,6 +597,8 @@ def main():
     _sunrise_date = None
     sunrise_str, sunset_str = "", ""
     work_summary = build_work_summary(hourly)
+    if args.wbgt_test is not None:
+        work_summary = _wbgt_test_summary(args.wbgt_test)
 
     # -------------------------
     # バックグラウンドフェッチャー初期化
@@ -677,6 +699,8 @@ def main():
                     last_weather_update = now
                     weather_updated_text = now.strftime("天気更新 %H:%M")
                     work_summary = build_work_summary(hourly)
+                    if args.wbgt_test is not None:
+                        work_summary = _wbgt_test_summary(args.wbgt_test)
                     fetch_ok = True
                     logging.info("天気取得完了")
                 else:
