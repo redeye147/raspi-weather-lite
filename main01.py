@@ -384,6 +384,14 @@ def main():
 
     pygame.init()
     pygame.font.init()
+
+    if not pygame.display.get_init():
+        driver = os.environ.get("SDL_VIDEODRIVER", "(unset)")
+        raise RuntimeError(
+            f"pygame display init failed (SDL_VIDEODRIVER={driver}). "
+            "DRM デバイスが使用中か、ドライバが見つかりません。"
+        )
+
     pygame.mouse.set_visible(False)
 
     screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
