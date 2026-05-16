@@ -743,6 +743,10 @@ def run_forever():
         except Exception:
             print("FATAL ERROR", flush=True)
             traceback.print_exc()
+        try:
+            pygame.quit()
+        except Exception:
+            pass
         time.sleep(backoff)
 
 
