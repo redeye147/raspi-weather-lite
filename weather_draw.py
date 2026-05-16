@@ -119,9 +119,12 @@ def draw_wbgt_badge(screen, width, height, base_font_path, level_info: dict):
     screen.blit(val_s, (bx + (bw - val_s.get_width()) // 2, by + 50))
 
 
+ALERT_BANNER_H = 44
+
+
 def draw_alert_banner(screen, width, header_h, base_font_path):
     """ヘッダー直下に熱中症警戒アラートバナーを表示。"""
-    bh = 44
+    bh = ALERT_BANNER_H
     by = header_h
     pygame.draw.rect(screen, (160, 0, 0), (0, by, width, bh))
     pygame.draw.line(screen, (255, 60, 60), (0, by), (width, by), 3)
@@ -199,6 +202,9 @@ def draw_weather(
     col_w = int((width - margin_x * 2) // max(2, total_cols))
 
     y_offset = int(height * 0.25)
+    # バナー表示時はその分だけ天気コンテンツ全体を下にずらす
+    if wbgt_alert:
+        y_offset += ALERT_BANNER_H + 6
 
     row_heights = [
         int(height * 0.06),  # 日付

@@ -35,24 +35,9 @@ def draw_header(
     top_margin = int(height * 0.03)   # ← 好みで 0.02〜0.05
     line_gap   = int(height * 0.01)
 
-    # ===== 1) 大きい日付時刻（中央） =====
-    date_str = (
-        f"{now.month}月{now.day}日"
-        f"（{get_japanese_weekday(now)}） "
-        f"{now.strftime('%H:%M')}"
-    )
-    title_surf = get_font(base_font_path, int(height * 0.14), bold=True).render(date_str, True, (0, 0, 0))
-    screen.blit(title_surf, ((width - title_surf.get_width()) // 2, top_margin))
-
-    # ===== 2) 2行目 =====
-    info = f"{airport_label}  日の出:{sunrise_str} / 日の入り:{sunset_str}  "
-    info_surf = get_font(base_font_path, int(height * 0.035)).render(info, True, (0, 0, 0))
-
-    y2 = top_margin + title_surf.get_height() + line_gap
-    x2 = max(10, (width - info_surf.get_width()) // 2)
-    screen.blit(info_surf, (x2, y2))
-
-    # ===== 3) WBGT バッジ（2行目の右端、ヘッダー内） =====
+    # ===== 0) WBGT バッジを先にレンダリング（サイズを知るため） =====
+    badge_data = None
+    badge_reserve = 0
     if wbgt_level_info:
         f_small = get_font(base_font_path, int(height * 0.028))
         f_large = get_font(base_font_path, int(height * 0.045), bold=True)
@@ -62,8 +47,43 @@ def draw_header(
         bw = max(lbl_s.get_width(), lvl_s.get_width(), val_s.get_width()) + 20
         inner_h = lbl_s.get_height() + lvl_s.get_height() + val_s.get_height() + 4
         bh = inner_h + 12
+        badge_data = (lbl_s, lvl_s, val_s, bw, bh, inner_h)
+        badge_reserve = bw + 24  # バッジ幅 + 左右マージン
+
+    # 残り幅（バッジ分を除く）に対する中央
+    available_w = width - badge_reserve
+    center_x = available_w // 2
+
+    # ===== 1) 大きい日付時刻（バッジを除いた領域の中央） =====
+    date_str = (
+        f"{now.month}月{now.day}日"
+        f"（{get_japanese_weekday(now)}） "
+        f"{now.strftime('%H:%M')}"
+    )
+    title_surf = get_font(base_font_path, int(height * 0.14), bold=True).render(date_str, True, (0, 0, 0))
+    title_x = max(10, center_x - title_surf.get_width() // 2)
+    screen.blit(title_surf, (title_x, top_margin))
+
+    # ===== 2) 2行目（バッジを除いた領域の中央） =====
+    info = f"{airport_label}  日の出:{sunrise_str} / 日の入り:{sunset_str}  "
+    info_surf = get_font(base_font_path, int(height * 0.035)).render(info, True, (0, 0, 0))
+
+    y2 = top_margin + title_surf.get_height() + line_gap
+    x2 = max(10, center_x - info_surf.get_width() // 2)
+    screen.blit(info_surf, (x2, y2))
+
+    # ===== 3) WBGT バッジ（時計の右隣、タイトルと垂直中央揃え） =====
+    if badge_data:
+        lbl_s, lvl_s, val_s, bw, bh, inner_h = badge_data
         bx = width - bw - 8
-        by = header_h - bh - 4
+        # タイトルと垂直中央を揃える
+        title_center_y = top_margin + title_surf.get_height() // 2
+        by = title_center_y - bh // 2
+        # ヘッダー範囲内に収める
+        if by < top_margin:
+            by = top_margin
+        if by + bh > header_h - 4:
+            by = header_h - bh - 4
         pygame.draw.rect(screen, wbgt_level_info["bg"], (bx, by, bw, bh), border_radius=8)
         pygame.draw.rect(screen, wbgt_level_info["fg"], (bx, by, bw, bh), width=2, border_radius=8)
         ty = by + (bh - inner_h) // 2
