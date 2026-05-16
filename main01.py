@@ -131,13 +131,18 @@ class WeatherFetcher:
 def get_git_version_str():
     try:
         cwd = os.path.dirname(os.path.abspath(__file__))
+        # root で実行時も git の dubious ownership チェックを回避する
+        env = os.environ.copy()
+        env["GIT_CONFIG_COUNT"] = "1"
+        env["GIT_CONFIG_KEY_0"] = "safe.directory"
+        env["GIT_CONFIG_VALUE_0"] = cwd
         hash_ = subprocess.check_output(
             ["git", "rev-parse", "--short", "HEAD"],
-            cwd=cwd, stderr=subprocess.DEVNULL
+            cwd=cwd, stderr=subprocess.DEVNULL, env=env
         ).decode().strip()
         ts = subprocess.check_output(
             ["git", "log", "-1", "--format=%ct"],
-            cwd=cwd, stderr=subprocess.DEVNULL
+            cwd=cwd, stderr=subprocess.DEVNULL, env=env
         ).decode().strip()
         date_ = datetime.datetime.fromtimestamp(int(ts), JST).strftime("%Y-%m-%d %H:%M")
         return f"{hash_}  {date_}"
