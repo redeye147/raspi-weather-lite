@@ -5,9 +5,11 @@ Wants=wifi-setup-auto.service
 
 [Service]
 Type=simple
-User=pi
-Group=pi
+User=root
+Group=root
 WorkingDirectory=/home/pi/raspi-weather-lite
+Environment=SDL_VIDEODRIVER=kmsdrm
+Environment=SDL_AUDIODRIVER=dummy
 ExecStart=/usr/bin/python3 /home/pi/raspi-weather-lite/main01.py
 Restart=on-failure
 RestartSec=10
