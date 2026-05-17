@@ -22,9 +22,6 @@ from utils import (
     make_qr_surface,
 )
 
-# ==========================================
-# パス設定（project02固定）
-# ==========================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ICON_DIR = os.path.join(BASE_DIR, "weather_icons")
 
@@ -32,9 +29,6 @@ ROW_LABELS = ["日付", "時刻", "天気", "降水量", "気温", "風速"]
 WEEK_ROW_LABELS = ["日付", "天気", "降水確率", "気温：最高／最低"]
 
 
-# ==========================================
-# 固定見出し「今日の天気」
-# ==========================================
 def draw_today_title_bar(
     screen,
     x, y, w, h,
@@ -82,7 +76,6 @@ def draw_today_title_bar(
     title_surf = title_font.render(title_draw, True, (0, 0, 0))
     screen.blit(title_surf, (x + 8, y + (h - title_surf.get_height()) // 2))
 
-    # QRコードを最右端に配置
     if qr_surf:
         qr_x = x + w - qr_surf.get_width() - 4
         qr_y = y + (h - qr_surf.get_height()) // 2
@@ -96,11 +89,23 @@ def draw_today_title_bar(
                                   y + (h - status_surf.get_height()) // 2))
 
 
-# ==========================================
-# アイコン読み込み＋スケール（キャッシュ付き）
-# ==========================================
+ALERT_BANNER_H = 44
+
+
+def draw_alert_banner(screen, width, header_h, base_font_path):
+    """ヘッダー直下に熱中症警戒アラートバナーを表示。"""
+    bh = ALERT_BANNER_H
+    by = header_h
+    pygame.draw.rect(screen, (160, 0, 0), (0, by, width, bh))
+    pygame.draw.line(screen, (255, 60, 60), (0, by), (width, by), 3)
+    pygame.draw.line(screen, (255, 60, 60), (0, by + bh - 1), (width, by + bh - 1), 2)
+    f = get_font(base_font_path, 26, bold=True)
+    text = "熱中症警戒アラート発令中 ― こまめな水分補給を！日陰で休憩を！"
+    s = f.render(text, True, (255, 255, 180))
+    screen.blit(s, ((width - s.get_width()) // 2, by + (bh - s.get_height()) // 2))
+
+
 def _load_scaled_icon(icon_path: str, w: int, h: int, icon_cache: dict):
-    """(path, w, h) をキーにスケール済みサーフェスをキャッシュして返す。"""
     key = (icon_path, w, h)
     if key not in icon_cache:
         try:
@@ -111,9 +116,6 @@ def _load_scaled_icon(icon_path: str, w: int, h: int, icon_cache: dict):
     return icon_cache[key]
 
 
-# ==========================================
-# draw_weather
-# ==========================================
 def draw_weather(
     screen,
     width,
@@ -132,16 +134,18 @@ def draw_weather(
     work_summary,
     cpu_text,
     fetch_ok: bool = True,
-    qr_surf=None
+    qr_surf=None,
+    wbgt_level_info=None,
+    wbgt_alert: bool = False,
 ):
-
     screen.fill((255, 255, 255))
 
     margin_x = int(width * 0.05)
+    header_h = int(height * 0.25)
 
-    # -------------------------
-    # 通信エラーバナー（fetch失敗時）
-    # -------------------------
+    if wbgt_alert:
+        draw_alert_banner(screen, width, header_h, base_font_path)
+
     if not fetch_ok:
         err_surf = get_font(base_font_path, 20, bold=True).render(
             "通信エラー：キャッシュデータを表示しています", True, (255, 255, 255)
@@ -149,24 +153,24 @@ def draw_weather(
         bar_h = err_surf.get_height() + 8
         pygame.draw.rect(screen, (180, 0, 0), (0, 0, width, bar_h))
         screen.blit(err_surf, ((width - err_surf.get_width()) // 2, 4))
+
     data_cols = len(hourly)
     total_cols = 1 + data_cols
     col_w = int((width - margin_x * 2) // max(2, total_cols))
 
     y_offset = int(height * 0.25)
+    if wbgt_alert:
+        y_offset += ALERT_BANNER_H + 2
 
     row_heights = [
-        int(height * 0.06),  # 日付
-        int(height * 0.03),  # 時刻
-        int(height * 0.08),  # アイコン
-        int(height * 0.04),  # 降水
-        int(height * 0.04),  # 気温
-        int(height * 0.06),  # 風速
+        int(height * 0.055),
+        int(height * 0.030),
+        int(height * 0.075),
+        int(height * 0.040),
+        int(height * 0.040),
+        int(height * 0.055),
     ]
 
-    # =========================================================
-    # 作業サマリー（静的表示 — アニメーション廃止）
-    # =========================================================
     summary_color = (0, 0, 0)
     if work_summary and ("強風" in work_summary or "熱中症" in work_summary):
         summary_color = (255, 0, 0)
@@ -175,12 +179,9 @@ def draw_weather(
         f"作業注意情報：{work_summary}", True, summary_color
     )
     screen.blit(summary_surf, (margin_x, y_offset))
-    y_offset += summary_surf.get_height() + 8
+    y_offset += summary_surf.get_height() + 4
 
-    # =========================================================
-    # 固定見出し「今日の天気」
-    # =========================================================
-    title_bar_h = 62 if qr_surf else 34
+    title_bar_h = 54 if qr_surf else 30
     draw_today_title_bar(
         screen,
         margin_x,
@@ -193,23 +194,14 @@ def draw_weather(
         cpu_text=cpu_text,
         qr_surf=qr_surf
     )
-    y_offset += title_bar_h + 8
+    y_offset += title_bar_h + 4
 
-    # ==========================================
-    # 時間別テーブル
-    # ==========================================
     for row_idx, label in enumerate(ROW_LABELS):
         for col_idx in range(total_cols):
-
             x = margin_x + col_idx * col_w
             y = y_offset + sum(row_heights[:row_idx])
 
-            pygame.draw.rect(
-                screen,
-                (180, 180, 180),
-                (x, y, col_w, row_heights[row_idx]),
-                1
-            )
+            pygame.draw.rect(screen, (180, 180, 180), (x, y, col_w, row_heights[row_idx]), 1)
 
             if col_idx == 0:
                 text_surf = get_font(base_font_path, 22).render(label, True, (0, 0, 0))
@@ -236,18 +228,13 @@ def draw_weather(
 
             elif row_idx == 2:
                 icon_code = item["code"]
-
-                # E61c猛暑判定ロジック
                 if icon_code == "100":
                     if item.get("temp_val", 0) >= 34:
                         icon_code = "1000A"
                     elif item.get("temp_val", 0) >= 30:
                         icon_code = "1000"
-
                 icon_path = os.path.join(ICON_DIR, f"{icon_code}.png")
-                icon = _load_scaled_icon(
-                    icon_path, col_w - 10, row_heights[row_idx] - 10, icon_cache
-                )
+                icon = _load_scaled_icon(icon_path, col_w - 10, row_heights[row_idx] - 10, icon_cache)
                 if icon:
                     screen.blit(icon, (x + 5, y + 5))
                 continue
@@ -286,14 +273,13 @@ def draw_weather(
                         (0, 0, 0)
                     )
                     val_surf  = get_font(base_font_path, 26, bold=v >= 5).render(str(int(v)), True, wcolor)
-                    unit_surf = get_font(base_font_path, 24).render(" m", True, wcolor)
+                    unit_surf = get_font(base_font_path, 24).render(" m/s", True, wcolor)
                     x_pos = x + 5
                     y_pos = y + (row_heights[row_idx] - val_surf.get_height()) // 2
                     screen.blit(val_surf,  (x_pos, y_pos))
                     screen.blit(unit_surf, (x_pos + val_surf.get_width(), y_pos))
                     continue
 
-            # 共通テキスト描画（アイコン行・風速行以外）
             if row_idx != 2:
                 font_size = 26 if row_idx == 0 else 22
                 text_surf = get_font(base_font_path, font_size, bold=bold).render(text, True, color)
@@ -302,29 +288,20 @@ def draw_weather(
                     (x + 5, y + (row_heights[row_idx] - text_surf.get_height()) // 2)
                 )
 
-    y_offset += sum(row_heights) + 40
+    y_offset += sum(row_heights) + 8
 
-    # ==========================================
-    # 週間予報
-    # ==========================================
     week_title_surf = get_font(base_font_path, 28, bold=True).render("１週間の天気", True, (0, 0, 0))
     screen.blit(week_title_surf, (margin_x, y_offset))
-    y_offset += week_title_surf.get_height() + 10
+    y_offset += week_title_surf.get_height() + 4
 
     week_row_heights = [int(height * r) for r in [0.06, 0.08, 0.04, 0.06]]
 
     for row_idx, label in enumerate(WEEK_ROW_LABELS):
         for col_idx in range(len(daily) + 1):
-
             x = margin_x + col_idx * col_w
             y = y_offset + sum(week_row_heights[:row_idx])
 
-            pygame.draw.rect(
-                screen,
-                (160, 160, 160),
-                (x, y, col_w, week_row_heights[row_idx]),
-                1
-            )
+            pygame.draw.rect(screen, (160, 160, 160), (x, y, col_w, week_row_heights[row_idx]), 1)
 
             if col_idx == 0:
                 if row_idx == 3:
@@ -355,9 +332,7 @@ def draw_weather(
 
                 elif row_idx == 1:
                     icon_path = os.path.join(ICON_DIR, f"{item['code']}.png")
-                    icon = _load_scaled_icon(
-                        icon_path, col_w - 10, week_row_heights[row_idx] - 10, icon_cache
-                    )
+                    icon = _load_scaled_icon(icon_path, col_w - 10, week_row_heights[row_idx] - 10, icon_cache)
                     if icon:
                         screen.blit(icon, (x + 5, y + 5))
 
@@ -398,14 +373,10 @@ def draw_weather(
                             (x + 5, y + 5)
                         )
 
-    # ==========================================
-    # 警報枠（週間予報の右側スペース）
-    # ==========================================
     used_w = (len(daily) + 1) * col_w
     remain_w = (width - margin_x * 2) - used_w
 
     if remain_w >= col_w:
-
         box_x = margin_x + used_w + 10
         box_y = y_offset
         box_w = remain_w - 20
@@ -438,7 +409,6 @@ def draw_weather(
             max_width = box_w - 20
             lines = []
             current_line = ""
-
             for ch in headline_text:
                 test_line = current_line + ch
                 if small_font.size(test_line)[0] <= max_width:
@@ -448,7 +418,6 @@ def draw_weather(
                     current_line = ch
             if current_line:
                 lines.append(current_line)
-
             for line in lines[:2]:
                 head_surf = small_font.render(line, True, (0, 0, 0))
                 screen.blit(head_surf, (box_x + 10, y_line))

@@ -112,6 +112,76 @@ sudo systemctl start wifi-portal
 echo 'pi ALL=(ALL) NOPASSWD: /sbin/reboot' | sudo tee /etc/sudoers.d/pi-reboot
 ```
 
+---
+
+## Pi Zero W + Debian Trixie 向け追加設定
+
+Debian Trixie（Python 3.13 / pygame 2.6.1 / SDL 2.32.4 / Mesa 25.x）環境では、
+`vc4-kms-v3d` と SDL の EGL 実装が非互換のため、以下の追加設定が必要です。
+
+### 必要パッケージの追加インストール
+
+```bash
+sudo apt install -y libegl-mesa0 libegl1 libgl1-mesa-dri fonts-ipafont
+sudo pip3 install astral --break-system-packages
+```
+
+### `/boot/firmware/config.txt` の変更
+
+`vc4-kms-v3d` を `vc4-fkms-v3d` に変更します（EGL/KMS 互換性のため）。
+
+```bash
+sudo sed -i 's/vc4-kms-v3d/vc4-fkms-v3d/' /boot/firmware/config.txt
+```
+
+### `/boot/firmware/cmdline.txt` への追記
+
+起動時のコンソールカーソル点滅を非表示にします（1行の末尾に追加）。
+
+```
+vt.global_cursor_default=0
+```
+
+### systemd サービス設定
+
+`/etc/systemd/system/main01.service` を作成・配置します。
+
+```bash
+sudo cp /home/pi/raspi-weather-lite/main01.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable main01.service
+sudo systemctl start main01.service
+```
+
+`main01.service` の内容（`User=root` と SDL 環境変数が必要）：
+
+```ini
+[Unit]
+Description=Weather Signage Display
+After=network.target wifi-setup-auto.service
+Wants=wifi-setup-auto.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/home/pi/raspi-weather-lite
+Environment=SDL_VIDEODRIVER=kmsdrm
+Environment=SDL_AUDIODRIVER=dummy
+ExecStartPre=/bin/sh -c 'printf "\033[?25l" > /dev/tty1'
+ExecStart=/usr/bin/python3 /home/pi/raspi-weather-lite/main01.py
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+> **Note**: `User=root` は DRM デバイスへのアクセス権確保のために必要です。
+> `vc4-fkms-v3d` + `libegl-mesa0` の組み合わせで SDL kmsdrm が正常に動作します。
+
+---
+
 ## 使い方
 
 ### 天気画面
@@ -124,6 +194,7 @@ echo 'pi ALL=(ALL) NOPASSWD: /sbin/reboot' | sudo tee /etc/sudoers.d/pi-reboot
   - タイトルバー右端にQRコード（WiFiポータルURL）
   - タイトルバー右に天気更新時刻 / IPアドレス末尾 / CPU使用率
 - **下部**: 1週間予報 + 警報・注意報
+- **右下**: git バージョン情報（コミットハッシュ・日時）
 
 通信エラー時はキャッシュデータを表示し、画面上部に赤いエラーバナーを表示します。
 
@@ -163,6 +234,7 @@ chmod +x install.sh
 raspi-weather-lite/
 ├── setup.sh             # 1コマンドセットアップスクリプト
 ├── main01.py            # メインループ（起動・描画制御）
+├── main01.service       # systemdユニットファイル
 ├── weather_draw.py      # 天気画面描画
 ├── header.py            # ヘッダー描画（日付・時刻・日の出）
 ├── fetch_weather.py     # 天気データ取得（Open-Meteo / JMA）
