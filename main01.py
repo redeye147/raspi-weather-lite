@@ -28,6 +28,7 @@ import subprocess
 
 from header import draw_header
 from weather_draw import draw_weather
+from fetch_wbgt import fetch_wbgt, WBGT_LEVELS
 from utils import get_sunrise_sunset_str, build_work_summary, JST, get_local_ip, make_qr_surface
 from jma_alerts import get_overview_and_warning
 
@@ -41,11 +42,8 @@ from fetch_weather import (
 
 BASE_FONT = "/usr/share/fonts/opentype/ipafont-gothic/ipag.ttf"
 
-# ネットワーク取得の最大待ち時間（秒）
-# これを超えたらスレッドを放棄してキャッシュ表示に切り替える
 FETCH_TIMEOUT = 30
 
-# TCPレベルのタイムアウト（requests の timeout 設定が効かない場合の保険）
 socket.setdefaulttimeout(15)
 
 
@@ -53,11 +51,6 @@ socket.setdefaulttimeout(15)
 # バックグラウンド天気取得クラス
 # ==========================================================
 class WeatherFetcher:
-    """天気データをバックグラウンドスレッドで取得する。
-    メインループをブロックしないため、ネットワークハングがあっても
-    画面更新・ESC応答・SSH接続は維持される。
-    """
-
     def __init__(self, cfg, args):
         self._cfg = cfg
         self._args = args
@@ -68,7 +61,6 @@ class WeatherFetcher:
         self._started_at = 0.0
 
     def start(self):
-        """フェッチスレッドを開始する。既に実行中なら何もしない。"""
         if self._thread and self._thread.is_alive():
             return
         self._result = None
@@ -105,9 +97,6 @@ class WeatherFetcher:
             self._event.set()
 
     def poll(self):
-        """(done, hourly, daily, ok) を返す。実行中なら done=False。
-        FETCH_TIMEOUT を超えたらタイムアウトとして done=True, ok=False を返す。
-        """
         if self._thread is None:
             return False, None, None, None
         if self._event.is_set():
@@ -117,7 +106,7 @@ class WeatherFetcher:
             return True, None, None, False
         if time.time() - self._started_at > FETCH_TIMEOUT:
             logging.error(f"WeatherFetcher: タイムアウト ({FETCH_TIMEOUT}秒) スレッドを放棄")
-            self._thread = None  # daemon=True なので自動終了
+            self._thread = None
             return True, None, None, False
         return False, None, None, None
 
@@ -151,33 +140,12 @@ def get_git_version_str():
 
 
 # ==========================================================
-# WBGT試験用サマリー生成
-# ==========================================================
-def _wbgt_test_summary(wbgt: float) -> str:
-    """--wbgt-test 引数で指定されたWBGT値に応じた作業注意サマリーを返す。"""
-    if wbgt >= 31:
-        level = "危険"
-    elif wbgt >= 28:
-        level = "厳重警戒"
-    elif wbgt >= 25:
-        level = "警戒"
-    elif wbgt >= 21:
-        level = "注意"
-    else:
-        level = "ほぼ安全"
-    return f"[WBGT試験] WBGT {wbgt:.0f}℃ → 熱中症{level}"
-
-
-# ==========================================================
 # ログローテーション
 # ==========================================================
 def setup_logging():
     log_path = "/home/pi/raspi-weather-lite/displayraspi_log.txt"
     handler = logging.handlers.TimedRotatingFileHandler(
-        log_path,
-        when="midnight",
-        backupCount=7,
-        encoding="utf-8"
+        log_path, when="midnight", backupCount=7, encoding="utf-8"
     )
     formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
     handler.setFormatter(formatter)
@@ -188,49 +156,32 @@ def setup_logging():
     root_logger.addHandler(handler)
 
 
-# ==========================================================
-# WiFi接続確認
-# ==========================================================
 def is_wifi_connected() -> bool:
     try:
-        result = subprocess.run(
-            ["iwgetid", "-r"],
-            capture_output=True, text=True, timeout=3
-        )
+        result = subprocess.run(["iwgetid", "-r"], capture_output=True, text=True, timeout=3)
         return bool(result.stdout.strip())
     except Exception:
         return True
 
 
-# ==========================================================
-# APモードアクティブ確認
-# ==========================================================
 def is_ap_mode_active() -> bool:
     return os.path.exists("/run/wifi-setup/state")
 
 
-# ==========================================================
-# USB WiFiドングル(wlan1)接続確認
-# ==========================================================
 def has_wlan1() -> bool:
     return os.path.exists("/sys/class/net/wlan1")
 
 
-# ==========================================================
-# APモード自動起動
-# ==========================================================
 _last_ap_trigger_time = 0.0
 
 def trigger_ap_mode() -> bool:
     global _last_ap_trigger_time
-    # 連続トリガ防止（60秒以内の再呼び出しは無視）
     if time.time() - _last_ap_trigger_time < 60:
         return False
     try:
         subprocess.Popen(
             ["sudo", "systemctl", "start", "wifi-setup-mode"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
         _last_ap_trigger_time = time.time()
         logging.info("wifi-setup-mode 自動起動をトリガ")
@@ -240,16 +191,9 @@ def trigger_ap_mode() -> bool:
         return False
 
 
-# ==========================================================
-# APモード案内画面（QRコード2枚）
-# ==========================================================
 def show_ap_screen(screen):
     import json as _json
-
-    ssid       = "WeatherSetup"
-    password   = "setup1234"
-    portal_url = "http://192.168.50.1/"
-
+    ssid, password, portal_url = "WeatherSetup", "setup1234", "http://192.168.50.1/"
     try:
         with open("/run/wifi-setup/state") as f:
             st = _json.load(f)
@@ -261,7 +205,6 @@ def show_ap_screen(screen):
 
     screen.fill((10, 12, 20))
     w, h = screen.get_size()
-
     wifi_qr = make_qr_surface(f"WIFI:S:{ssid};T:WPA;P:{password};;", max_size=160)
     url_qr  = make_qr_surface(portal_url, max_size=160)
 
@@ -271,16 +214,12 @@ def show_ap_screen(screen):
     title_y = 28
     screen.blit(title_surf, ((w - title_surf.get_width()) // 2, title_y))
 
-    qr_size = 160
-    gap     = 80
-    qr_y    = title_y + title_surf.get_height() + 24
-    left_x  = (w - qr_size * 2 - gap) // 2
+    qr_size, gap = 160, 80
+    qr_y   = title_y + title_surf.get_height() + 24
+    left_x = (w - qr_size * 2 - gap) // 2
     right_x = left_x + qr_size + gap
-
-    if wifi_qr:
-        screen.blit(wifi_qr, (left_x, qr_y))
-    if url_qr:
-        screen.blit(url_qr, (right_x, qr_y))
+    if wifi_qr: screen.blit(wifi_qr, (left_x,  qr_y))
+    if url_qr:  screen.blit(url_qr,  (right_x, qr_y))
 
     font_label = pygame.font.Font(BASE_FONT, 22)
     label_y = qr_y + qr_size + 6
@@ -290,31 +229,25 @@ def show_ap_screen(screen):
 
     info_y = label_y + font_label.get_height() + 20
     for text, color, bold in [
-        (f"SSID: {ssid}",      (255, 255, 255), True),
-        (f"PW:   {password}",  (200, 200, 200), False),
-        ("",                    (0,   0,   0),  False),
+        (f"SSID: {ssid}", (255, 255, 255), True),
+        (f"PW:   {password}", (200, 200, 200), False),
+        ("", (0, 0, 0), False),
         (f"URL: {portal_url}", (100, 200, 255), True),
     ]:
         if not text:
             info_y += 12
             continue
         f = pygame.font.Font(BASE_FONT, 26)
-        if bold:
-            f.set_bold(True)
+        if bold: f.set_bold(True)
         s = f.render(text, True, color)
         screen.blit(s, ((w - s.get_width()) // 2, info_y))
         info_y += s.get_height() + 4
-
     pygame.display.flip()
 
 
-# ==========================================================
-# ドングル未接続案内画面
-# ==========================================================
 def show_no_dongle_screen(screen):
     screen.fill((10, 12, 20))
     w, h = screen.get_size()
-
     lines = [
         ("WiFiに接続できません", 42, (255, 80, 80), True),
         ("", 40, None, False),
@@ -322,32 +255,21 @@ def show_no_dongle_screen(screen):
         ("", 24, None, False),
         ("ドングルを挿すと自動で設定モードが起動します", 26, (160, 160, 160), False),
     ]
-
-    total_h = 0
-    for text, size, _, _ in lines:
-        if text:
-            total_h += pygame.font.Font(BASE_FONT, size).get_height() + 8
-        else:
-            total_h += size
-
+    total_h = sum(pygame.font.Font(BASE_FONT, size).get_height() + 8 if text else size
+                  for text, size, _, _ in lines)
     y = (h - total_h) // 2
     for text, size, color, bold in lines:
         if not text:
             y += size
             continue
         f = pygame.font.Font(BASE_FONT, size)
-        if bold:
-            f.set_bold(True)
+        if bold: f.set_bold(True)
         s = f.render(text, True, color)
         screen.blit(s, ((w - s.get_width()) // 2, y))
         y += s.get_height() + 8
-
     pygame.display.flip()
 
 
-# ==========================================================
-# KEN画像ロード（display確立後に実行すること）
-# ==========================================================
 def load_ken_image(path: str, scale_h: int = 100) -> pygame.Surface:
     img = pygame.image.load(path).convert_alpha()
     w, h = img.get_size()
@@ -383,7 +305,9 @@ def main():
     parser.add_argument("--test-case", type=int, choices=[3, 4], default=None,
                         help="テスト用: 3=QR設定画面, 4=ドングル未接続画面 を強制表示（ESCで終了）")
     parser.add_argument("--wbgt-test", type=float, default=None, metavar="WBGT",
-                        help="WBGT値(℃)を指定して作業注意情報の表示をテスト（例: --wbgt-test 35）")
+                        help="WBGT値(℃)を指定してバッジをテスト（例: --wbgt-test 35）")
+    parser.add_argument("--wbgt-alert", action="store_true",
+                        help="熱中症警戒アラートバナーを強制表示")
     args, unknown = parser.parse_known_args()
 
     airport = args.airport
@@ -395,9 +319,6 @@ def main():
     airport_label = AIRPORT_LABELS.get(airport, airport)
     logging.info(f"起動: airport={airport} interval={args.interval_hours}h")
 
-    # -------------------------
-    # pygame 初期化
-    # -------------------------
     os.environ["SDL_VIDEO_WINDOW_POS"] = "0,0"
     os.environ["SDL_VIDEO_CENTERED"] = "0"
     os.environ["SDL_VIDEO_MINIMIZE_ON_FOCUS_LOSS"] = "0"
@@ -413,15 +334,10 @@ def main():
         )
 
     pygame.mouse.set_visible(False)
-
     screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
     pygame.display.set_caption("Weather Signage")
-
     width, height = screen.get_size()
 
-    # -------------------------
-    # テストモード
-    # -------------------------
     if args.test_case is not None:
         if args.test_case == 3:
             show_ap_screen(screen)
@@ -435,9 +351,6 @@ def main():
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                     pygame.quit(); return
 
-    # -------------------------
-    # WiFi接続チェック
-    # -------------------------
     if not is_wifi_connected() or is_ap_mode_active():
         while True:
             if is_wifi_connected() and not is_ap_mode_active():
@@ -452,24 +365,18 @@ def main():
             pygame.time.wait(5000)
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    pygame.quit()
-                    return
+                    pygame.quit(); return
 
-    # -------------------------
-    # 各種初期化
-    # -------------------------
     cpu_text = "--"
     last_cpu_update = 0
     psutil.cpu_percent(interval=None)
-
     icon_cache = {}
 
     git_version_str = get_git_version_str()
+    git_surf = None
     if git_version_str:
         git_font = pygame.font.Font(BASE_FONT, 16)
         git_surf = git_font.render(git_version_str, True, (150, 150, 150))
-    else:
-        git_surf = None
 
     _local_ip = get_local_ip()
     qr_surf = make_qr_surface(f"http://{_local_ip}:8080", max_size=54) if _local_ip else None
@@ -477,38 +384,25 @@ def main():
 
     KEN1_PATH = os.path.join(ICON_DIR, "ken1.png")
     KEN6_PATH = os.path.join(ICON_DIR, "ken6.png")
-
     ken_img = None
     ken_key_last = "ken1"
     try:
         ken_img = load_ken_image(KEN1_PATH, scale_h=100)
     except Exception as e:
         print("KEN load error:", KEN1_PATH, repr(e), flush=True)
-        ken_img = None
         ken_key_last = None
 
     HEADERS = {"User-Agent": "Mozilla/5.0"}
-
     AIRPORT_WARNING = {
         "narita":   {"pref": "120000", "city": "1221100"},
         "haneda":   {"pref": "130000", "city": "1311100"},
         "centrair": {"pref": "230000", "city": "2321600"},
         "kanku":    {"pref": "270000", "city": "2722000"},
     }
-
     MONITOR_CODES = {
-        "02": "大雨警報",
-        "03": "大雨注意報",
-        "04": "洪水警報",
-        "05": "洪水注意報",
-        "12": "大雪警報",
-        "13": "大雪注意報",
-        "15": "強風注意報",
-        "16": "波浪注意報",
-        "21": "乾燥注意報",
-        "33": "濃霧注意報",
-        "43": "雷注意報",
-        "44": "暴風警報",
+        "02": "大雨警報", "03": "大雨注意報", "04": "洪水警報", "05": "洪水注意報",
+        "12": "大雪警報", "13": "大雪注意報", "15": "強風注意報", "16": "波浪注意報",
+        "21": "乾燥注意報", "33": "濃霧注意報", "43": "雷注意報", "44": "暴風警報",
     }
 
     def fetch_warning_data(airport_key: str):
@@ -519,10 +413,8 @@ def main():
             data = r.json()
         except Exception:
             return "警報取得失敗", ""
-
         warning_list = []
         headline = data.get("headlineText", "")
-
         for area_type in data.get("areaTypes", []):
             for area in area_type.get("areas", []):
                 if area.get("code") == info["city"]:
@@ -531,7 +423,6 @@ def main():
                         status = w.get("status", "")
                         if code in MONITOR_CODES and "解除" not in status:
                             warning_list.append(MONITOR_CODES[code])
-
         if not warning_list:
             return "警報・注意報なし", headline
         return " / ".join(warning_list), headline
@@ -544,7 +435,6 @@ def main():
         area_codes=cfg["area_codes"],
         cache_json_path=jma_cache_path
     )
-
     headline_text = jma_data.get("headline", "")
     updated_text  = jma_data.get("updated", "")
 
@@ -556,9 +446,6 @@ def main():
     last_jma_update = time.time()
     weather_updated_text = ""
 
-    # -------------------------
-    # 初回天気取得（同期）
-    # -------------------------
     fetch_ok = True
     try:
         if args.jma:
@@ -576,11 +463,9 @@ def main():
                 daily.append(d)
         else:
             hourly, daily = fetch_weather_openmeteo(cfg["latitude"], cfg["longitude"])
-
         last_weather_update = datetime.datetime.now(JST)
         weather_updated_text = last_weather_update.strftime("天気更新 %H:%M")
         logging.info("初回天気取得成功")
-
     except Exception as e:
         logging.error(f"Initial fetch failed: {e}")
         hourly, daily = load_cached_weather()
@@ -590,21 +475,29 @@ def main():
 
     last_time_update_minute = -1
     xdotool = shutil.which("xdotool")
-
     needs_redraw = False
     last_drawn_minute = -1
     last_wifi_check = time.time()
     _sunrise_date = None
     sunrise_str, sunset_str = "", ""
-    work_summary = build_work_summary(hourly)
-    if args.wbgt_test is not None:
-        work_summary = _wbgt_test_summary(args.wbgt_test)
 
-    # -------------------------
-    # バックグラウンドフェッチャー初期化
-    # -------------------------
+    # WBGT 初期化
+    wbgt_alert = args.wbgt_alert
+    wbgt_level_info = None
+    if args.wbgt_test is not None:
+        v = args.wbgt_test
+        for threshold, label, bg, fg in WBGT_LEVELS:
+            if v >= threshold:
+                wbgt_level_info = {"label": label, "bg": bg, "fg": fg, "value": v}
+                break
+        wbgt_alert = wbgt_alert or (v >= 33)
+        logging.info(f"WBGT テストモード: value={v} level={wbgt_level_info and wbgt_level_info['label']}")
+    last_wbgt_update = 0.0 if args.wbgt_test is None else time.time()
+    last_blink_state = -1
+
+    work_summary = build_work_summary(hourly)
     fetcher = WeatherFetcher(cfg, args)
-    _fetch_pending = False  # フェッチスレッドが実行中かどうか
+    _fetch_pending = False
 
     # ==========================================================
     # メインループ
@@ -613,41 +506,35 @@ def main():
         now = datetime.datetime.now(JST)
         needs_redraw = False
 
-        # APモード中
         if is_ap_mode_active():
             show_ap_screen(screen)
             while is_ap_mode_active():
                 pygame.time.wait(5000)
                 for event in pygame.event.get():
                     if event.type == pygame.QUIT:
-                        pygame.quit()
-                        return
+                        pygame.quit(); return
                 show_ap_screen(screen)
             needs_redraw = True
             continue
 
-        # WiFi切断監視（30秒ごと）→ ドングル接続時は AP モード自動起動
         if time.time() - last_wifi_check >= 30:
             last_wifi_check = time.time()
             if not is_wifi_connected() and has_wlan1() and not is_ap_mode_active():
                 logging.warning("WiFi切断検出 → AP モード自動起動")
                 trigger_ap_mode()
 
-        # CPU更新（10秒ごと）
         if time.time() - last_cpu_update >= 10:
             cpu = psutil.cpu_percent(interval=None)
             cpu_text = f"{cpu:.0f}%"
             last_cpu_update = time.time()
             needs_redraw = True
 
-        # 分更新
         if now.minute != last_drawn_minute:
             needs_redraw = True
             last_time_update_minute = now.minute
             if xdotool:
                 subprocess.run([xdotool, "key", "Shift_L"], capture_output=True)
 
-        # KEN画像切替（12時）
         ken_key = "ken6" if now.hour == 12 else "ken1"
         if ken_key != ken_key_last:
             try:
@@ -655,11 +542,10 @@ def main():
                 ken_img = load_ken_image(path, scale_h=100)
                 ken_key_last = ken_key
                 needs_redraw = True
-            except Exception as e:
+            except Exception:
                 ken_img = None
                 ken_key_last = None
 
-        # 23:50 定時更新（バックグラウンド）
         if now.hour == 23 and now.minute == 50:
             today_str = now.strftime("%Y-%m-%d")
             if getattr(main, "_updated_2350_date", "") != today_str and not _fetch_pending:
@@ -668,27 +554,41 @@ def main():
                 main._updated_2350_date = today_str
                 logging.info("23:50定時取得開始")
 
-        # 警報更新（1時間ごと、timeout=5で短いのでメインスレッドで実行）
+        # WBGT 更新（1時間ごと、テスト時はスキップ）
+        if args.wbgt_test is None and time.time() - last_wbgt_update > 3600:
+            try:
+                _, wbgt_alert, wbgt_level_info = fetch_wbgt(airport)
+                if args.wbgt_alert:
+                    wbgt_alert = True
+                last_wbgt_update = time.time()
+                needs_redraw = True
+            except Exception as e:
+                logging.error(f"WBGT更新失敗: {e}")
+
         if time.time() - last_jma_update > 3600:
             try:
                 new_warn, _ = fetch_warning_data(airport)
                 warning_text = new_warn
+                jma_data = get_overview_and_warning(
+                    office_code=cfg["office_code"],
+                    area_codes=cfg["area_codes"],
+                    cache_json_path=jma_cache_path,
+                )
+                headline_text = jma_data.get("headline", "")
+                updated_text  = jma_data.get("updated", "")
                 last_jma_update = time.time()
                 needs_redraw = True
             except Exception as e:
                 logging.error(f"JMA更新失敗: {e}")
 
-        # 定期天気取得（バックグラウンド）
         if not _fetch_pending and (now - last_weather_update).total_seconds() >= args.interval_hours * 3600:
             if 5 < now.hour <= 23:
                 fetcher.start()
                 _fetch_pending = True
                 logging.info("定期天気取得開始")
             else:
-                # 深夜帯はスキップして last_weather_update をずらし再チェックを防ぐ
                 last_weather_update = now
 
-        # フェッチ結果ポーリング
         if _fetch_pending:
             done, new_hourly, new_daily, ok = fetcher.poll()
             if done:
@@ -699,25 +599,28 @@ def main():
                     last_weather_update = now
                     weather_updated_text = now.strftime("天気更新 %H:%M")
                     work_summary = build_work_summary(hourly)
-                    if args.wbgt_test is not None:
-                        work_summary = _wbgt_test_summary(args.wbgt_test)
                     fetch_ok = True
                     logging.info("天気取得完了")
                 else:
-                    # 失敗 → 30分後に再試行
                     last_weather_update = now - datetime.timedelta(hours=args.interval_hours) \
                                               + datetime.timedelta(minutes=30)
                     fetch_ok = False
                     logging.error("天気取得失敗またはタイムアウト。30分後に再試行")
                 needs_redraw = True
 
-        # 日の出計算（日付変更時のみ）
+        # 危険レベル時はバッジ点滅のため１秒ごとに再描画
+        is_danger = wbgt_level_info is not None and wbgt_level_info.get("label") == "危険"
+        if is_danger:
+            cur_blink = int(time.time()) % 2
+            if cur_blink != last_blink_state:
+                needs_redraw = True
+                last_blink_state = cur_blink
+
         if now.date() != _sunrise_date:
             sunrise_str, sunset_str = get_sunrise_sunset_str(cfg["latitude"], cfg["longitude"])
             _sunrise_date = now.date()
             needs_redraw = True
 
-        # QRコード更新（日付変更時のみ）
         if now.date() != _qr_date:
             _cur_ip = get_local_ip()
             if _cur_ip:
@@ -727,9 +630,8 @@ def main():
         if not needs_redraw:
             for event in pygame.event.get():
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                    pygame.quit()
-                    return
-            pygame.time.wait(10000)
+                    pygame.quit(); return
+            pygame.time.wait(1000 if is_danger else 10000)
             continue
 
         draw_weather(
@@ -738,12 +640,15 @@ def main():
             warning_text, headline_text, updated_text,
             weather_updated_text, airport_label,
             sunrise_str, sunset_str, work_summary, cpu_text,
-            fetch_ok=fetch_ok, qr_surf=qr_surf
+            fetch_ok=fetch_ok, qr_surf=qr_surf,
+            wbgt_level_info=wbgt_level_info,
+            wbgt_alert=wbgt_alert,
         )
 
         draw_header(
             screen, width, height, BASE_FONT,
-            airport_label, sunrise_str, sunset_str, "", ""
+            airport_label, sunrise_str, sunset_str, "", "",
+            wbgt_level_info=wbgt_level_info,
         )
 
         if ken_img is not None:
@@ -762,10 +667,9 @@ def main():
 
         for event in pygame.event.get():
             if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                pygame.quit()
-                return
+                pygame.quit(); return
 
-        pygame.time.wait(10000)
+        pygame.time.wait(1000 if is_danger else 10000)
 
 
 def run_forever():
