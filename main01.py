@@ -22,6 +22,8 @@ import logging.handlers
 import traceback
 import threading
 import socket
+import http.server
+import socketserver
 import requests
 import psutil
 import subprocess
@@ -143,7 +145,7 @@ def get_git_version_str():
 # ログローテーション
 # ==========================================================
 def setup_logging():
-    log_path = "/home/pi/raspi-weather-lite/displayraspi_log.txt"
+    log_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "displayraspi_log.txt")
     handler = logging.handlers.TimedRotatingFileHandler(
         log_path, when="midnight", backupCount=7, encoding="utf-8"
     )
@@ -280,6 +282,81 @@ def load_ken_image(path: str, scale_h: int = 100) -> pygame.Surface:
 
 
 # ==========================================================
+# Web モード: HTTP スクリーン配信
+# ==========================================================
+_web_png_path = None  # /tmp/weather_screen.png (set at startup)
+
+
+class _ScreenHTTPHandler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path in ("/", "/index.html"):
+            body = (
+                b'<!DOCTYPE html><html><head>'
+                b'<meta charset="utf-8">'
+                b'<meta http-equiv="refresh" content="10">'
+                b'<meta name="viewport" content="width=device-width,initial-scale=1">'
+                b'<title>Weather</title>'
+                b'<style>'
+                b'body{margin:0;background:#000;display:flex;'
+                b'justify-content:center;align-items:center;min-height:100vh}'
+                b'img{max-width:100vw;max-height:100vh;object-fit:contain}'
+                b'</style>'
+                b'</head><body>'
+                b'<img src="/screen.png" alt="Weather Screen">'
+                b'</body></html>'
+            )
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        elif self.path == "/screen.png":
+            path = _web_png_path
+            if path and os.path.exists(path):
+                with open(path, "rb") as f:
+                    data = f.read()
+                self.send_response(200)
+                self.send_header("Content-Type", "image/png")
+                self.send_header("Content-Length", str(len(data)))
+                self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+                self.end_headers()
+                self.wfile.write(data)
+            else:
+                self.send_response(503)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+        else:
+            self.send_response(404)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+    def log_message(self, format, *args):
+        pass  # アクセスログ抑制
+
+
+def _start_web_server(port: int) -> None:
+    global _web_png_path
+    _web_png_path = "/tmp/weather_screen.png"
+    server = socketserver.ThreadingTCPServer(("", port), _ScreenHTTPHandler)
+    server.daemon_threads = True
+    t = threading.Thread(target=server.serve_forever, daemon=True)
+    t.start()
+    logging.info(f"HTTP サーバ起動: 0.0.0.0:{port}  GET / または /screen.png")
+    print(f"HTTP server started on port {port}", flush=True)
+
+
+def _save_web_png(surface: pygame.Surface) -> None:
+    if _web_png_path is None:
+        return
+    tmp = _web_png_path + ".tmp"
+    try:
+        pygame.image.save(surface, tmp)
+        os.rename(tmp, _web_png_path)
+    except Exception as e:
+        logging.error(f"PNG 保存失敗: {e}")
+
+
+# ==========================================================
 # メイン
 # ==========================================================
 def main():
@@ -308,7 +385,15 @@ def main():
                         help="WBGT値(℃)を指定してバッジをテスト（例: --wbgt-test 35）")
     parser.add_argument("--wbgt-alert", action="store_true",
                         help="熱中症警戒アラートバナーを強制表示")
+    parser.add_argument("--http-port", type=int, default=None, metavar="PORT",
+                        help="HTTP 配信ポート（ConoHa/VPS モード、SDL_VIDEODRIVER=offscreen で使用）")
+    parser.add_argument("--screen-width", type=int, default=1280,
+                        help="Web モード時の画面幅 (default: 1280)")
+    parser.add_argument("--screen-height", type=int, default=720,
+                        help="Web モード時の画面高さ (default: 720)")
     args, unknown = parser.parse_known_args()
+
+    web_mode = args.http_port is not None
 
     airport = args.airport
     cfg = AIRPORT_CONFIG.get(airport)
@@ -317,7 +402,10 @@ def main():
 
     AIRPORT_LABELS = {"narita": "成田空港", "haneda": "羽田空港", "centrair": "中部国際空港", "kanku": "関西国際空港"}
     airport_label = AIRPORT_LABELS.get(airport, airport)
-    logging.info(f"起動: airport={airport} interval={args.interval_hours}h")
+    logging.info(f"起動: airport={airport} interval={args.interval_hours}h web_mode={web_mode}")
+
+    if web_mode:
+        _start_web_server(args.http_port)
 
     os.environ["SDL_VIDEO_WINDOW_POS"] = "0,0"
     os.environ["SDL_VIDEO_CENTERED"] = "0"
@@ -331,10 +419,14 @@ def main():
         raise RuntimeError(
             f"pygame display init failed (SDL_VIDEODRIVER={driver}). "
             "DRM デバイスが使用中か、ドライバが見つかりません。"
+            " (Web モードは SDL_VIDEODRIVER=offscreen が必要)"
         )
 
     pygame.mouse.set_visible(False)
-    screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+    if web_mode:
+        screen = pygame.display.set_mode((args.screen_width, args.screen_height))
+    else:
+        screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
     pygame.display.set_caption("Weather Signage")
     width, height = screen.get_size()
 
@@ -351,7 +443,7 @@ def main():
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                     pygame.quit(); return
 
-    if not is_wifi_connected() or is_ap_mode_active():
+    if not web_mode and (not is_wifi_connected() or is_ap_mode_active()):
         while True:
             if is_wifi_connected() and not is_ap_mode_active():
                 break
@@ -506,7 +598,7 @@ def main():
         now = datetime.datetime.now(JST)
         needs_redraw = False
 
-        if is_ap_mode_active():
+        if not web_mode and is_ap_mode_active():
             show_ap_screen(screen)
             while is_ap_mode_active():
                 pygame.time.wait(5000)
@@ -517,7 +609,7 @@ def main():
             needs_redraw = True
             continue
 
-        if time.time() - last_wifi_check >= 30:
+        if not web_mode and time.time() - last_wifi_check >= 30:
             last_wifi_check = time.time()
             if not is_wifi_connected() and has_wlan1() and not is_ap_mode_active():
                 logging.warning("WiFi切断検出 → AP モード自動起動")
@@ -664,6 +756,9 @@ def main():
 
         pygame.display.flip()
         last_drawn_minute = now.minute
+
+        if web_mode:
+            _save_web_png(screen)
 
         for event in pygame.event.get():
             if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
