@@ -1,0 +1,20 @@
+[Unit]
+Description=Weather Signage HTTP Server (ConoHa/VPS)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/raspi-weather-lite
+Environment=SDL_VIDEODRIVER=offscreen
+Environment=SDL_AUDIODRIVER=dummy
+ExecStart=/usr/bin/python3 /opt/raspi-weather-lite/main01.py --http-port 8080
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
