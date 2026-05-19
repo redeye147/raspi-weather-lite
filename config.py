@@ -45,11 +45,31 @@ AIRPORT_CONFIG = {
             "longitude": 135.2440,
             "office_code": "270000",
             "area_codes": ["270010"]
-        }
+        },
 
-#        "narita":   {"office_code": "120000", "area_codes": ("1221100",), "latitude": 35.7651, "longitude": 140.3854, "name": "成田空港"},
-#        "haneda":   {"office_code": "130000", "area_codes": ("1310000",), "latitude": 35.5494, "longitude": 139.7798, "name": "羽田空港"},
-#        "centrair": {"office_code": "230000", "area_codes": ("2321600",), "latitude": 34.8583, "longitude": 136.8053, "name": "中部国際空港"}
+        "chitose": {
+            "name": "新千歳空港",
+            "latitude": 42.7752,
+            "longitude": 141.6922,
+            "office_code": "016000",
+            "area_codes": ["016010"]   # 石狩地方
+        },
+
+        "fukuoka": {
+            "name": "福岡空港",
+            "latitude": 33.5859,
+            "longitude": 130.4511,
+            "office_code": "400000",
+            "area_codes": ["400010"]   # 福岡地方
+        },
+
+        "naha": {
+            "name": "那覇空港",
+            "latitude": 26.1958,
+            "longitude": 127.6458,
+            "office_code": "471000",
+            "area_codes": ["471010"]   # 沖縄本島中南部
+        },
 }
 
 LATITUDE  = 34.8583

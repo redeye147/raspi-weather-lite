@@ -298,7 +298,9 @@ def main():
         pass
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--airport", choices=["narita", "haneda", "centrair", "kanku"], default=_default_airport)
+    parser.add_argument("--airport",
+        choices=["narita", "haneda", "centrair", "kanku", "chitose", "fukuoka", "naha"],
+        default=_default_airport)
     parser.add_argument("--jma", action="store_true", default=True)
     parser.add_argument("--interval-hours", type=float, default=_default_interval)
     parser.add_argument("--no-hdmi-refresh", action="store_true")
@@ -315,7 +317,15 @@ def main():
     if not cfg:
         raise ValueError("未対応 airport")
 
-    AIRPORT_LABELS = {"narita": "成田空港", "haneda": "羽田空港", "centrair": "中部国際空港", "kanku": "関西国際空港"}
+    AIRPORT_LABELS = {
+        "narita":   "成田空港",
+        "haneda":   "羽田空港",
+        "centrair": "中部国際空港",
+        "kanku":    "関西国際空港",
+        "chitose":  "新千歳空港",
+        "fukuoka":  "福岡空港",
+        "naha":     "那覇空港",
+    }
     airport_label = AIRPORT_LABELS.get(airport, airport)
     logging.info(f"起動: airport={airport} interval={args.interval_hours}h")
 
@@ -398,6 +408,9 @@ def main():
         "haneda":   {"pref": "130000", "city": "1311100"},
         "centrair": {"pref": "230000", "city": "2321600"},
         "kanku":    {"pref": "270000", "city": "2722000"},
+        "chitose":  {"pref": "016000", "city": "0122400"},
+        "fukuoka":  {"pref": "400000", "city": "4013000"},
+        "naha":     {"pref": "471000", "city": "4720100"},
     }
     MONITOR_CODES = {
         "02": "大雨警報", "03": "大雨注意報", "04": "洪水警報", "05": "洪水注意報",

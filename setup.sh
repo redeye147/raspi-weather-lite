@@ -14,12 +14,18 @@ echo "  1) centrair - 中部国際空港 (デフォルト)"
 echo "  2) narita   - 成田空港"
 echo "  3) haneda   - 羽田空港"
 echo "  4) kanku    - 関西国際空港"
+echo "  5) chitose  - 新千歳空港"
+echo "  6) fukuoka  - 福岡空港"
+echo "  7) naha     - 那覇空港"
 read -p "番号を入力 [1]: " airport_choice
 
 case "$airport_choice" in
-  2) AIRPORT="narita"    ;;
+  2) AIRPORT="narita"   ;;
   3) AIRPORT="haneda"   ;;
   4) AIRPORT="kanku"    ;;
+  5) AIRPORT="chitose"  ;;
+  6) AIRPORT="fukuoka"  ;;
+  7) AIRPORT="naha"     ;;
   *) AIRPORT="centrair" ;;
 esac
 echo -e "空港: ${GREEN}$AIRPORT${NC}"

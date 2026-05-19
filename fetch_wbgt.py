@@ -18,6 +18,9 @@ _PREF_CODE = {
     "haneda":   "13",   # 東京
     "narita":   "12",   # 千葉
     "kanku":    "27",   # 大阪
+    "chitose":  "01",   # 北海道
+    "fukuoka":  "40",   # 福岡
+    "naha":     "47",   # 沖縄
 }
 
 # WBGT しきい値（環境省基準）

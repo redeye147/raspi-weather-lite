@@ -92,6 +92,9 @@ HTML = """<!DOCTYPE html>
     <option value="haneda">羽田空港</option>
     <option value="centrair">中部国際空港</option>
     <option value="kanku">関西国際空港</option>
+    <option value="chitose">新千歳空港</option>
+    <option value="fukuoka">福岡空港</option>
+    <option value="naha">那覇空港</option>
   </select>
 </div>
 
