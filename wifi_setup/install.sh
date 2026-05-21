@@ -57,6 +57,7 @@ sudo tee /etc/sudoers.d/wifi-portal > /dev/null <<'EOF'
 pi ALL=(ALL) NOPASSWD: /sbin/reboot
 pi ALL=(ALL) NOPASSWD: /bin/systemctl stop wifi-setup-mode
 pi ALL=(ALL) NOPASSWD: /bin/systemctl start wifi-setup-mode
+pi ALL=(ALL) NOPASSWD: /usr/bin/nmcli
 EOF
 sudo chmod 440 /etc/sudoers.d/wifi-portal
 

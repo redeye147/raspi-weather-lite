@@ -75,7 +75,6 @@ HTML = """<!DOCTYPE html>
   h3 { color: #aaddff; margin-top: 24px; margin-bottom: 4px; font-size: 16px; }
   label { font-size: 13px; color: #aaa; }
   #msg { margin-top: 16px; color: #10b981; font-weight: bold; }
-  #manual-ssid { display: none; }
   .badge-connected { font-size: 13px; color: #10b981; margin-bottom: 4px; }
   .badge-disconnected { font-size: 13px; color: #ef4444; margin-bottom: 4px; }
   .section-box { background: #1e2233; border-radius: 10px; padding: 14px; margin-top: 12px; }
@@ -97,11 +96,10 @@ HTML = """<!DOCTYPE html>
 
 <div class="section-box">
   <h3>📶 WiFi 設定</h3>
-  <label>SSID</label>
+  <label>SSID（選択または手入力）</label>
   <p id="scan-status" class="scanning">🔄 スキャン中...</p>
-  <select id="ssid-select" onchange="onSelectChange()" style="display:none">
-  </select>
-  <input id="manual-ssid" placeholder="SSIDを手入力">
+  <input id="ssid-input" list="ssid-list" placeholder="SSIDを選択または入力" autocomplete="off">
+  <datalist id="ssid-list"></datalist>
   <label>パスワード</label>
   <input id="pw" type="password" placeholder="パスワード（未入力の場合はWiFiは変更しません）">
 </div>
@@ -135,50 +133,37 @@ async function init() {
 
 async function loadSSIDs() {
   const status = document.getElementById('scan-status');
-  const sel    = document.getElementById('ssid-select');
+  const list   = document.getElementById('ssid-list');
+  const input  = document.getElementById('ssid-input');
   status.textContent = '🔄 スキャン中...';
   try {
     const ssids = await fetch('/scan').then(r => r.json());
-    sel.innerHTML = '';
+    list.innerHTML = '';
+    if (currentSsid) {
+      const o = document.createElement('option');
+      o.value = currentSsid;
+      list.appendChild(o);
+    }
+    ssids.filter(s => s !== currentSsid).forEach(ssid => {
+      const o = document.createElement('option');
+      o.value = ssid;
+      list.appendChild(o);
+    });
     if (ssids.length === 0 && !currentSsid) {
-      status.textContent = '⚠️ SSIDが見つかりません。手入力を選択してください。';
-      const manual = document.createElement('option');
-      manual.value = '__manual__'; manual.textContent = '手入力';
-      sel.appendChild(manual);
+      status.textContent = '⚠️ SSIDが見つかりません。手入力してください。';
     } else {
       status.textContent = '';
-      if (currentSsid) {
-        const cur = document.createElement('option');
-        cur.value = currentSsid;
-        cur.textContent = currentSsid + ' (現在接続中)';
-        sel.appendChild(cur);
-      }
-      ssids.filter(s => s !== currentSsid).forEach(ssid => {
-        const opt = document.createElement('option');
-        opt.value = ssid; opt.textContent = ssid;
-        sel.appendChild(opt);
-      });
-      const manual = document.createElement('option');
-      manual.value = '__manual__'; manual.textContent = '手入力（リストにない場合）';
-      sel.appendChild(manual);
     }
-    sel.style.display = 'block';
+    if (currentSsid && !input.value) {
+      input.value = currentSsid;
+    }
   } catch(e) {
-    status.textContent = 'スキャン失敗。手入力で入力してください。';
-    document.getElementById('manual-ssid').style.display = 'block';
+    status.textContent = 'スキャン失敗。手入力してください。';
   }
 }
 
-function onSelectChange() {
-  const val = document.getElementById('ssid-select').value;
-  document.getElementById('manual-ssid').style.display = val === '__manual__' ? 'block' : 'none';
-}
-
 function getSSID() {
-  const sel = document.getElementById('ssid-select');
-  return sel.value === '__manual__'
-    ? document.getElementById('manual-ssid').value
-    : sel.value;
+  return document.getElementById('ssid-input').value.trim();
 }
 
 async function save() {
@@ -325,6 +310,30 @@ def save():
             return f"WiFi接続失敗: {result.stderr.strip() or result.stdout.strip()}", 500
     else:
         app.logger.info(f"Already connected to {ssid}, skipping nmcli reconnect")
+
+    # 設定したWiFiを自動接続の最優先（priority=100）にする
+    # 既存の他のWiFiプロファイルはpriority=0に下げる
+    try:
+        list_result = subprocess.run(
+            ["nmcli", "-t", "-f", "NAME,TYPE", "connection", "show"],
+            capture_output=True, text=True, timeout=5
+        )
+        for line in list_result.stdout.strip().splitlines():
+            parts = line.split(":")
+            if len(parts) >= 2 and parts[1] == "802-11-wireless" and parts[0] != ssid:
+                subprocess.run(
+                    ["sudo", "nmcli", "connection", "modify", parts[0],
+                     "connection.autoconnect-priority", "0"],
+                    capture_output=True, text=True, timeout=5
+                )
+        subprocess.run(
+            ["sudo", "nmcli", "connection", "modify", ssid,
+             "connection.autoconnect-priority", "100"],
+            capture_output=True, text=True, timeout=5
+        )
+        app.logger.info(f"Set autoconnect-priority=100 for {ssid}, others=0")
+    except Exception as e:
+        app.logger.warning(f"Priority setting failed: {e}")
 
     _reboot_scheduled = True
     subprocess.Popen(["bash", "-c", "sleep 5 && sudo reboot"])
