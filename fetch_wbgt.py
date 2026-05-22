@@ -12,15 +12,26 @@ import requests
 
 from utils import JST
 
-# 空港 → 都道府県コード（環境省 WBGT CSV 用）
-_PREF_CODE = {
-    "centrair": "23",   # 愛知
-    "haneda":   "13",   # 東京
-    "narita":   "12",   # 千葉
-    "kanku":    "27",   # 大阪
-    "chitose":  "01",   # 北海道
-    "fukuoka":  "40",   # 福岡
-    "naha":     "47",   # 沖縄
+# CSVダウンロード用（英語名形式: yohou_aichi.csv 等）
+_PREF_CSV = {
+    "centrair": "aichi",     # 愛知
+    "haneda":   "tokyo",     # 東京
+    "narita":   "chiba",     # 千葉
+    "kanku":    "osaka",     # 大阪
+    "chitose":  "hokkaido",  # 北海道
+    "fukuoka":  "fukuoka",   # 福岡
+    "naha":     "okinawa",   # 沖縄
+}
+
+# 警戒アラートHTML検索用（2桁数字都道府県コード）
+_PREF_ALERT = {
+    "centrair": "23",
+    "haneda":   "13",
+    "narita":   "12",
+    "kanku":    "27",
+    "chitose":  "01",
+    "fukuoka":  "40",
+    "naha":     "47",
 }
 
 # WBGT しきい値（環境省基準）
@@ -39,9 +50,9 @@ _HEADERS = {
 }
 
 
-def _fetch_wbgt_csv(pref_code: str) -> float | None:
+def _fetch_wbgt_csv(csv_code: str) -> float | None:
     """当日の WBGT 最高予測値を返す。取得失敗時は None。"""
-    url = f"https://www.wbgt.env.go.jp/prev15WG/dl/yohou_{pref_code}.csv"
+    url = f"https://www.wbgt.env.go.jp/prev15WG/dl/yohou_{csv_code}.csv"
     try:
         r = requests.get(url, headers=_HEADERS, timeout=10)
         r.raise_for_status()
@@ -52,7 +63,7 @@ def _fetch_wbgt_csv(pref_code: str) -> float | None:
             r.raise_for_status()
             text = r.text
         except Exception as e:
-            logging.warning(f"WBGT CSV 取得失敗 pref={pref_code}: {e}")
+            logging.warning(f"WBGT CSV 取得失敗 ({csv_code}): {e}")
             return None
 
     today = datetime.datetime.now(JST).strftime("%Y/%m/%d")
@@ -71,18 +82,18 @@ def _fetch_wbgt_csv(pref_code: str) -> float | None:
     return max_val
 
 
-def _fetch_alert(pref_code: str) -> bool:
+def _fetch_alert(alert_code: str) -> bool:
     """熱中症警戒アラート発令中なら True。取得失敗時は False。"""
     url = "https://www.wbgt.env.go.jp/alert.php"
     try:
         r = requests.get(url, headers=_HEADERS, timeout=10)
         r.raise_for_status()
         text = r.text
-        marker = f'class="alert" data-pref="{pref_code}"'
-        alt_marker = f"pref{pref_code}"
+        marker = f'class="alert" data-pref="{alert_code}"'
+        alt_marker = f"pref{alert_code}"
         return marker in text or alt_marker in text
     except Exception as e:
-        logging.debug(f"アラートチェック失敗 pref={pref_code}: {e}")
+        logging.debug(f"アラートチェック失敗 ({alert_code}): {e}")
         return False
 
 
@@ -97,12 +108,13 @@ def fetch_wbgt(airport: str) -> tuple:
         "value": float,     # WBGT 値
     }
     """
-    code = _PREF_CODE.get(airport)
-    if not code:
+    csv_code   = _PREF_CSV.get(airport)
+    alert_code = _PREF_ALERT.get(airport)
+    if not csv_code:
         return None, False, None
 
-    wbgt = _fetch_wbgt_csv(code)
-    alert = _fetch_alert(code) if wbgt is not None and wbgt >= 33 else False
+    wbgt  = _fetch_wbgt_csv(csv_code)
+    alert = _fetch_alert(alert_code) if alert_code and wbgt is not None and wbgt >= 33 else False
 
     level_info = None
     if wbgt is not None:
