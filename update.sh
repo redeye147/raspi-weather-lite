@@ -9,13 +9,21 @@ REPO_DIR="/home/pi/raspi-weather-lite"
 
 echo -e "${GREEN}=== raspi-weather-lite 更新 ===${NC}"
 
-# ── [1/3] コード更新 ───────────────────────────────
-echo -e "\n${YELLOW}[1/3] コードを更新中...${NC}"
+# ── [1/4] コード更新 ───────────────────────────────────────
+echo -e "\n${YELLOW}[1/4] コードを更新中...${NC}"
 git -C "$REPO_DIR" pull
 echo -e "  ${GREEN}完了${NC}"
 
-# ── [2/3] watchdog（未設定の場合のみ） ────────────
-echo -e "\n${YELLOW}[2/3] watchdog を確認中...${NC}"
+# ── [2/4] サービスファイル更新 ───────────────────────────────
+echo -e "\n${YELLOW}[2/4] systemd サービスファイルを更新中...${NC}"
+chmod +x "$REPO_DIR/start.sh"
+sudo cp "$REPO_DIR/main01.service" /etc/systemd/system/main01.service
+sudo systemctl daemon-reload
+sudo systemctl restart main01
+echo -e "  ${GREEN}完了${NC}"
+
+# ── [3/4] watchdog（未設定の場合のみ） ────────────────────────
+echo -e "\n${YELLOW}[3/4] watchdog を確認中...${NC}"
 
 _setup_watchdog() {
     sudo apt install -y watchdog -qq
@@ -34,7 +42,6 @@ min-memory = 1
 EOF
 
     sudo systemctl enable watchdog > /dev/null 2>&1
-    # /dev/watchdog は再起動後に有効になるため起動失敗は無視する
     sudo systemctl restart watchdog 2>/dev/null || true
     echo -e "  ${GREEN}watchdog 設定完了（再起動後に有効）${NC}"
 }
@@ -45,7 +52,7 @@ else
     _setup_watchdog
 fi
 
-# ── [3/3] 完了 ────────────────────────────────────
+# ── [4/4] 完了 ────────────────────────────────────────────
 echo -e "\n${GREEN}✓ 更新完了！${NC}"
 echo ""
 read -p "今すぐ再起動しますか？ [y/N]: " do_reboot
