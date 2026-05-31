@@ -425,7 +425,7 @@ def draw_weather(
 
         if updated_text:
             upd_surf = get_font(base_font_path, 20).render(
-                f"発表時間：{updated_text}", True, (0, 0, 0)
+                f"予報更新：{updated_text}", True, (0, 0, 0)
             )
             screen.blit(
                 upd_surf,

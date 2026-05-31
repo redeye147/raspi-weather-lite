@@ -61,7 +61,6 @@ def _get_json(url: str, timeout: int = 10) -> Any:
 
 
 def _fmt_updated(dt_str: str) -> str:
-    # 例: "2026-01-28T05:45:00+09:00" / "2026-01-28T05:45:00+0900" 等をざっくり整形
     try:
         dt = datetime.datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
         return dt.astimezone(JST).strftime("%Y-%m-%d %H:%M")
@@ -88,19 +87,16 @@ def _extract_warning_text(warn_json: Dict[str, Any], area_codes: Tuple[str, ...]
                 name = (w.get("name") or "").strip()
                 status = (w.get("status") or "").strip()
 
-                # 「解除」などは除外（JMAデータは "解除" / "発表" などが来る想定）
                 if not name:
                     continue
                 if status and ("解除" in status or "取消" in status):
                     continue
 
-                # 例: "乾燥注意報(継続)" みたいにしたい場合は status を足す
                 if status and status not in ("発表",):
                     hits.append(f"{name}（{status}）")
                 else:
                     hits.append(name)
 
-    # area_codesで何も拾えない場合は、最初のareaを少し拾って「全体」っぽく返す
     if not hits:
         for at in area_types:
             for area in (at.get("areas") or [])[:3]:
@@ -118,7 +114,6 @@ def _extract_warning_text(warn_json: Dict[str, Any], area_codes: Tuple[str, ...]
     if not hits:
         return "警報・注意報：発表なし"
 
-    # 重複除去しつつ順序維持
     seen = set()
     uniq = []
     for x in hits:
@@ -140,7 +135,7 @@ def get_overview_and_warning(
       headline: 1行（概要の見出し + 警報headlineTextの先頭）
       overview: 概況本文
       warning: 警報注意報（指定エリア優先）
-      updated: "YYYY-mm-dd HH:MM"
+      updated: "YYYY-mm-dd HH:MM"  ← 予報概況の更新時刻（毎日5/11/17時更新）
     """
     cache = _load_cache(cache_json_path)
 
@@ -151,6 +146,7 @@ def get_overview_and_warning(
         ov = _get_json(overview_url)
         ov_text = (ov.get("text") or "").strip()
         ov_head = (ov.get("headlineText") or "").strip()
+        # 予報概況の更新時刻を使用（毎日3回更新されるため警報より新しい）
         updated = _fmt_updated(ov.get("reportDatetime") or "")
     except Exception:
         ov_text = (cache.get("overview") or "概況取得失敗")
@@ -161,12 +157,11 @@ def get_overview_and_warning(
         wj = _get_json(warning_url)
         w_head = (wj.get("headlineText") or "").strip()
         w_text = _extract_warning_text(wj, area_codes)
-        updated = _fmt_updated(wj.get("reportDatetime") or "") or updated
+        # updated は警報 reportDatetime で上書きしない（警報なしの日は古い日付になるため）
     except Exception:
         w_head = ""
         w_text = (cache.get("warning") or "警報・注意報：取得失敗")
 
-    # headline は短く（長いと表示が崩れるため）
     headline = ""
     if ov_head:
         headline = ov_head
@@ -198,5 +193,3 @@ if __name__ == "__main__":
 
     print("取得データ:")
     print(data)
-
-
