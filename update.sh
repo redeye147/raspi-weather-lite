@@ -12,7 +12,6 @@ echo -e "${GREEN}=== raspi-weather-lite 更新 ===${NC}"
 # ── [1/5] 依存パッケージ確認 ──────────────────────────────
 echo -e "\n${YELLOW}[1/5] 依存パッケージを確認中...${NC}"
 
-# aptパッケージチェック（Bookworm/Trixie共通）
 APT_PKGS=(
     python3-pygame
     python3-requests
@@ -31,7 +30,6 @@ if [ ${#MISSING_APT[@]} -gt 0 ]; then
     sudo apt install -y "${MISSING_APT[@]}"
 fi
 
-# Pythonモジュールチェック（aptのパッケージ名が環境により異なる場合も対応）
 PY_MODULES=(pytz astral)
 for mod in "${PY_MODULES[@]}"; do
     if ! python3 -c "import $mod" &>/dev/null; then
@@ -67,10 +65,11 @@ _setup_watchdog() {
         echo "  DTパラメータを追加しました（再起動後に有効）"
     fi
 
+    # Pi Zero Wに合わせた車載平均閾値（5）を設定
     sudo tee /etc/watchdog.conf > /dev/null << 'EOF'
 watchdog-device = /dev/watchdog
 watchdog-timeout = 15
-max-load-1 = 24
+max-load-1 = 5
 min-memory = 1
 EOF
 
@@ -79,8 +78,18 @@ EOF
     echo -e "  ${GREEN}watchdog 設定完了（再起動後に有効）${NC}"
 }
 
+_update_watchdog_conf() {
+    # 既存の設定の max-load-1 が古い場合は更新
+    if grep -q "max-load-1 = 24" /etc/watchdog.conf 2>/dev/null; then
+        sudo sed -i 's/max-load-1 = 24/max-load-1 = 5/' /etc/watchdog.conf
+        sudo systemctl restart watchdog 2>/dev/null || true
+        echo "  max-load-1 を 24 → 5 に修正しました"
+    fi
+}
+
 if systemctl is-active --quiet watchdog 2>/dev/null; then
-    echo "  既に稼働中です（スキップ）"
+    echo "  既に稼働中です"
+    _update_watchdog_conf
 else
     _setup_watchdog
 fi
