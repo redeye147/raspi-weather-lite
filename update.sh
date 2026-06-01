@@ -9,21 +9,46 @@ REPO_DIR="/home/pi/raspi-weather-lite"
 
 echo -e "${GREEN}=== raspi-weather-lite 更新 ===${NC}"
 
-# ── [1/4] コード更新 ───────────────────────────────────────
-echo -e "\n${YELLOW}[1/4] コードを更新中...${NC}"
+# ── [1/5] 依存パッケージ確認 ──────────────────────────────
+echo -e "\n${YELLOW}[1/5] 依存パッケージを確認中...${NC}"
+PKGS=(
+    python3-pygame
+    python3-requests
+    python3-psutil
+    python3-pytz
+    python3-astral
+    python3-qrcode
+    fonts-ipafont-gothic
+)
+MISSING=()
+for pkg in "${PKGS[@]}"; do
+    if ! dpkg -s "$pkg" &>/dev/null; then
+        MISSING+=("$pkg")
+    fi
+done
+if [ ${#MISSING[@]} -gt 0 ]; then
+    echo "  未インストール: ${MISSING[*]}"
+    sudo apt install -y "${MISSING[@]}"
+    echo -e "  ${GREEN}インストール完了${NC}"
+else
+    echo "  全パッケージ揃っています（スキップ）"
+fi
+
+# ── [2/5] コード更新 ──────────────────────────────────────
+echo -e "\n${YELLOW}[2/5] コードを更新中...${NC}"
 git -C "$REPO_DIR" pull
 echo -e "  ${GREEN}完了${NC}"
 
-# ── [2/4] サービスファイル更新 ───────────────────────────────
-echo -e "\n${YELLOW}[2/4] systemd サービスファイルを更新中...${NC}"
+# ── [3/5] サービスファイル更新 ────────────────────────────
+echo -e "\n${YELLOW}[3/5] systemd サービスファイルを更新中...${NC}"
 chmod +x "$REPO_DIR/start.sh"
 sudo cp "$REPO_DIR/main01.service" /etc/systemd/system/main01.service
 sudo systemctl daemon-reload
 sudo systemctl restart main01
 echo -e "  ${GREEN}完了${NC}"
 
-# ── [3/4] watchdog（未設定の場合のみ） ────────────────────────
-echo -e "\n${YELLOW}[3/4] watchdog を確認中...${NC}"
+# ── [4/5] watchdog（未設定の場合のみ）────────────────────
+echo -e "\n${YELLOW}[4/5] watchdog を確認中...${NC}"
 
 _setup_watchdog() {
     sudo apt install -y watchdog -qq
@@ -52,7 +77,7 @@ else
     _setup_watchdog
 fi
 
-# ── [4/4] 完了 ────────────────────────────────────────────
+# ── [5/5] 完了 ────────────────────────────────────────────
 echo -e "\n${GREEN}✓ 更新完了！${NC}"
 echo ""
 read -p "今すぐ再起動しますか？ [y/N]: " do_reboot
