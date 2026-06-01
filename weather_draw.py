@@ -392,19 +392,30 @@ def draw_weather(
         screen.blit(title_surf, (box_x + 10, y_line))
         y_line += title_surf.get_height() + 8
 
-        display_warning = warning_text if warning_text else "発表なし"
-        if "警報" in display_warning:
-            wcolor = (255, 0, 0)
-        elif "注意報" in display_warning:
-            wcolor = (255, 140, 0)
+        # 実際に発令中の警報・注意報がある場合のみ色付き表示、解除済みは「発表なし」
+        has_active_warning = (
+            bool(warning_text)
+            and "なし" not in warning_text
+            and "失敗" not in warning_text
+        )
+        if has_active_warning:
+            display_warning = warning_text
+            if "警報" in display_warning:
+                wcolor = (255, 0, 0)
+            elif "注意報" in display_warning:
+                wcolor = (255, 140, 0)
+            else:
+                wcolor = (0, 0, 0)
         else:
+            display_warning = "発表なし"
             wcolor = (0, 0, 0)
 
         warn_surf = get_font(base_font_path, 24).render(display_warning, True, wcolor)
         screen.blit(warn_surf, (box_x + 10, y_line))
         y_line += warn_surf.get_height() + 8
 
-        if headline_text:
+        # 警報発令中のときのみ見出し文を表示（解除後は古い見出しを残さない）
+        if headline_text and has_active_warning:
             small_font = get_font(base_font_path, 20)
             max_width = box_w - 20
             lines = []

@@ -160,7 +160,12 @@ def get_overview_and_warning(
         # updated は警報 reportDatetime で上書きしない（警報なしの日は古い日付になるため）
     except Exception:
         w_head = ""
-        w_text = (cache.get("warning") or "警報・注意報：取得失敗")
+        # キャッシュが2時間以内なら使用。古いキャッシュは解除済み警報を表示し続けるため使わない
+        cache_age = time.time() - cache.get("_saved_at", 0)
+        if cache_age < 7200:
+            w_text = cache.get("warning") or "警報・注意報：取得失敗"
+        else:
+            w_text = "警報・注意報：取得失敗"
 
     headline = ""
     if ov_head:
@@ -174,6 +179,7 @@ def get_overview_and_warning(
         "overview": ov_text if ov_text else "概況：取得できませんでした",
         "warning": w_text,
         "updated": updated,
+        "_saved_at": time.time(),
     }
 
     _save_cache(cache_json_path, out)
