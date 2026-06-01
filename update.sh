@@ -11,28 +11,36 @@ echo -e "${GREEN}=== raspi-weather-lite 更新 ===${NC}"
 
 # ── [1/5] 依存パッケージ確認 ──────────────────────────────
 echo -e "\n${YELLOW}[1/5] 依存パッケージを確認中...${NC}"
-PKGS=(
+
+# aptパッケージチェック（Bookworm/Trixie共通）
+APT_PKGS=(
     python3-pygame
     python3-requests
     python3-psutil
-    python3-pytz
-    python3-astral
     python3-qrcode
     fonts-ipafont-gothic
 )
-MISSING=()
-for pkg in "${PKGS[@]}"; do
+MISSING_APT=()
+for pkg in "${APT_PKGS[@]}"; do
     if ! dpkg -s "$pkg" &>/dev/null; then
-        MISSING+=("$pkg")
+        MISSING_APT+=("$pkg")
     fi
 done
-if [ ${#MISSING[@]} -gt 0 ]; then
-    echo "  未インストール: ${MISSING[*]}"
-    sudo apt install -y "${MISSING[@]}"
-    echo -e "  ${GREEN}インストール完了${NC}"
-else
-    echo "  全パッケージ揃っています（スキップ）"
+if [ ${#MISSING_APT[@]} -gt 0 ]; then
+    echo "  apt 未インストール: ${MISSING_APT[*]}"
+    sudo apt install -y "${MISSING_APT[@]}"
 fi
+
+# Pythonモジュールチェック（aptのパッケージ名が環境により異なる場合も対応）
+PY_MODULES=(pytz astral)
+for mod in "${PY_MODULES[@]}"; do
+    if ! python3 -c "import $mod" &>/dev/null; then
+        echo "  $mod 未インストール → apt で試みる..."
+        sudo apt install -y "python3-$mod" 2>/dev/null || \
+            sudo pip3 install "$mod" --break-system-packages
+    fi
+done
+echo -e "  ${GREEN}パッケージ確認完了${NC}"
 
 # ── [2/5] コード更新 ──────────────────────────────────────
 echo -e "\n${YELLOW}[2/5] コードを更新中...${NC}"
