@@ -606,6 +606,7 @@ def main():
 
     try:
         warning_text, _ = fetch_warning_data(airport)
+        logging.info(f"初回警報取得完了: {warning_text}")
     except Exception as e:
         logging.error(f"初回警報取得失敗: {e}")
         warning_text = "警報取得失敗"
@@ -663,6 +664,7 @@ def main():
         needs_redraw = False
 
         if is_ap_mode_active():
+            logging.warning("APモード検出: 設定画面を表示")
             show_ap_screen(screen)
             while is_ap_mode_active():
                 pygame.time.wait(5000)
@@ -670,6 +672,7 @@ def main():
                     if event.type == pygame.QUIT:
                         pygame.quit(); return
                 show_ap_screen(screen)
+            logging.info("APモード終了: 通常画面に復帰")
             needs_redraw = True
             continue
 
@@ -734,6 +737,7 @@ def main():
                 updated_text  = jma_data.get("updated", "")
                 last_jma_update = time.time()
                 needs_redraw = True
+                logging.info(f"JMA更新完了: {warning_text}")
             except Exception as e:
                 logging.error(f"JMA更新失敗: {e}")
 
