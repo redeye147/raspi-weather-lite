@@ -1,6 +1,6 @@
 """
 wifi_portal.py
-スマホ・PCブラウザから空港設定・WiFi設定ができる Web UI（Flask）
+スマホ・ PCブラウザから空港設定・WiFi設定ができる Web UI（Flask）
 ポート: 8080
 """
 
@@ -289,7 +289,7 @@ def save_airport():
     data = request.get_json()
     airport = data.get("airport", "centrair").strip()
     _save_config({"airport": airport})
-    subprocess.Popen(["bash", "-c", "sleep 3 && sudo reboot"])
+    subprocess.Popen(["bash", "-c", "sleep 3 && reboot"])
     return "空港を変更しました。Piが再起動します。しばらくお待ちください..."
 
 
@@ -310,7 +310,7 @@ def save():
         return "SSIDを入力してください", 400
     _save_config({"airport": airport})
 
-    # すでに同じSSIDに接続済みなら nmcli 再接続をスキップ
+    # すでに同じSSIDに接続済なら nmcli 再接続をスキップ
     try:
         current_ssid = subprocess.run(
             ["iwgetid", "-r"], capture_output=True, text=True, timeout=3
@@ -320,7 +320,7 @@ def save():
 
     if current_ssid != ssid:
         result = subprocess.run(
-            ["sudo", "nmcli", "dev", "wifi", "connect", ssid, "password", pw],
+            ["nmcli", "dev", "wifi", "connect", ssid, "password", pw],
             capture_output=True, text=True, timeout=30
         )
         app.logger.info(f"nmcli connect: rc={result.returncode} out={result.stdout.strip()} err={result.stderr.strip()}")
@@ -330,7 +330,7 @@ def save():
         app.logger.info(f"Already connected to {ssid}, skipping nmcli reconnect")
 
     _reboot_scheduled = True
-    subprocess.Popen(["bash", "-c", "sleep 5 && sudo reboot"])
+    subprocess.Popen(["bash", "-c", "sleep 5 && reboot"])
     return "設定完了！Piが再起動します。しばらくお待ちください..."
 
 

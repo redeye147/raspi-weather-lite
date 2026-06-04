@@ -17,6 +17,7 @@ APT_PKGS=(
     python3-requests
     python3-psutil
     python3-qrcode
+    python3-flask
     fonts-ipafont-gothic
 )
 MISSING_APT=()
@@ -40,7 +41,7 @@ for mod in "${PY_MODULES[@]}"; do
 done
 echo -e "  ${GREEN}パッケージ確認完了${NC}"
 
-# ── [2/5] コード更新 ──────────────────────────────────────
+# ── [2/5] コード更新 ──────────────────────────────────
 echo -e "\n${YELLOW}[2/5] コードを更新中...${NC}"
 git -C "$REPO_DIR" pull
 echo -e "  ${GREEN}完了${NC}"
@@ -48,9 +49,12 @@ echo -e "  ${GREEN}完了${NC}"
 # ── [3/5] サービスファイル更新 ────────────────────────────
 echo -e "\n${YELLOW}[3/5] systemd サービスファイルを更新中...${NC}"
 chmod +x "$REPO_DIR/start.sh"
-sudo cp "$REPO_DIR/main01.service" /etc/systemd/system/main01.service
+sudo cp "$REPO_DIR/main01.service"      /etc/systemd/system/main01.service
+sudo cp "$REPO_DIR/wifi-portal.service" /etc/systemd/system/wifi-portal.service
 sudo systemctl daemon-reload
+sudo systemctl enable wifi-portal
 sudo systemctl restart main01
+sudo systemctl restart wifi-portal
 echo -e "  ${GREEN}完了${NC}"
 
 # ── [4/5] watchdog（未設定の場合のみ）────────────────────
@@ -65,7 +69,7 @@ _setup_watchdog() {
         echo "  DTパラメータを追加しました（再起動後に有効）"
     fi
 
-    # Pi Zero Wに合わせた車載平均閾値（5）を設定
+    # Pi Zero Wに合わせた車載平均間閾値（5）を設定
     sudo tee /etc/watchdog.conf > /dev/null << 'EOF'
 watchdog-device = /dev/watchdog
 watchdog-timeout = 15
@@ -94,7 +98,7 @@ else
     _setup_watchdog
 fi
 
-# ── [5/5] 完了 ────────────────────────────────────────────
+# ── [5/5] 完了 ──────────────────────────────────────────
 echo -e "\n${GREEN}✓ 更新完了！${NC}"
 echo ""
 read -p "今すぐ再起動しますか？ [y/N]: " do_reboot
