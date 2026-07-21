@@ -27,6 +27,7 @@ import requests
 import psutil
 import subprocess
 
+from fb_display import init_display, present
 from header import draw_header
 from weather_draw import draw_weather
 from fetch_wbgt import fetch_wbgt, WBGT_LEVELS
@@ -119,7 +120,7 @@ class WeatherFetcher:
 
 
 # ==========================================================
-# gitバージョン情報取得（起動時1回）
+# gitバージョン情報取得（起動敢1回）
 # ==========================================================
 def get_git_version_str():
     try:
@@ -170,20 +171,20 @@ def _draw_splash_frame(screen, width, height, base_font,
     """
     screen.fill((10, 12, 20))
 
-    # ── タイトル ──────────────────────────────────
+    # ── タイトル ────────────────────────────────
     f_title = pygame.font.Font(base_font, 54)
     f_title.set_bold(True)
     t = f_title.render("天気サイネージ", True, (255, 215, 0))
     title_y = int(height * 0.17)
     screen.blit(t, ((width - t.get_width()) // 2, title_y))
 
-    # ── 空港名 ────────────────────────────────────
+    # ── 空港名 ───────────────────────────────
     f_airport = pygame.font.Font(base_font, 34)
     a = f_airport.render(airport_label, True, (160, 210, 255))
     screen.blit(a, ((width - a.get_width()) // 2,
                     title_y + t.get_height() + 12))
 
-    # ── ステップリスト ─────────────────────────────
+    # ── ステップリスト ─────────────────────────
     f_step = pygame.font.Font(base_font, 26)
     spinner = _SPINNER[int(time.time() * 4) % len(_SPINNER)]
     step_x = (width - 460) // 2
@@ -226,14 +227,14 @@ def _draw_splash_frame(screen, width, height, base_font,
         pct_s = f_pct.render(f"{int(progress * 100)}%", True, (110, 150, 220))
         screen.blit(pct_s, (bar_x + bar_w + 14, bar_y - 2))
 
-    # ── バージョン情報（右下）────────────────────────
+    # ── バージョン情報（右下）────────────────────
     if git_version_str:
         f_ver = pygame.font.Font(base_font, 16)
         v = f_ver.render(git_version_str, True, (75, 80, 100))
         screen.blit(v, (width - v.get_width() - 14,
                         height - v.get_height() - 12))
 
-    pygame.display.flip()
+    present(screen)
 
 # フェッチ開始時刻をモジュールレベルで共有するための属性
 _draw_splash_frame._fetch_start = 0.0
@@ -252,7 +253,7 @@ def _fade(screen, width, height, base_font, airport_label,
                 else int(255 * (steps_count - i) / steps_count)
         veil.set_alpha(alpha)
         screen.blit(veil, (0, 0))
-        pygame.display.flip()
+        present(screen)
         pygame.time.wait(delay_ms)
 
 
@@ -395,7 +396,7 @@ def show_ap_screen(screen):
         s = f.render(text, True, color)
         screen.blit(s, ((w - s.get_width()) // 2, info_y))
         info_y += s.get_height() + 4
-    pygame.display.flip()
+    present(screen)
 
 
 def show_no_dongle_screen(screen):
@@ -420,7 +421,7 @@ def show_no_dongle_screen(screen):
         s = f.render(text, True, color)
         screen.blit(s, ((w - s.get_width()) // 2, y))
         y += s.get_height() + 8
-    pygame.display.flip()
+    present(screen)
 
 
 def load_ken_image(path: str, scale_h: int = 100) -> pygame.Surface:
@@ -463,6 +464,9 @@ def main():
                         help="WBGT値(℃)を指定してバッジをテスト（例: --wbgt-test 35）")
     parser.add_argument("--wbgt-alert", action="store_true",
                         help="熱中症警戒アラートバナーを強制表示")
+    parser.add_argument("--render",
+                        choices=["auto", "kmsdrm", "fb0", "x11"], default="auto",
+                        help="描画モード（既定: auto = kmsdrm を試し失敗時に fb0 へフォールバック）")
     args, unknown = parser.parse_known_args()
 
     airport = args.airport
@@ -486,8 +490,8 @@ def main():
     os.environ["SDL_VIDEO_CENTERED"] = "0"
     os.environ["SDL_VIDEO_MINIMIZE_ON_FOCUS_LOSS"] = "0"
 
-    pygame.init()
-    pygame.font.init()
+    # 描画モードを自動判定（auto: kmsdrm を検証 → 失敗時 offscreen+fb0）
+    screen = init_display(args.render)
 
     if not pygame.display.get_init():
         driver = os.environ.get("SDL_VIDEODRIVER", "(unset)")
@@ -496,8 +500,6 @@ def main():
             "DRM デバイスが使用中か、ドライバが見つかりません。"
         )
 
-    pygame.mouse.set_visible(False)
-    screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
     pygame.display.set_caption("Weather Signage")
     width, height = screen.get_size()
 
@@ -822,7 +824,7 @@ def main():
                 (width - git_surf.get_width() - 8,
                  height - git_surf.get_height() - 4))
 
-        pygame.display.flip()
+        present(screen)
         last_drawn_minute = now.minute
 
         for event in pygame.event.get():
