@@ -12,6 +12,7 @@ E61c draw_weather 完全互換移植版 (lite: Pi Zero W 最適化)
 import os
 import pygame
 import datetime
+import re
 
 from config import ICON_DIR
 from utils import (
@@ -25,6 +26,9 @@ from utils import (
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ICON_DIR = os.path.join(BASE_DIR, "weather_icons")
+
+# 天気概況の最大行数（読みやすさ優先で短く）
+OVERVIEW_MAX_LINES = 3
 
 # 緯度経度が渡されない場合の夜間（月アイコン）時刻
 NIGHT_HOURS = {"21", "22", "23", "00", "01", "02", "03"}
@@ -41,6 +45,13 @@ def _wrap_text(text, font, max_width):
     if cur:
         lines.append(cur)
     return lines
+
+
+def _overview_outlook(text: str) -> str:
+    """天気概況から「２７日は、…」のような日付ごとの見通し段落だけを抜き出す（無ければ全文）。"""
+    paras = ["".join(p.split()) for p in (text or "").split("\n\n")]
+    outlook = [p for p in paras if re.match(r"^[０-９0-9]{1,2}日(は|の)", p)]
+    return "".join(outlook or paras)
 
 
 def _is_night_item(item, latitude, longitude) -> bool:
@@ -467,13 +478,13 @@ def draw_weather(
             bottom -= upd_surf.get_height()
             screen.blit(upd_surf, (box_x + 10, bottom))
 
-        # 3) 天気概況（残りスペースに収まる分だけ。溢れたら末尾を…で切る）
-        ov = "".join((overview_text or "").split())
+        # 3) 天気概況（最大 OVERVIEW_MAX_LINES 行・残りスペース内。溢れたら末尾を…で切る）
+        ov = _overview_outlook(overview_text)
         if ov:
-            ov_font = get_font(base_font_path, 18)
+            ov_font = get_font(base_font_path, 20)
             line_h = ov_font.get_linesize()
             y_line += 4
-            max_lines = (bottom - 4 - y_line) // line_h
+            max_lines = min(OVERVIEW_MAX_LINES, (bottom - 4 - y_line) // line_h)
             if max_lines > 0:
                 pygame.draw.line(screen, (180, 180, 180),
                                  (box_x + 10, y_line - 2), (box_x + box_w - 10, y_line - 2), 1)
