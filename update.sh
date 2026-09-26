@@ -48,9 +48,11 @@ CFG="$REPO_DIR/config.json"
 CFG_BAK="$HOME/.raspi-weather-config.json.bak"
 [ -f "$CFG" ] && cp "$CFG" "$CFG_BAK"
 
-# 旧版で git 管理されていた config.json の変更は pull の妨げになるので HEAD に戻す（内容は退避済み）
+# config.json は Pi ごとに書き換わるが pull の妨げになるので一旦 HEAD に戻し、pull 後に復元する
 if git ls-files --error-unmatch config.json &>/dev/null; then
     git checkout HEAD -- config.json
+else
+    rm -f "$CFG"
 fi
 # 実行権限だけの差分（chmod +x）も pull の妨げになるので戻す
 git diff HEAD --numstat | awk '$1=="0" && $2=="0" {print $3}' | while read -r f; do
