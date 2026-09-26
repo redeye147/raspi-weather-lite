@@ -56,6 +56,14 @@ bash ~/raspi-weather-lite/update.sh
 依存パッケージ確認 → `git pull` → systemd サービス更新 → watchdog 確認 まで行い、最後に再起動するか聞かれます（`y` で再起動）。
 更新後は画面右下のバージョン表示（コミット日時）で反映を確認できます。
 
+`config.json`（Pi ごとの空港設定）は git 管理外です。`update.sh` は更新の前後で `config.json` を退避・復元するので、空港設定は更新で消えません。
+
+> **2026-09-27 以前にセットアップした Pi の初回だけ**：旧版の `update.sh` では `config.json` の衝突で止まるため、1度だけ以下を実行してください（空港設定は保持されます）。
+>
+> ```bash
+> cd ~/raspi-weather-lite && cp config.json ~/config.json.bak && git checkout HEAD -- config.json start.sh && git pull --ff-only && cp ~/config.json.bak config.json && bash update.sh
+> ```
+
 ### OS書き込み時の準備（Raspberry Pi Imager）
 
 Imager の「詳細設定」で以下を事前設定しておくと SSH で接続できます。
@@ -413,7 +421,7 @@ raspi-weather-lite/
 ├── jma_alerts.py        # JMA警報・注意報取得
 ├── utils.py             # 共通ユーティリティ（フォントキャッシュ・QR生成など）
 ├── config.py            # 空港設定・定数
-├── config.json          # 実行時設定（空港・更新間隔）
+├── config.json          # 実行時設定（空港・更新間隔）※Pi ごと・git 管理外
 ├── wifi_portal.py       # WiFi設定ポータル（Flask）
 ├── wifi-portal.service  # systemdユニットファイル
 ├── wifi_setup/          # WiFi 設定モード（AP + キャプティブポータル）
@@ -441,7 +449,8 @@ raspi-weather-lite/
 
 ### `update.sh` が `divergent branches` で止まる
 
-Pi 上に GitHub に無いコミットや変更がある状態です。Pi 固有の `config.json`（空港設定）を退避してから GitHub に合わせます。
+Pi 上に GitHub に無いコミットや変更がある状態です。`config.json` と実行権限の差分は現行の `update.sh` が自動で処理するため、通常は起きません（旧版から初めて更新する場合は上の「更新」の初回コマンドを実行）。
+それでも止まる場合は、Pi 固有の `config.json`（空港設定）を退避してから GitHub に合わせます。
 
 ```bash
 cd ~/raspi-weather-lite
