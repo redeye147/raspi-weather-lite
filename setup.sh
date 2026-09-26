@@ -49,7 +49,9 @@ pip3 install "astral>=2.0" --prefer-binary --break-system-packages -q
 echo -e "\n${YELLOW}[2/6] リポジトリをクローン中...${NC}"
 if [ -d "$REPO_DIR/.git" ]; then
   echo "既存リポジトリを更新します"
-  git -C "$REPO_DIR" pull
+  # 旧版で git 管理されていた config.json は直後に作り直すので変更を破棄してよい
+  git -C "$REPO_DIR" checkout HEAD -- config.json 2>/dev/null || true
+  git -C "$REPO_DIR" pull --ff-only
 else
   git clone https://github.com/redeye147/raspi-weather-lite.git "$REPO_DIR"
 fi

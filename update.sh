@@ -43,7 +43,28 @@ echo -e "  ${GREEN}パッケージ確認完了${NC}"
 
 # ── [2/5] コード更新 ──────────────────────────────────
 echo -e "\n${YELLOW}[2/5] コードを更新中...${NC}"
-git -C "$REPO_DIR" pull
+cd "$REPO_DIR"
+CFG="$REPO_DIR/config.json"
+CFG_BAK="$HOME/.raspi-weather-config.json.bak"
+[ -f "$CFG" ] && cp "$CFG" "$CFG_BAK"
+
+# 旧版で git 管理されていた config.json の変更は pull の妨げになるので HEAD に戻す（内容は退避済み）
+if git ls-files --error-unmatch config.json &>/dev/null; then
+    git checkout HEAD -- config.json
+fi
+# 実行権限だけの差分（chmod +x）も pull の妨げになるので戻す
+git diff HEAD --numstat | awk '$1=="0" && $2=="0" {print $3}' | while read -r f; do
+    git checkout HEAD -- "$f"
+done
+
+if ! git pull --ff-only; then
+    [ -f "$CFG_BAK" ] && cp "$CFG_BAK" "$CFG"
+    echo -e "\n\033[0;31m✗ git pull に失敗しました。Pi 上に GitHub に無い変更があります。${NC}"
+    echo "  確認: git -C $REPO_DIR status && git -C $REPO_DIR log --oneline origin/main..HEAD"
+    echo "  README の「トラブルシューティング」を参照してください。"
+    exit 1
+fi
+[ -f "$CFG_BAK" ] && cp "$CFG_BAK" "$CFG"
 echo -e "  ${GREEN}完了${NC}"
 
 # ── [3/5] サービスファイル更新 ────────────────────────────

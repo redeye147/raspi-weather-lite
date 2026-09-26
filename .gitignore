@@ -3,6 +3,11 @@ __pycache__/
 weather_cache.json
 cache/
 displayraspi_log.txt
+displayraspi_log.txt.*
+jma_*.json
+
+# Pi ごとの設定（空港など）。setup.sh / WiFiポータルが作成・更新する
+config.json
 .DS_Store
 
 # WiFiプロファイル（パスワードを含む・公開リポジトリのため絶対にコミットしない）
