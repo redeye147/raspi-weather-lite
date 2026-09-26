@@ -38,10 +38,12 @@ sudo apt update -qq
 sudo apt install -y \
   python3-pygame python3-requests python3-psutil \
   python3-flask python3-pip \
+  python3-pil python3-qrcode python3-pytz \
   fonts-ipafont \
   network-manager git \
   watchdog
-pip3 install "astral>=2.0" qrcode pillow pytz --break-system-packages -q
+# Trixie / Python 3.13 では PyPI の wheel が無くソースビルドで失敗しやすいため、apt に無い astral だけ pip で入れる
+pip3 install "astral>=2.0" --prefer-binary --break-system-packages -q
 
 # ── [2/6] リポジトリ ───────────────────────────────
 echo -e "\n${YELLOW}[2/6] リポジトリをクローン中...${NC}"

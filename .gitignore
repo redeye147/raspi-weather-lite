@@ -4,3 +4,6 @@ weather_cache.json
 cache/
 displayraspi_log.txt
 .DS_Store
+
+# WiFiプロファイル（パスワードを含む・公開リポジトリのため絶対にコミットしない）
+wifi_setup/profiles/

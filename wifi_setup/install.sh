@@ -52,6 +52,37 @@ sudo systemctl enable wifi-setup-auto.service
 sudo cp "${DIR}/99-wifi-setup-usb.rules" /etc/udev/rules.d/
 sudo udevadm control --reload-rules
 
+# 6-2) WiFiプロファイルの自動インポート（profiles/ に export_wifi.sh の出力を置いた場合）
+PROFILES_DIR="${DIR}/profiles"
+if [ -d "${PROFILES_DIR}" ] && ls "${PROFILES_DIR}"/*.nmconnection 2>/dev/null | grep -q .; then
+    echo ""
+    echo "--- WiFiプロファイル インポート ---"
+    NM_DIR="/etc/NetworkManager/system-connections"
+    imported=0
+    skipped=0
+    for src in "${PROFILES_DIR}"/*.nmconnection; do
+        name=$(basename "$src")
+        dest="${NM_DIR}/${name}"
+        if [ -f "${dest}" ]; then
+            echo "  スキップ（既存）: ${name}"
+            skipped=$((skipped + 1))
+        else
+            sudo cp "$src" "${dest}"
+            sudo chmod 600 "${dest}"
+            sudo chown root:root "${dest}"
+            echo "  追加: ${name}"
+            imported=$((imported + 1))
+        fi
+    done
+    if [ "${imported}" -gt 0 ]; then
+        sudo nmcli connection reload 2>/dev/null || sudo systemctl reload NetworkManager 2>/dev/null || true
+        echo "  ${imported}件追加、${skipped}件スキップ"
+    else
+        echo "  全件既存のためスキップ（${skipped}件）"
+    fi
+    echo ""
+fi
+
 # 7) sudoers：portal/main01 が再起動・サービス停止を実行できるよう設定
 sudo tee /etc/sudoers.d/wifi-portal > /dev/null <<'EOF'
 pi ALL=(ALL) NOPASSWD: /sbin/reboot

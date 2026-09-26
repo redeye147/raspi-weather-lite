@@ -151,3 +151,18 @@ sudo udevadm control --reload-rules
 - `in_setup_mode()` / `/run/wifi-setup/state` の参照
 - `/generate_204`, `/hotspot-detect.html` などキャプティブ検知ルート
 - `errorhandler(404)` での `redirect("/")`
+
+## WiFiプロファイルの引き継ぎ（複数台セットアップ）
+
+設定済みのPiで保存済みWiFiをエクスポートし、別のPiに取り込めます。
+
+```bash
+# 設定済みのPiで
+bash ~/raspi-weather-lite/wifi_setup/export_wifi.sh
+scp ~/raspi-weather-lite/wifi_setup/profiles/*.nmconnection pi@<相手のIP>:~/raspi-weather-lite/wifi_setup/profiles/
+
+# 相手のPiで（既存の同名プロファイルはスキップ）
+bash ~/raspi-weather-lite/wifi_setup/install.sh
+```
+
+⚠️ `profiles/` にはWiFiパスワードが平文で含まれます。このリポジトリは公開なので `.gitignore` で除外済みです。git には絶対にコミットしないでください。

@@ -77,11 +77,7 @@ def draw_header(
             by = top_margin
         if by + bh > header_h - 4:
             by = header_h - bh - 4
-        if wbgt_level_info["label"] == "危険":
-            blink_on = int(time.time()) % 2 == 0
-            bg_color = wbgt_level_info["bg"] if blink_on else (180, 0, 0)
-        else:
-            bg_color = wbgt_level_info["bg"]
+        bg_color = wbgt_level_info["bg"]
         pygame.draw.rect(screen, bg_color, (bx, by, bw, bh), border_radius=8)
         pygame.draw.rect(screen, wbgt_level_info["fg"], (bx, by, bw, bh), width=2, border_radius=8)
         ty = by + (bh - inner_h) // 2

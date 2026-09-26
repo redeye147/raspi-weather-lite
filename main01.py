@@ -147,7 +147,7 @@ def get_git_version_str():
 # ログローテーション
 # ==========================================================
 def setup_logging():
-    log_path = "/home/pi/raspi-weather-lite/displayraspi_log.txt"
+    log_path = LOG_FILE
     handler = logging.handlers.TimedRotatingFileHandler(
         log_path, when="midnight", backupCount=7, encoding="utf-8"
     )
@@ -653,7 +653,6 @@ def main():
         wbgt_alert = wbgt_alert or (v >= 33)
         logging.info(f"WBGT テストモード: value={v} level={wbgt_level_info and wbgt_level_info['label']}")
     last_wbgt_update = 0.0 if args.wbgt_test is None else time.time()
-    last_blink_state = -1
 
     work_summary = build_work_summary(hourly)
     _fetch_pending = False
@@ -770,14 +769,6 @@ def main():
                     logging.error("天気取得失敗またはタイムアウト。30分後に再試行")
                 needs_redraw = True
 
-        # 危険レベル時はバッジ点滅のため１秒ごとに再描画
-        is_danger = wbgt_level_info is not None and wbgt_level_info.get("label") == "危険"
-        if is_danger:
-            cur_blink = int(time.time()) % 2
-            if cur_blink != last_blink_state:
-                needs_redraw = True
-                last_blink_state = cur_blink
-
         if now.date() != _sunrise_date:
             sunrise_str, sunset_str = get_sunrise_sunset_str(cfg["latitude"], cfg["longitude"])
             _sunrise_date = now.date()
@@ -793,7 +784,7 @@ def main():
             for event in pygame.event.get():
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                     pygame.quit(); return
-            pygame.time.wait(1000 if is_danger else 10000)
+            pygame.time.wait(10000)
             continue
 
         draw_weather(
@@ -831,7 +822,7 @@ def main():
             if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                 pygame.quit(); return
 
-        pygame.time.wait(1000 if is_danger else 10000)
+        pygame.time.wait(10000)
 
 
 def run_forever():

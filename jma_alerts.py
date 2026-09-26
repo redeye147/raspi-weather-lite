@@ -158,6 +158,15 @@ def get_overview_and_warning(
         w_head = (wj.get("headlineText") or "").strip()
         w_text = _extract_warning_text(wj, area_codes)
         # updated は警報 reportDatetime で上書きしない（警報なしの日は古い日付になるため）
+        # reportDatetime が1日以上古い headline は表示しない
+        w_rep_dt_str = wj.get("reportDatetime") or ""
+        if w_head and w_rep_dt_str:
+            try:
+                rep_dt = datetime.datetime.fromisoformat(w_rep_dt_str.replace("Z", "+00:00"))
+                if (datetime.datetime.now(JST) - rep_dt.astimezone(JST)).days >= 1:
+                    w_head = ""
+            except Exception:
+                pass
     except Exception:
         w_head = ""
         # キャッシュが2時間以内なら使用。古いキャッシュは解除済み警報を表示し続けるため使わない
