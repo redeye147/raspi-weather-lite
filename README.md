@@ -58,7 +58,7 @@ bash ~/raspi-weather-lite/update.sh
 
 `config.json`（Pi ごとの空港設定）は git 管理外です。`update.sh` は更新の前後で `config.json` を退避・復元するので、空港設定は更新で消えません。
 
-> **2026-09-27 以前にセットアップした Pi の初回だけ**：旧版の `update.sh` では `config.json` の衝突で止まるため、1度だけ以下を実行してください（空港設定は保持されます）。
+> **2026-09-26 以前にセットアップ・更新した Pi の初回だけ**：旧版の `update.sh` では `config.json` の衝突で止まるため、1度だけ以下を実行してください（空港設定は保持されます）。
 >
 > ```bash
 > cd ~/raspi-weather-lite && cp config.json ~/config.json.bak && git checkout HEAD -- config.json start.sh && git pull --ff-only && cp ~/config.json.bak config.json && bash update.sh
