@@ -2,13 +2,15 @@
 
 空港向け天気サイネージ表示システムです。Raspberry Pi Zero W / Zero 2W / Pi 3 / Pi 4 に対応しています。
 
+> 旧リポジトリ `raspi-weather` の機能はすべてこのリポジトリに統合済みです（`raspi-weather` は廃止・編集禁止）。開発・Pi のセットアップ／更新はこのリポジトリで行ってください。
+
 ![スクリーンショットイメージ](weather_icons/100.png)
 
 ## 概要
 
 - JMA（気象庁）と Open-Meteo から天気データを取得し、HDMI ディスプレイにフルスクリーン表示
 - 今日の時間別天気（6〜翌9時）と1週間予報を表示
-- 警報・注意報、作業注意情報（強風・豪雨・高温・凍結）をリアルタイム表示
+- 警報・注意報、作業注意情報（強風・豪雨・高温・凍結）をリアルタイム表示（発表から1日以上経った古い見出しは非表示）
 - **熱中症リスク（WBGT）バッジ**をヘッダー右端に表示（環境省データを1時間ごとに取得）
 - **熱中症警戒アラートバナー**：アラート発令時はヘッダー直下に赤帯を表示
 - ブラウザから空港・WiFi を設定できる WiFi ポータル機能付き
@@ -45,6 +47,15 @@ bash <(curl -fsSL https://raw.githubusercontent.com/redeye147/raspi-weather-lite
 
 空港を選択すると、パッケージインストール・クローン・自動起動・WiFiポータル登録まですべて自動で行います。最後に再起動すると天気画面が表示されます。
 
+### 更新（セットアップ済みの Pi）
+
+```bash
+bash ~/raspi-weather-lite/update.sh
+```
+
+依存パッケージ確認 → `git pull` → systemd サービス更新 → watchdog 確認 まで行い、最後に再起動するか聞かれます（`y` で再起動）。
+更新後は画面右下のバージョン表示（コミット日時）で反映を確認できます。
+
 ### OS書き込み時の準備（Raspberry Pi Imager）
 
 Imager の「詳細設定」で以下を事前設定しておくと SSH で接続できます。
@@ -65,10 +76,12 @@ sudo apt update
 sudo apt install -y \
   python3-pygame python3-requests python3-psutil \
   python3-flask python3-pip \
+  python3-pil python3-qrcode python3-pytz \
   fonts-ipafont \
   network-manager git
 
-pip3 install "astral>=2.0" qrcode pillow pytz --break-system-packages
+# apt に無い astral だけ pip で入れる（Trixie / Python 3.13 でのソースビルド失敗を避けるため）
+pip3 install "astral>=2.0" --prefer-binary --break-system-packages
 ```
 
 #### リポジトリのクローン
@@ -270,7 +283,7 @@ WantedBy=multi-user.target
 
 | WBGT | レベル | バッジ色 |
 |------|--------|----------|
-| 33℃以上 | **危険**（1秒点滅） | 紫 |
+| 33℃以上 | **危険** | 紫 |
 | 31〜33℃ | 厳重警戒 | 赤 |
 | 28〜31℃ | 警戒 | オレンジ |
 | 25〜28℃ | 注意 | 黄 |
@@ -318,12 +331,34 @@ chmod +x install.sh
 - ポータル URL: `http://192.168.50.1/`（接続後ブラウザが自動で開く）
 - ハードウェア例: 10Gtek WD-1513B (RTL8710BU, VID:PID `0bda:b711`)
 
+### WiFi プロファイルの引き継ぎ（複数台セットアップ）
+
+設定済みの Pi に保存されている WiFi（SSID・パスワード）を、別の Pi にまとめてコピーできます。
+
+```bash
+# ① 設定済みの Pi で書き出す
+bash ~/raspi-weather-lite/wifi_setup/export_wifi.sh
+
+# ② 新しい Pi で取得して取り込む（<設定済みPiのIP> は Mac で `ping -c 1 raspi-weather.local` などで確認）
+mkdir -p ~/raspi-weather-lite/wifi_setup/profiles
+scp 'pi@<設定済みPiのIP>:~/raspi-weather-lite/wifi_setup/profiles/*.nmconnection' ~/raspi-weather-lite/wifi_setup/profiles/
+bash ~/raspi-weather-lite/wifi_setup/install.sh
+```
+
+- `install.sh` の出力に「追加: 〜」と出れば取り込み完了。同じ名前のプロファイルが既にある場合はスキップ（上書きしない）
+- `nmcli connection show` で登録済み WiFi を確認できます
+
+> ⚠️ `wifi_setup/profiles/` には WiFi パスワードが平文で含まれます。このリポジトリは**公開**なので `.gitignore` で除外済みです。絶対にコミットしないでください。
+
 ## ファイル構成
 
 ```
 raspi-weather-lite/
 ├── setup.sh             # 1コマンドセットアップスクリプト
+├── update.sh            # 更新スクリプト（git pull・サービス更新・watchdog）
+├── start.sh             # 表示モード自動判定して main01.py を起動
 ├── main01.py            # メインループ（起動・描画制御）
+├── fb_display.py        # 描画モード自動判定（kmsdrm → /dev/fb0 フォールバック）
 ├── main01.service       # systemdユニットファイル
 ├── weather_draw.py      # 天気画面描画・アラートバナー
 ├── header.py            # ヘッダー描画（日付・時刻・WBGTバッジ）
@@ -336,6 +371,8 @@ raspi-weather-lite/
 ├── wifi_portal.py       # WiFi設定ポータル（Flask）
 ├── wifi-portal.service  # systemdユニットファイル
 ├── wifi_setup/          # WiFi 設定モード（AP + キャプティブポータル）
+│   ├── install.sh       #   導入スクリプト（profiles/ があれば WiFi も取り込み）
+│   └── export_wifi.sh   #   保存済み WiFi を profiles/ に書き出し（別 Pi への引き継ぎ用）
 └── weather_icons/       # 天気アイコン画像
 ```
 
@@ -350,9 +387,37 @@ raspi-weather-lite/
 | dirty flag 描画 | 分・CPU・天気更新があった時だけ再描画（10秒スリープ）|
 | 日の出計算 | 日付変更時のみ再計算 |
 | スクロール廃止 | 作業サマリーを静的テキスト表示に変更 |
-| 点滅最適化 | 危険レベル時のみ1秒ループ、それ以外は10秒スリープ |
+| 点滅廃止 | WBGT 危険バッジは紫固定。常時10秒スリープ |
 
 通常運用時のCPU使用率は 15〜20% 程度です。
+
+## トラブルシューティング
+
+### `update.sh` が `divergent branches` で止まる
+
+Pi 上に GitHub に無いコミットや変更がある状態です。Pi 固有の `config.json`（空港設定）を退避してから GitHub に合わせます。
+
+```bash
+cd ~/raspi-weather-lite
+git log --oneline origin/main..HEAD      # Pi だけにあるコミットを確認
+mkdir -p ~/pi-backup && cp config.json ~/pi-backup/
+git branch backup-before-sync            # 念のため今の状態を保存
+git reset --hard origin/main
+cp ~/pi-backup/config.json config.json
+bash update.sh
+```
+
+### `sudo apt autoremove` で pytz が消える
+
+`python3-pytz` / `python3-tz` が「不要」と表示されることがありますが、天気表示に必要です。先に手動インストール扱いにしておいてください。
+
+```bash
+sudo apt-mark manual python3-pytz python3-tz
+```
+
+### `update.sh: command not found`
+
+`bash ~/raspi-weather-lite/update.sh` のように `bash` を付けて実行してください。
 
 ## データソース
 
