@@ -32,7 +32,7 @@ from header import draw_header
 from weather_draw import draw_weather
 from fetch_wbgt import fetch_wbgt, WBGT_LEVELS
 from utils import get_sunrise_sunset_str, build_work_summary, JST, get_local_ip, make_qr_surface
-from jma_alerts import get_overview_and_warning
+from jma_alerts import get_overview_and_warning, active_warning_names
 
 from config import AIRPORT_CONFIG, LOG_FILE, ICON_DIR
 
@@ -562,35 +562,23 @@ def main():
         "narita":   {"pref": "120000", "city": "1221100"},
         "haneda":   {"pref": "130000", "city": "1311100"},
         "centrair": {"pref": "230000", "city": "2321600"},
-        "kanku":    {"pref": "270000", "city": "2722000"},
+        "kanku":    {"pref": "270000", "city": "2721300"},
         "chitose":  {"pref": "016000", "city": "0122400"},
         "fukuoka":  {"pref": "400000", "city": "4013000"},
         "naha":     {"pref": "471000", "city": "4720100"},
     }
-    MONITOR_CODES = {
-        "02": "大雨警報", "03": "大雨注意報", "04": "洪水警報", "05": "洪水注意報",
-        "12": "大雪警報", "13": "大雪注意報", "15": "強風注意報", "16": "波浪注意報",
-        "21": "乾燥注意報", "33": "濃霧注意報", "43": "雷注意報", "44": "暴風警報",
-    }
-
     def fetch_warning_data(airport_key: str):
         info = AIRPORT_WARNING[airport_key]
         url = f"https://www.jma.go.jp/bosai/warning/data/warning/{info['pref']}.json"
         try:
             r = requests.get(url, headers=HEADERS, timeout=5)
+            r.raise_for_status()
             data = r.json()
-        except Exception:
+        except Exception as e:
+            logging.warning(f"警報取得失敗: {e}")
             return "警報取得失敗", ""
-        warning_list = []
         headline = data.get("headlineText", "")
-        for area_type in data.get("areaTypes", []):
-            for area in area_type.get("areas", []):
-                if area.get("code") == info["city"]:
-                    for w in area.get("warnings", []):
-                        code = str(w.get("code"))
-                        status = w.get("status", "")
-                        if code in MONITOR_CODES and "解除" not in status:
-                            warning_list.append(MONITOR_CODES[code])
+        warning_list = active_warning_names(data, (info["city"],))
         if not warning_list:
             return "警報・注意報なし", headline
         return " / ".join(warning_list), headline

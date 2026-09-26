@@ -68,61 +68,45 @@ def _fmt_updated(dt_str: str) -> str:
         return datetime.datetime.now(JST).strftime("%Y-%m-%d %H:%M")
 
 
-def _extract_warning_text(warn_json: Dict[str, Any], area_codes: Tuple[str, ...]) -> str:
-    """
-    warning JSON:
-      headlineText, reportDatetime, areaTypes:[{areas:[{code, warnings:[...]}]}]
-    から、指定 area_codes の「発表中」を文字列化
-    """
-    area_types = warn_json.get("areaTypes") or []
-    hits: List[str] = []
+# 気象庁 bosai warning JSON の警報・注意報コード（JSON には名称が含まれずコードのみ）
+WARNING_CODES = {
+    "02": "暴風雪警報", "03": "大雨警報", "04": "洪水警報", "05": "暴風警報",
+    "06": "大雪警報", "07": "波浪警報", "08": "高潮警報",
+    "10": "大雨注意報", "12": "大雪注意報", "13": "風雪注意報", "14": "雷注意報",
+    "15": "強風注意報", "16": "波浪注意報", "17": "融雪注意報", "18": "洪水注意報",
+    "19": "高潮注意報", "20": "濃霧注意報", "21": "乾燥注意報", "22": "なだれ注意報",
+    "23": "低温注意報", "24": "霜注意報", "25": "着氷注意報", "26": "着雪注意報",
+    "27": "その他の注意報",
+    "32": "暴風雪特別警報", "33": "大雨特別警報", "35": "暴風特別警報",
+    "36": "大雪特別警報", "37": "波浪特別警報", "38": "高潮特別警報",
+}
 
-    for at in area_types:
+
+def active_warning_names(warn_json: Dict[str, Any], area_codes) -> List[str]:
+    """指定エリアで発表・継続中の警報・注意報名を、特別警報→警報→注意報の順で返す。"""
+    names: List[str] = []
+    for at in (warn_json.get("areaTypes") or []):
         for area in (at.get("areas") or []):
-            code = str(area.get("code", ""))
-            if area_codes and code not in area_codes:
+            if str(area.get("code", "")) not in area_codes:
                 continue
-
             for w in (area.get("warnings") or []):
-                name = (w.get("name") or "").strip()
+                code = str(w.get("code") or "")
                 status = (w.get("status") or "").strip()
-
-                if not name:
+                if not code or "解除" in status or "なし" in status:
                     continue
-                if status and ("解除" in status or "取消" in status):
-                    continue
+                # 未知コードも握りつぶさず表示（コード体系変更に気付けるように）
+                name = WARNING_CODES.get(code, f"警報コード{code}")
+                if name not in names:
+                    names.append(name)
+    rank = lambda n: 0 if "特別警報" in n else 1 if "警報" in n else 2
+    return sorted(names, key=rank)
 
-                if status and status not in ("発表",):
-                    hits.append(f"{name}（{status}）")
-                else:
-                    hits.append(name)
 
-    if not hits:
-        for at in area_types:
-            for area in (at.get("areas") or [])[:3]:
-                for w in (area.get("warnings") or [])[:6]:
-                    name = (w.get("name") or "").strip()
-                    status = (w.get("status") or "").strip()
-                    if not name:
-                        continue
-                    if status and ("解除" in status or "取消" in status):
-                        continue
-                    hits.append(name)
-            if hits:
-                break
-
-    if not hits:
+def _extract_warning_text(warn_json: Dict[str, Any], area_codes: Tuple[str, ...]) -> str:
+    names = active_warning_names(warn_json, area_codes)
+    if not names:
         return "警報・注意報：発表なし"
-
-    seen = set()
-    uniq = []
-    for x in hits:
-        if x in seen:
-            continue
-        seen.add(x)
-        uniq.append(x)
-
-    return "警報・注意報：" + "、".join(uniq)
+    return "警報・注意報：" + "、".join(names)
 
 
 def get_overview_and_warning(

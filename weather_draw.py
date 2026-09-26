@@ -422,6 +422,9 @@ def draw_weather(
                 wcolor = (255, 140, 0)
             else:
                 wcolor = (0, 0, 0)
+        elif warning_text and "失敗" in warning_text:
+            display_warning = "取得失敗（通信エラー）"
+            wcolor = (128, 128, 128)
         else:
             display_warning = "発表なし"
             wcolor = (0, 0, 0)
