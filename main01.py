@@ -796,6 +796,7 @@ def main():
             fetch_ok=fetch_ok, qr_surf=qr_surf,
             wbgt_level_info=wbgt_level_info,
             wbgt_alert=wbgt_alert,
+            latitude=cfg["latitude"], longitude=cfg["longitude"],
         )
 
         draw_header(

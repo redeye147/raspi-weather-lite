@@ -20,13 +20,21 @@ from utils import (
     get_japanese_weekday,
     get_font,
     make_qr_surface,
+    is_night,
 )
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ICON_DIR = os.path.join(BASE_DIR, "weather_icons")
 
-# 時間別天気で月アイコンを使う時刻（21時〜翌3時）
+# 緯度経度が渡されない場合の夜間（月アイコン）時刻
 NIGHT_HOURS = {"21", "22", "23", "00", "01", "02", "03"}
+
+
+def _is_night_item(item, latitude, longitude) -> bool:
+    dt = item.get("datetime")
+    if latitude is not None and longitude is not None and isinstance(dt, datetime.datetime):
+        return is_night(dt, latitude, longitude)
+    return item["hour"] in NIGHT_HOURS
 
 ROW_LABELS = ["日付", "時刻", "天気", "降水量", "気温", "風速"]
 WEEK_ROW_LABELS = ["日付", "天気", "降水確率", "気温：最高／最低"]
@@ -140,6 +148,8 @@ def draw_weather(
     qr_surf=None,
     wbgt_level_info=None,
     wbgt_alert: bool = False,
+    latitude=None,
+    longitude=None,
 ):
     screen.fill((255, 255, 255))
 
@@ -231,7 +241,7 @@ def draw_weather(
 
             elif row_idx == 2:
                 icon_code = item["code"]
-                if item["hour"] in NIGHT_HOURS and icon_code.startswith("1") and len(icon_code) == 3:
+                if _is_night_item(item, latitude, longitude) and icon_code.startswith("1") and len(icon_code) == 3:
                     # 晴れ系 1xx は夜間に月アイコン 7xx へ
                     icon_code = str(int(icon_code) + 600)
                 elif icon_code == "100":

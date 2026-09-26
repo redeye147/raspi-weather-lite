@@ -4,6 +4,7 @@ E61c 完全互換ユーティリティ
 """
 
 import datetime
+import functools
 import pytz
 import socket
 import pygame
@@ -220,6 +221,20 @@ def get_sunrise_sunset_str(latitude: float, longitude: float, tz=JST):
     loc = LocationInfo(name="Airport", region="JP", timezone=str(tz), latitude=latitude, longitude=longitude)
     s = sun(loc.observer, date=datetime.date.today(), tzinfo=tz)
     return s["sunrise"].strftime("%H:%M"), s["sunset"].strftime("%H:%M")
+
+
+@functools.lru_cache(maxsize=32)
+def _sun_times(date: datetime.date, latitude: float, longitude: float):
+    loc = LocationInfo(name="Airport", region="JP", timezone="Asia/Tokyo", latitude=latitude, longitude=longitude)
+    s = sun(loc.observer, date=date, tzinfo=JST)
+    return s["sunrise"], s["sunset"]
+
+
+def is_night(dt: datetime.datetime, latitude: float, longitude: float) -> bool:
+    """dt がその日の日の出前 or 日の入り以降なら True"""
+    dt = dt.replace(tzinfo=JST) if dt.tzinfo is None else dt.astimezone(JST)
+    sunrise, sunset = _sun_times(dt.date(), latitude, longitude)
+    return dt < sunrise or dt >= sunset
 
 # =========================
 # 0８　空港現場向け 改良版サマリー
