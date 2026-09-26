@@ -593,6 +593,7 @@ def main():
     )
     headline_text = jma_data.get("headline", "")
     updated_text  = jma_data.get("updated", "")
+    overview_text = jma_data.get("overview", "")
 
     try:
         warning_text, _ = fetch_warning_data(airport)
@@ -724,6 +725,7 @@ def main():
                 )
                 headline_text = jma_data.get("headline", "")
                 updated_text  = jma_data.get("updated", "")
+                overview_text = jma_data.get("overview", "")
                 last_jma_update = time.time()
                 needs_redraw = True
                 logging.info(f"JMA更新完了: {warning_text}")
@@ -785,6 +787,7 @@ def main():
             wbgt_level_info=wbgt_level_info,
             wbgt_alert=wbgt_alert,
             latitude=cfg["latitude"], longitude=cfg["longitude"],
+            overview_text=overview_text,
         )
 
         draw_header(

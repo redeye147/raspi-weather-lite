@@ -30,6 +30,19 @@ ICON_DIR = os.path.join(BASE_DIR, "weather_icons")
 NIGHT_HOURS = {"21", "22", "23", "00", "01", "02", "03"}
 
 
+def _wrap_text(text, font, max_width):
+    lines, cur = [], ""
+    for ch in text:
+        if font.size(cur + ch)[0] <= max_width:
+            cur += ch
+        else:
+            lines.append(cur)
+            cur = ch
+    if cur:
+        lines.append(cur)
+    return lines
+
+
 def _is_night_item(item, latitude, longitude) -> bool:
     dt = item.get("datetime")
     if latitude is not None and longitude is not None and isinstance(dt, datetime.datetime):
@@ -150,6 +163,7 @@ def draw_weather(
     wbgt_alert: bool = False,
     latitude=None,
     longitude=None,
+    overview_text: str = "",
 ):
     screen.fill((255, 255, 255))
 
@@ -429,35 +443,47 @@ def draw_weather(
             display_warning = "発表なし"
             wcolor = (0, 0, 0)
 
-        warn_surf = get_font(base_font_path, 24).render(display_warning, True, wcolor)
-        screen.blit(warn_surf, (box_x + 10, y_line))
-        y_line += warn_surf.get_height() + 8
+        max_width = box_w - 20
 
-        # 警報発令中のときのみ見出し文を表示（解除後は古い見出しを残さない）
+        # 1) 警報・注意報（最優先。長ければ折り返して全部出す）
+        warn_font = get_font(base_font_path, 24)
+        for line in _wrap_text(display_warning, warn_font, max_width):
+            warn_surf = warn_font.render(line, True, wcolor)
+            screen.blit(warn_surf, (box_x + 10, y_line))
+            y_line += warn_surf.get_height() + 2
+        y_line += 6
+
+        # 2) 警報発令中のときのみ見出し文（解除後は古い見出しを残さない）
+        small_font = get_font(base_font_path, 20)
         if headline_text and has_active_warning:
-            small_font = get_font(base_font_path, 20)
-            max_width = box_w - 20
-            lines = []
-            current_line = ""
-            for ch in headline_text:
-                test_line = current_line + ch
-                if small_font.size(test_line)[0] <= max_width:
-                    current_line = test_line
-                else:
-                    lines.append(current_line)
-                    current_line = ch
-            if current_line:
-                lines.append(current_line)
-            for line in lines[:2]:
+            for line in _wrap_text(headline_text, small_font, max_width)[:2]:
                 head_surf = small_font.render(line, True, (0, 0, 0))
                 screen.blit(head_surf, (box_x + 10, y_line))
                 y_line += head_surf.get_height() + 4
 
+        bottom = box_y + box_h - 5
         if updated_text:
-            upd_surf = get_font(base_font_path, 20).render(
-                f"予報更新：{updated_text}", True, (0, 0, 0)
-            )
-            screen.blit(
-                upd_surf,
-                (box_x + 10, box_y + box_h - upd_surf.get_height() - 5)
-            )
+            upd_surf = small_font.render(f"予報更新：{updated_text}", True, (0, 0, 0))
+            bottom -= upd_surf.get_height()
+            screen.blit(upd_surf, (box_x + 10, bottom))
+
+        # 3) 天気概況（残りスペースに収まる分だけ。溢れたら末尾を…で切る）
+        ov = "".join((overview_text or "").split())
+        if ov:
+            ov_font = get_font(base_font_path, 18)
+            line_h = ov_font.get_linesize()
+            y_line += 4
+            max_lines = (bottom - 4 - y_line) // line_h
+            if max_lines > 0:
+                pygame.draw.line(screen, (180, 180, 180),
+                                 (box_x + 10, y_line - 2), (box_x + box_w - 10, y_line - 2), 1)
+                lines = _wrap_text("【天気概況】" + ov, ov_font, max_width)
+                if len(lines) > max_lines:
+                    lines = lines[:max_lines]
+                    last = lines[-1]
+                    while last and ov_font.size(last + "…")[0] > max_width:
+                        last = last[:-1]
+                    lines[-1] = last + "…"
+                for line in lines:
+                    screen.blit(ov_font.render(line, True, (60, 60, 60)), (box_x + 10, y_line))
+                    y_line += line_h
