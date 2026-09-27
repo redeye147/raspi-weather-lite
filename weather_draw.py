@@ -56,6 +56,7 @@ def _overview_outlook(text: str) -> str:
 
 
 SUNRISE_COLOR = (230, 120, 0)
+SUNRISE_TEXT_COLOR = (185, 75, 0)   # 白背景で読めるよう濃いめ（コントラスト比 5.2）
 SUNSET_COLOR = (40, 40, 140)
 
 
@@ -83,7 +84,7 @@ def _draw_sun_markers(screen, hourly, latitude, longitude, margin_x, col_w,
         return
     times = [_as_jst(t) for t in times]
     hour_font = get_font(base_font_path, 22)
-    label_font = get_font(base_font_path, 16)
+    label_font = get_font(base_font_path, 16, bold=True)
     tri = max(8, int(row_h * 0.55))
     cy = row_y + row_h // 2
     n = len(times)
@@ -109,7 +110,8 @@ def _draw_sun_markers(screen, hourly, latitude, longitude, margin_x, col_w,
                 pts = [(x - half, cy - half), (x + half, cy - half), (x, cy + half)]
             pygame.draw.polygon(screen, color, pts)
 
-            label = label_font.render(t.strftime("%H:%M"), True, color)
+            text_color = SUNRISE_TEXT_COLOR if is_rise else color
+            label = label_font.render(t.strftime("%H:%M"), True, text_color)
             lw = label.get_width()
             next_text_x = cell_x + col_w + 5
             right_x = x + half + 2
