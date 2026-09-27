@@ -536,7 +536,11 @@ systemctl status main01 --no-pager | grep Active   # "since …; 8s ago" のよ�
 ```
 
 - `ModuleNotFoundError: No module named 'astral'` → astral が pi ユーザーにしか入っていない（root から見えない）。`bash ~/raspi-weather-lite/update.sh` で自動修正されます（手動なら `sudo pip3 install "astral>=2.0" --break-system-packages`）
-- `ps -eo user,args | grep main01.py` で **pi と root の2つ**が見える → 旧方式（`~/.profile`）と systemd の二重起動。`update.sh` で一本化されます
+- `ps -eo user,args | grep main01.py` で **pi と root の2つ**が見える → 旧方式との二重起動。`update.sh` で以下を自動で無効化し一本化します
+  - `~/.profile` 等からの `main01.py` 起動行
+  - 旧リポジトリ `raspi-weather` の `raspi-weather.service`（pi で起動）
+  - `~/.profile` / `~/.bash_profile` の `startx`（X サーバーが画面を掴むと kmsdrm で直接描画できず、`mode=x11` の低解像度表示になる）
+  - どこから起動しているかは `systemctl status <pi側のPID>` で確認できます
 - 修正後は再起動してください。確認方法：
 
 ```bash

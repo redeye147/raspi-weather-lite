@@ -83,6 +83,20 @@ for _f in /home/pi/.bashrc /home/pi/.xinitrc /home/pi/.profile /home/pi/.bash_pr
       's|^\([[:space:]]*\)\(exec \)\{0,1\}python3 \(/home/pi/raspi-weather-lite/\)\{0,1\}main01\.py|\1# &  # moved to systemd main01.service|g' \
       "$_f" || true
 done
+# 旧リポジトリ raspi-weather の自動起動（pi で main01.py を起動する raspi-weather.service）を停止
+if [ -f /etc/systemd/system/raspi-weather.service ]; then
+    echo "  旧 raspi-weather.service を無効化"
+    sudo systemctl disable --now raspi-weather.service 2>/dev/null || true
+fi
+# 旧方式の startx（X サーバー起動）を無効化。X が画面を掴むと kmsdrm で直接描画できない。
+# if ブロックの中身が空になると .profile が構文エラーになるため、コメントではなく ':' に置き換える
+for _f in /home/pi/.profile /home/pi/.bash_profile; do
+    [ -f "$_f" ] || continue
+    sed -i \
+      -e 's|^\([[:space:]]*\)\(exec \)\{0,1\}startx\b.*$|\1:  # startx disabled: main01.service が直接描画（kmsdrm）|' \
+      -e 's#\(&&\|;\)[[:space:]]*\(exec \)\{0,1\}startx\b.*$#\1 :  \# startx disabled: main01.service が直接描画（kmsdrm）#' \
+      "$_f" || true
+done
 sudo systemctl daemon-reload
 sudo systemctl enable main01
 sudo systemctl enable wifi-portal
