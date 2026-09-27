@@ -224,7 +224,7 @@ def get_sunrise_sunset_str(latitude: float, longitude: float, tz=JST):
 
 
 @functools.lru_cache(maxsize=32)
-def _sun_times(date: datetime.date, latitude: float, longitude: float):
+def sun_times(date: datetime.date, latitude: float, longitude: float):
     loc = LocationInfo(name="Airport", region="JP", timezone="Asia/Tokyo", latitude=latitude, longitude=longitude)
     s = sun(loc.observer, date=date, tzinfo=JST)
     return s["sunrise"], s["sunset"]
@@ -233,7 +233,7 @@ def _sun_times(date: datetime.date, latitude: float, longitude: float):
 def is_night(dt: datetime.datetime, latitude: float, longitude: float) -> bool:
     """dt がその日の日の出前 or 日の入り以降なら True"""
     dt = dt.replace(tzinfo=JST) if dt.tzinfo is None else dt.astimezone(JST)
-    sunrise, sunset = _sun_times(dt.date(), latitude, longitude)
+    sunrise, sunset = sun_times(dt.date(), latitude, longitude)
     return dt < sunrise or dt >= sunset
 
 # =========================

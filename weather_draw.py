@@ -22,6 +22,7 @@ from utils import (
     get_font,
     make_qr_surface,
     is_night,
+    sun_times,
 )
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -52,6 +53,71 @@ def _overview_outlook(text: str) -> str:
     paras = ["".join(p.split()) for p in (text or "").split("\n\n")]
     outlook = [p for p in paras if re.match(r"^[０-９0-9]{1,2}日(は|の)", p)]
     return "".join(outlook or paras)
+
+
+SUNRISE_COLOR = (230, 120, 0)
+SUNSET_COLOR = (40, 40, 140)
+
+
+def _as_jst(dt):
+    return dt.replace(tzinfo=JST) if dt.tzinfo is None else dt.astimezone(JST)
+
+
+def _time_to_col(times, t):
+    """t を時間別列の位置に換算（i = i 列目の左端 = その列の時刻。時刻の数字が左寄せのため）。
+    表の範囲外（先頭列より前 / 最終列の区間より後）なら None。"""
+    last = times[-1] - times[-2]
+    if t < times[0] or t >= times[-1] + last:
+        return None
+    for i in range(len(times) - 1):
+        if t < times[i + 1]:
+            return i + (t - times[i]) / (times[i + 1] - times[i])
+    return len(times) - 1 + (t - times[-1]) / last
+
+
+def _draw_sun_markers(screen, hourly, latitude, longitude, margin_x, col_w,
+                      row_y, row_h, base_font_path):
+    """時刻行に 日の出▲ / 日の入り▼ を実時刻の位置で描く。"""
+    times = [item.get("datetime") for item in hourly]
+    if len(times) < 2 or not all(isinstance(t, datetime.datetime) for t in times):
+        return
+    times = [_as_jst(t) for t in times]
+    hour_font = get_font(base_font_path, 22)
+    label_font = get_font(base_font_path, 16)
+    tri = max(8, int(row_h * 0.55))
+    cy = row_y + row_h // 2
+    n = len(times)
+
+    for d in sorted({t.date() for t in times}):
+        sunrise, sunset = sun_times(d, latitude, longitude)
+        for t, is_rise in ((sunrise, True), (sunset, False)):
+            pos = _time_to_col(times, t)
+            if pos is None:
+                continue
+            ci = min(n - 1, int(pos))
+            x = margin_x + (1 + pos) * col_w
+            cell_x = margin_x + (1 + ci) * col_w
+            text_right = cell_x + 5 + hour_font.size(hourly[ci]["hour"])[0]
+            # 時刻の数字と重ならないよう右へ寄せる（最大でも数十分相当のずれ）
+            x = int(max(x, text_right + 2 + tri / 2))
+
+            color = SUNRISE_COLOR if is_rise else SUNSET_COLOR
+            half = tri // 2
+            if is_rise:
+                pts = [(x, cy - half), (x - half, cy + half), (x + half, cy + half)]
+            else:
+                pts = [(x - half, cy - half), (x + half, cy - half), (x, cy + half)]
+            pygame.draw.polygon(screen, color, pts)
+
+            label = label_font.render(t.strftime("%H:%M"), True, color)
+            lw = label.get_width()
+            next_text_x = cell_x + col_w + 5
+            right_x = x + half + 2
+            left_x = x - half - 2 - lw
+            if right_x + lw <= next_text_x - 2 and ci < n:
+                screen.blit(label, (right_x, cy - label.get_height() // 2))
+            elif left_x >= text_right + 2:
+                screen.blit(label, (left_x, cy - label.get_height() // 2))
 
 
 def _is_night_item(item, latitude, longitude) -> bool:
@@ -328,6 +394,10 @@ def draw_weather(
                     text_surf,
                     (x + 5, y + (row_heights[row_idx] - text_surf.get_height()) // 2)
                 )
+
+    if latitude is not None and longitude is not None:
+        _draw_sun_markers(screen, hourly, latitude, longitude, margin_x, col_w,
+                          y_offset + row_heights[0], row_heights[1], base_font_path)
 
     y_offset += sum(row_heights) + 8
 
