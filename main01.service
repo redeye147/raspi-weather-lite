@@ -2,6 +2,9 @@
 Description=Weather Signage Display
 After=network.target wifi-setup-auto.service
 Wants=wifi-setup-auto.service
+# 起動失敗が続くときは 10 分で 5 回までで諦める（無限再起動で CPU を食い潰さない）
+StartLimitIntervalSec=600
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -10,7 +13,7 @@ Group=root
 WorkingDirectory=/home/pi/raspi-weather-lite
 ExecStart=/home/pi/raspi-weather-lite/start.sh
 Restart=on-failure
-RestartSec=10
+RestartSec=30
 
 [Install]
 WantedBy=multi-user.target

@@ -676,7 +676,7 @@ def main():
             cpu = psutil.cpu_percent(interval=None)
             cpu_text = f"{cpu:.0f}%"
             last_cpu_update = time.time()
-            needs_redraw = True
+            # CPU 表示のためだけに再描画しない（全面再描画は Pi Zero W で重い）。次の分替わりで反映
 
         if now.minute != last_drawn_minute:
             needs_redraw = True

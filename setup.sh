@@ -43,7 +43,8 @@ sudo apt install -y \
   network-manager git \
   watchdog
 # Trixie / Python 3.13 では PyPI の wheel が無くソースビルドで失敗しやすいため、apt に無い astral だけ pip で入れる
-pip3 install "astral>=2.0" --prefer-binary --break-system-packages -q
+# main01.service は root で動くので、pi のユーザー領域ではなくシステム全体に入れる
+sudo pip3 install "astral>=2.0" --prefer-binary --break-system-packages -q
 
 # ── [2/6] リポジトリ ───────────────────────────────
 echo -e "\n${YELLOW}[2/6] リポジトリをクローン中...${NC}"
@@ -71,16 +72,17 @@ echo -e "\n${YELLOW}[4/6] 自動起動を設定中...${NC}"
 sudo raspi-config nonint do_boot_behaviour B2
 sudo usermod -a -G video,render pi
 
-PROFILE="$HOME/.profile"
-if ! grep -q "SDL_VIDEODRIVER" "$PROFILE" 2>/dev/null; then
-  cat >> "$PROFILE" << 'PROFILE_EOF'
-
-if [ "$(tty)" = "/dev/tty1" ]; then
-    export SDL_VIDEODRIVER=kmsdrm
-    exec python3 /home/pi/raspi-weather-lite/main01.py
-fi
-PROFILE_EOF
-fi
+# 旧方式（.profile / .bashrc からの main01.py 起動）を無効化し、systemd の main01.service に一本化
+for _f in /home/pi/.bashrc /home/pi/.xinitrc /home/pi/.profile /home/pi/.bash_profile; do
+    [ -f "$_f" ] || continue
+    sed -i \
+      's|^\([[:space:]]*\)\(exec \)\{0,1\}python3 \(/home/pi/raspi-weather-lite/\)\{0,1\}main01\.py|\1# &  # moved to systemd main01.service|g' \
+      "$_f" || true
+done
+chmod +x "$REPO_DIR/start.sh"
+sudo cp "$REPO_DIR/main01.service" /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable main01
 
 # ── [5/6] WiFiポータル systemd ────────────────────
 echo -e "\n${YELLOW}[5/6] WiFiポータルをsystemdに登録中...${NC}"
@@ -101,7 +103,7 @@ fi
 sudo tee /etc/watchdog.conf > /dev/null << 'EOF'
 watchdog-device = /dev/watchdog
 watchdog-timeout = 15
-max-load-1 = 24
+max-load-1 = 5
 min-memory = 1
 EOF
 

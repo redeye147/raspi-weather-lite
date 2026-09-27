@@ -84,7 +84,8 @@ sudo apt install -y \
   network-manager git
 
 # apt に無い astral だけ pip で入れる（Trixie / Python 3.13 でのソースビルド失敗を避けるため）
-pip3 install "astral>=2.0" --prefer-binary --break-system-packages
+# main01.service は root で動くので必ず sudo でシステム全体に入れる
+sudo pip3 install "astral>=2.0" --prefer-binary --break-system-packages
 ```
 
 #### リポジトリのクローン
@@ -114,14 +115,16 @@ sudo raspi-config nonint do_boot_behaviour B2
 sudo usermod -a -G video,render pi
 ```
 
-`~/.profile` に追記します。
+天気画面は systemd の `main01.service`（root で `start.sh` → `main01.py`）で起動します。
 
 ```bash
-if [ "$(tty)" = "/dev/tty1" ]; then
-    export SDL_VIDEODRIVER=kmsdrm
-    exec python3 /home/pi/raspi-weather-lite/main01.py
-fi
+chmod +x /home/pi/raspi-weather-lite/start.sh
+sudo cp /home/pi/raspi-weather-lite/main01.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now main01
 ```
+
+> ⚠️ `~/.profile` などから `main01.py` を起動する旧方式と併用しないでください（二重起動で画面の取り合い・CPU 過負荷になります）。`setup.sh` / `update.sh` は旧方式の起動行を自動でコメントアウトします。
 
 #### WiFiポータル（systemd）
 
@@ -456,12 +459,12 @@ raspi-weather-lite/
 |--------|------|
 | フォントキャッシュ | `get_font(path, size, bold)` でキャッシュ、毎フレームの `Font()` 生成を廃止 |
 | アイコンキャッシュ | `(path, w, h)` キーでスケール済みサーフェスをキャッシュ |
-| dirty flag 描画 | 分・CPU・天気更新があった時だけ再描画（10秒スリープ）|
+| dirty flag 描画 | 分替わり・データ更新時だけ再描画（10秒スリープ）。CPU 表示は測定のみで再描画のきっかけにしない（次の分替わりで反映）|
 | 日の出計算 | 日付変更時のみ再計算 |
 | スクロール廃止 | 作業サマリーを静的テキスト表示に変更 |
 | 点滅廃止 | WBGT 危険バッジは紫固定。常時10秒スリープ |
 
-通常運用時のCPU使用率は 15〜20% 程度です。
+通常運用時のCPU使用率は 20% 以下が目安です（画面右上の CPU 表示や `top` で確認）。
 
 ## トラブルシューティング
 
@@ -505,6 +508,19 @@ print('表示:', active_warning_names(d, ('1221100',)))"
 `表示:` の内容が画面右下に出ます。`[]` なら発表なし。
 
 > 2026-09 以前の版はコード表が気象庁とずれており（雷・大雨注意報・洪水注意報・濃霧などが未登録）、警報・注意報が常に「発表なし」になっていました。`update.sh` で最新版に更新してください。
+
+### CPU 使用率が高い（50% 以上）
+
+Pi Zero W で常時 50% を超える場合、`main01.service` が起動失敗→再起動を繰り返している可能性があります（`top` に出ない短命プロセスとして CPU を消費）。
+
+```bash
+journalctl -u main01 -b --no-pager | tail -15      # エラー内容を確認
+systemctl status main01 --no-pager | grep Active   # "since …; 8s ago" のように毎回新しいなら再起動ループ
+```
+
+- `ModuleNotFoundError: No module named 'astral'` → astral が pi ユーザーにしか入っていない（root から見えない）。`bash ~/raspi-weather-lite/update.sh` で自動修正されます（手動なら `sudo pip3 install "astral>=2.0" --break-system-packages`）
+- `ps -eo user,args | grep main01.py` で **pi と root の2つ**が見える → 旧方式（`~/.profile`）と systemd の二重起動。`update.sh` で一本化されます
+- 修正後は再起動してください
 
 ### `update.sh: command not found`
 

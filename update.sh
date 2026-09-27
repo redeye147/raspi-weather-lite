@@ -31,14 +31,16 @@ if [ ${#MISSING_APT[@]} -gt 0 ]; then
     sudo apt install -y "${MISSING_APT[@]}"
 fi
 
-PY_MODULES=(pytz astral)
-for mod in "${PY_MODULES[@]}"; do
-    if ! python3 -c "import $mod" &>/dev/null; then
-        echo "  $mod 未インストール → apt で試みる..."
-        sudo apt install -y "python3-$mod" 2>/dev/null || \
-            sudo pip3 install "$mod" --break-system-packages
-    fi
-done
+# main01.service は root で動くため、root の python3 から import できるか確認する
+# （pi のユーザー領域 ~/.local に入っているだけだと root からは見えず、起動失敗→再起動を繰り返す）
+if ! sudo python3 -c "import pytz" &>/dev/null; then
+    echo "  pytz 未インストール → apt で導入"
+    sudo apt install -y python3-pytz
+fi
+if ! sudo python3 -c "from astral.sun import sun" &>/dev/null; then
+    echo "  astral 未インストール（root） → pip で導入"
+    sudo pip3 install "astral>=2.0" --prefer-binary --break-system-packages -q
+fi
 echo -e "  ${GREEN}パッケージ確認完了${NC}"
 
 # ── [2/5] コード更新 ──────────────────────────────────
@@ -74,8 +76,18 @@ echo -e "\n${YELLOW}[3/5] systemd サービスファイルを更新中...${NC}"
 chmod +x "$REPO_DIR/start.sh"
 sudo cp "$REPO_DIR/main01.service"      /etc/systemd/system/main01.service
 sudo cp "$REPO_DIR/wifi-portal.service" /etc/systemd/system/wifi-portal.service
+# 旧方式（.profile / .bashrc からの main01.py 起動）を無効化し、systemd の main01.service に一本化
+for _f in /home/pi/.bashrc /home/pi/.xinitrc /home/pi/.profile /home/pi/.bash_profile; do
+    [ -f "$_f" ] || continue
+    sed -i \
+      's|^\([[:space:]]*\)\(exec \)\{0,1\}python3 \(/home/pi/raspi-weather-lite/\)\{0,1\}main01\.py|\1# &  # moved to systemd main01.service|g' \
+      "$_f" || true
+done
 sudo systemctl daemon-reload
+sudo systemctl enable main01
 sudo systemctl enable wifi-portal
+# .profile から pi ユーザーで起動していた旧インスタンスが画面を掴んでいると二重起動になるので止める
+pkill -u pi -f "raspi-weather-lite/main01.py" 2>/dev/null || true
 sudo systemctl restart main01
 sudo systemctl restart wifi-portal
 echo -e "  ${GREEN}完了${NC}"
