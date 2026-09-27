@@ -310,6 +310,13 @@ def run_splash(screen, width, height, base_font,
 # ==========================================================
 # WiFi / AP 関連
 # ==========================================================
+def _ms_until_next_check(max_ms: int = 10000) -> int:
+    """最大 max_ms 待つが、分替わりをまたぐ場合は次の :00 直後に起きる（時計表示の遅れ防止）"""
+    now = datetime.datetime.now(JST)
+    to_next_min = (60 - now.second) * 1000 - now.microsecond // 1000 + 50
+    return max(50, min(max_ms, to_next_min))
+
+
 def is_wifi_connected() -> bool:
     try:
         result = subprocess.run(["iwgetid", "-r"], capture_output=True, text=True, timeout=3)
@@ -774,7 +781,7 @@ def main():
             for event in pygame.event.get():
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                     pygame.quit(); return
-            pygame.time.wait(10000)
+            pygame.time.wait(_ms_until_next_check())
             continue
 
         draw_weather(
@@ -814,7 +821,7 @@ def main():
             if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                 pygame.quit(); return
 
-        pygame.time.wait(10000)
+        pygame.time.wait(_ms_until_next_check())
 
 
 def run_forever():
