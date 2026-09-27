@@ -56,6 +56,8 @@ if [ -d "$REPO_DIR/.git" ]; then
 else
   git clone https://github.com/redeye147/raspi-weather-lite.git "$REPO_DIR"
 fi
+# 実行権限（chmod +x start.sh 等）の違いを変更扱いしない。pull / ブランチ切替が止まるのを防ぐ
+git -C "$REPO_DIR" config core.fileMode false
 
 # ── [3/6] 設定ファイル ─────────────────────────────
 echo -e "\n${YELLOW}[3/6] 設定ファイルを作成中...${NC}"

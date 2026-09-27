@@ -46,6 +46,8 @@ echo -e "  ${GREEN}パッケージ確認完了${NC}"
 # ── [2/5] コード更新 ──────────────────────────────────
 echo -e "\n${YELLOW}[2/5] コードを更新中...${NC}"
 cd "$REPO_DIR"
+# 実行権限（chmod +x start.sh 等）の違いを変更扱いしない。pull / ブランチ切替が止まるのを防ぐ
+git config core.fileMode false
 CFG="$REPO_DIR/config.json"
 CFG_BAK="$HOME/.raspi-weather-config.json.bak"
 [ -f "$CFG" ] && cp "$CFG" "$CFG_BAK"

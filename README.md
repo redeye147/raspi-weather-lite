@@ -497,7 +497,7 @@ Pi Zero W で CPU が常時 50〜80% になっていた事例の調査結果で�
 
 ### `update.sh` が `divergent branches` で止まる
 
-Pi 上に GitHub に無いコミットや変更がある状態です。`config.json` と実行権限の差分は `update.sh` が自動で処理するため、通常は起きません。
+Pi 上に GitHub に無いコミットや変更がある状態です。`config.json` と実行権限の差分は `update.sh` が自動で処理するため、通常は起きません（`update.sh` / `setup.sh` は `git config core.fileMode false` を設定し、`chmod +x start.sh` などの実行権限の違いを変更扱いしないようにしています）。
 それでも止まる場合は、Pi 固有の `config.json`（空港設定）を退避してから GitHub に合わせます。
 
 ```bash
