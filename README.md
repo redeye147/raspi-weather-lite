@@ -463,8 +463,24 @@ raspi-weather-lite/
 | 日の出計算 | 日付変更時のみ再計算 |
 | スクロール廃止 | 作業サマリーを静的テキスト表示に変更 |
 | 点滅廃止 | WBGT 危険バッジは紫固定。常時10秒スリープ |
+| 起動経路の一本化 | 天気画面は systemd の `main01.service` だけで起動。`~/.profile` からの旧起動は `setup.sh` / `update.sh` が自動で無効化（二重起動による画面の取り合い・fb0 フォールバックを防止）|
+| 再起動ループ防止 | `main01.service` は `RestartSec=30`、10分で5回失敗したら再起動を停止（`StartLimitBurst=5`）。起動失敗が続いても CPU を食い潰さない |
+| 依存ライブラリ | astral 等は root の python3 から import できるようシステム全体に導入（`update.sh` が root で確認）|
 
 通常運用時のCPU使用率は 20% 以下が目安です（画面右上の CPU 表示や `top` で確認）。
+
+#### CPU 過負荷対策の経緯（2026-09）
+
+Pi Zero W で CPU が常時 50〜80% になっていた事例の調査結果です。
+
+| 項目 | 内容 |
+|------|------|
+| 症状 | `top` の合計 CPU は約 63% だが、プロセス一覧の合計は約 7% しかない |
+| 原因 | `main01.service`（root）が `No module named 'astral'` で起動失敗→10秒後に再起動を無限に繰り返し、1回あたり約7秒の CPU を消費（短命プロセスのため `top` に出ない）。astral が pi のユーザー領域にしか入っておらず root から見えなかった。実際の表示は `~/.profile` から pi で起動した別インスタンスが担っていた |
+| 対策 | astral をシステム全体に導入 / 起動経路を systemd に一本化 / 再起動ループに上限 / CPU 表示更新だけでの全面再描画を廃止（10秒毎→分替わり毎） |
+| 効果の内訳（見込み） | 再起動ループ 約55% → 0%、描画本体 6.4% → 1〜2% 程度 |
+
+調べ方は「トラブルシューティング → CPU 使用率が高い」を参照。
 
 ## トラブルシューティング
 
@@ -520,7 +536,15 @@ systemctl status main01 --no-pager | grep Active   # "since …; 8s ago" のよ�
 
 - `ModuleNotFoundError: No module named 'astral'` → astral が pi ユーザーにしか入っていない（root から見えない）。`bash ~/raspi-weather-lite/update.sh` で自動修正されます（手動なら `sudo pip3 install "astral>=2.0" --break-system-packages`）
 - `ps -eo user,args | grep main01.py` で **pi と root の2つ**が見える → 旧方式（`~/.profile`）と systemd の二重起動。`update.sh` で一本化されます
-- 修正後は再起動してください
+- 修正後は再起動してください。確認方法：
+
+```bash
+top -b -n 2 -d 10 | awk '/^top -/{n++} n==2' | head -4   # %Cpu(s) の us+sy が 20% 前後なら OK
+ps -eo user,args | grep [m]ain01.py                        # root の1行だけなら一本化 OK
+vcgencmd get_throttled                                     # 0x0 以外なら電源不足でクロック低下
+```
+
+> 旧版の `update.sh` は更新中も古い手順のまま動くため、最初の1回は `cd ~/raspi-weather-lite && git pull --ff-only && bash update.sh` で実行すると確実です。
 
 ### `update.sh: command not found`
 
