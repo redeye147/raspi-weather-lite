@@ -710,6 +710,19 @@ def main():
                 main._updated_2350_date = today_str
                 logging.info("23:50定時取得開始")
 
+        # 6:00 定時取得：時間別の表は 6 時で「今日の 6 時〜」に切り替わるが、夜間は取得を
+        # 先送りするため次の定期取得が 7:50 頃になる。それまで前日の列が残らないよう取り直す。
+        # 6:00〜6:09 の間に 1 日 1 回（起動直後などで 6 時以降のデータが既にあれば不要）。
+        if now.hour == 6 and now.minute < 10:
+            today_str = now.strftime("%Y-%m-%d")
+            fetched_after_6 = last_weather_update.date() == now.date() and last_weather_update.hour >= 6
+            if (getattr(main, "_updated_0600_date", "") != today_str
+                    and not _fetch_pending and not fetched_after_6):
+                fetcher.start()
+                _fetch_pending = True
+                main._updated_0600_date = today_str
+                logging.info("6:00定時取得開始")
+
         # WBGT 更新（1時間ごと、テスト時はスキップ）
         if args.wbgt_test is None and time.time() - last_wbgt_update > 3600:
             try:
