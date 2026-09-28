@@ -406,16 +406,41 @@ def show_ap_screen(screen):
     present(screen)
 
 
-def show_no_dongle_screen(screen):
+SETUP_HOTSPOT_CON = "setup-hotspot"   # wifi_setup/add_setup_hotspot.sh で登録する設定用テザリング
+
+
+def get_setup_hotspot_ssid() -> str:
+    """設定用テザリングの SSID（未登録なら空文字）。パスワードは画面に出さない。"""
+    try:
+        r = subprocess.run(["nmcli", "-g", "802-11-wireless.ssid", "connection", "show", SETUP_HOTSPOT_CON],
+                           capture_output=True, text=True, timeout=5)
+        return r.stdout.strip() if r.returncode == 0 else ""
+    except Exception:
+        return ""
+
+
+def show_no_dongle_screen(screen, hotspot_ssid: str = ""):
     screen.fill((10, 12, 20))
     w, h = screen.get_size()
     lines = [
         ("WiFiに接続できません", 42, (255, 80, 80), True),
         ("", 40, None, False),
-        ("USBドングルを接続してください", 38, (255, 255, 255), True),
-        ("", 24, None, False),
-        ("ドングルを挿すと自動で設定モードが起動します", 26, (160, 160, 160), False),
     ]
+    if hotspot_ssid:
+        lines += [
+            ("スマホのテザリングをオンにしてください", 38, (255, 255, 255), True),
+            ("", 12, None, False),
+            (f"テザリング名「{hotspot_ssid}」（2.4GHz / WPA2）", 30, (255, 215, 0), True),
+            ("つながると天気画面になります。「今日の天気」欄の右端のQRコードから現場のWiFiを設定できます", 24, (160, 160, 160), False),
+            ("", 36, None, False),
+            ("または USBドングルを接続（自動で設定モードが起動します）", 26, (160, 160, 160), False),
+        ]
+    else:
+        lines += [
+            ("USBドングルを接続してください", 38, (255, 255, 255), True),
+            ("", 24, None, False),
+            ("ドングルを挿すと自動で設定モードが起動します", 26, (160, 160, 160), False),
+        ]
     total_h = sum(pygame.font.Font(BASE_FONT, size).get_height() + 8 if text else size
                   for text, size, _, _ in lines)
     y = (h - total_h) // 2
@@ -514,7 +539,7 @@ def main():
         if args.test_case == 3:
             show_ap_screen(screen)
         else:
-            show_no_dongle_screen(screen)
+            show_no_dongle_screen(screen, get_setup_hotspot_ssid())
         while True:
             pygame.time.wait(200)
             for event in pygame.event.get():
@@ -524,6 +549,7 @@ def main():
                     pygame.quit(); return
 
     if not is_wifi_connected() or is_ap_mode_active():
+        hotspot_ssid = get_setup_hotspot_ssid()
         while True:
             if is_wifi_connected() and not is_ap_mode_active():
                 break
@@ -533,7 +559,7 @@ def main():
                 trigger_ap_mode()
                 show_ap_screen(screen)
             else:
-                show_no_dongle_screen(screen)
+                show_no_dongle_screen(screen, hotspot_ssid)
             pygame.time.wait(5000)
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
@@ -552,7 +578,6 @@ def main():
 
     _local_ip = get_local_ip()
     qr_surf = make_qr_surface(f"http://{_local_ip}:8080", max_size=54) if _local_ip else None
-    _qr_date = None
 
     KEN1_PATH = os.path.join(ICON_DIR, "ken1.png")
     KEN6_PATH = os.path.join(ICON_DIR, "ken6.png")
@@ -784,11 +809,13 @@ def main():
             _sunrise_date = now.date()
             needs_redraw = True
 
-        if now.date() != _qr_date:
-            _cur_ip = get_local_ip()
-            if _cur_ip:
-                qr_surf = make_qr_surface(f"http://{_cur_ip}:8080", max_size=54)
-            _qr_date = now.date()
+        # WiFi が切り替わって IP が変わったら QR（設定画面 URL）を作り直す
+        _cur_ip = get_local_ip()
+        if _cur_ip and _cur_ip != _local_ip:
+            qr_surf = make_qr_surface(f"http://{_cur_ip}:8080", max_size=54)
+            logging.info(f"IP 変更 {_local_ip or '-'} → {_cur_ip}: QR を更新")
+            _local_ip = _cur_ip
+            needs_redraw = True
 
         if not needs_redraw:
             for event in pygame.event.get():
