@@ -778,23 +778,30 @@ def main():
     jma_cache_path = os.path.join(BASE_DIR, f"jma_{airport}.json")
 
     # ── 起動高速化：前回スナップショットの利用判定 ─────────────
-    # 時刻同期を待ってから判定（未同期だとデータの新しさを正しく判断できないため）
-    synced = wait_time_sync(15)
-    boot_log(f"時刻同期 {'済' if synced else '未（スナップショットは使わない）'}")
+    # 時刻同期は最大3秒だけ確認（再起動直後は同期に十数秒かかることがあり、待つと起動が遅くなる）
+    synced = wait_time_sync(3)
     now_ts = time.time()
-    snap = load_snapshot() if synced else None
+    snap = load_snapshot()
     if snap and snap.get("airport") != airport:
         snap = None
     table_start = get_target_datetimes()[0].strftime("%Y-%m-%dT%H")
-    weather_fresh = bool(
-        snap and snap.get("hourly")
-        and now_ts - snap.get("weather_at", 0) < args.interval_hours * 3600
-        and snap.get("table_start") == table_start
-    )
-    jma_fresh = bool(snap and now_ts - snap.get("jma_at", 0) < 3600)
-    wbgt_fresh = bool(snap and now_ts - snap.get("wbgt_at", 0) < 3600)
-    boot_log(f"スナップショット 天気={'利用' if weather_fresh else '不可'} "
-             f"警報={'利用' if jma_fresh else '後で取得'} WBGT={'利用' if wbgt_fresh else '後で取得'}")
+    if synced:
+        # 時刻が正しい：同じ空港・interval 以内・同じ日の表なら前回データで表示し、取得も省略
+        weather_fresh = bool(
+            snap and snap.get("hourly")
+            and now_ts - snap.get("weather_at", 0) < args.interval_hours * 3600
+            and snap.get("table_start") == table_start
+        )
+        kick_fetch = False
+    else:
+        # 時刻が未確定：新しさは判断できないが、前回データがあればまず表示し、すぐ裏で取り直す
+        weather_fresh = bool(snap and snap.get("hourly"))
+        kick_fetch = weather_fresh
+    jma_fresh = bool(synced and snap and now_ts - snap.get("jma_at", 0) < 3600)
+    wbgt_fresh = bool(synced and snap and now_ts - snap.get("wbgt_at", 0) < 3600)
+    boot_log(f"時刻同期{'済' if synced else '未'} スナップショット 天気={'利用' if weather_fresh else '不可'}"
+             f"{'（裏で即取得）' if kick_fetch else ''} 警報={'利用' if jma_fresh else '後で取得'} "
+             f"WBGT={'利用' if wbgt_fresh else '後で取得'}")
 
     # 警報・天気概況：新しければ前回値。古い/無ければ前回値（あれば）を仮表示し、起動 20 秒後に取得
     snap_or = lambda k, d: (snap.get(k, d) if snap else d)
@@ -873,9 +880,13 @@ def main():
     if fetch_ok and not weather_fresh:
         _save_state()
     _first_draw_logged = False
+    _fetch_pending = False
+    if kick_fetch:
+        fetcher.start()
+        _fetch_pending = True
+        logging.info("時刻未同期のため前回データを表示しつつ天気を即取得")
 
     work_summary = build_work_summary(hourly)
-    _fetch_pending = False
 
     # ==========================================================
     # メインループ
