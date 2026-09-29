@@ -27,11 +27,13 @@ import requests
 import psutil
 import subprocess
 
+import json
+import fb_display
 from fb_display import init_display, present
 from header import draw_header
 from weather_draw import draw_weather
 from fetch_wbgt import fetch_wbgt, WBGT_LEVELS
-from utils import get_sunrise_sunset_str, build_work_summary, JST, get_local_ip, make_qr_surface
+from utils import get_sunrise_sunset_str, build_work_summary, JST, get_local_ip, make_qr_surface, get_target_datetimes
 from jma_alerts import get_overview_and_warning, active_warning_names
 
 from config import AIRPORT_CONFIG, LOG_FILE, ICON_DIR
@@ -45,6 +47,69 @@ from fetch_weather import (
 BASE_FONT = "/usr/share/fonts/opentype/ipafont-gothic/ipag.ttf"
 
 FETCH_TIMEOUT = 30
+
+# 起動高速化：前回の表示データ（スナップショット）と、初回取得の後回し秒数
+SNAPSHOT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache", "snapshot.json")
+DEFER_INITIAL_FETCH_S = 20
+
+
+def boot_log(msg: str) -> None:
+    """起動からの経過秒数つきで journal とログに記録（起動直後の時刻ずれの影響を受けない）"""
+    try:
+        up = float(open("/proc/uptime").read().split()[0])
+    except Exception:
+        up = -1.0
+    print(f"[boot] {up:.1f}s {msg}", flush=True)
+    logging.info(f"[boot] 起動後 {up:.1f}s {msg}")
+
+
+def wait_time_sync(timeout_s: float = 15) -> bool:
+    """NTP で時刻同期済みになるまで最大 timeout_s 秒待つ（Pi は電池時計が無く起動直後は時刻がずれる）"""
+    end = time.time() + timeout_s
+    while True:
+        try:
+            r = subprocess.run(["timedatectl", "show", "-p", "NTPSynchronized", "--value"],
+                               capture_output=True, text=True, timeout=3)
+            if r.stdout.strip() == "yes":
+                return True
+        except Exception:
+            return False
+        if time.time() >= end:
+            return False
+        time.sleep(1)
+
+
+def _json_default(o):
+    if isinstance(o, (datetime.datetime, datetime.date)):
+        return o.isoformat()
+    if isinstance(o, tuple):
+        return list(o)
+    raise TypeError(type(o))
+
+
+def save_snapshot(state: dict) -> None:
+    """表示に必要なデータ一式を保存（取得・更新が成功したときだけ呼ぶ。SD 書込みを減らすため）"""
+    try:
+        os.makedirs(os.path.dirname(SNAPSHOT_FILE), exist_ok=True)
+        tmp = SNAPSHOT_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(state, f, default=_json_default, ensure_ascii=False)
+        os.replace(tmp, SNAPSHOT_FILE)
+    except Exception as e:
+        logging.warning(f"スナップショット保存失敗: {e}")
+
+
+def load_snapshot():
+    try:
+        with open(SNAPSHOT_FILE, encoding="utf-8") as f:
+            snap = json.load(f)
+        for item in snap.get("hourly", []):
+            if isinstance(item.get("datetime"), str):
+                dt = datetime.datetime.fromisoformat(item["datetime"])
+                item["datetime"] = dt.replace(tzinfo=JST) if dt.tzinfo is None else dt
+        return snap
+    except Exception:
+        return None
 
 socket.setdefaulttimeout(15)
 
@@ -243,7 +308,15 @@ _draw_splash_frame._fetch_start = 0.0
 def _fade(screen, width, height, base_font, airport_label,
           git_version_str, steps, to_black: bool,
           steps_count=18, delay_ms=28):
-    """フェードイン（to_black=False）またはフェードアウト（to_black=True）。"""
+    """フェードイン（to_black=False）またはフェードアウト（to_black=True）。
+    fb0 モードは1回の描画が重い（Pi Zero W で1〜2秒）ため、フェードせず最終フレームだけ描く。"""
+    if fb_display.RENDER_MODE == "fb0":
+        if to_black:
+            screen.fill((0, 0, 0))
+            present(screen)
+        else:
+            _draw_splash_frame(screen, width, height, base_font, airport_label, git_version_str, steps)
+        return
     veil = pygame.Surface((width, height))
     veil.fill((0, 0, 0))
     for i in range(steps_count + 1):
@@ -276,13 +349,17 @@ def run_splash(screen, width, height, base_font,
     _fade(screen, width, height, base_font, airport_label,
           git_version_str, steps, to_black=False)
 
-    # 取得完了待ちループ（200ms間隔で再描画）
+    # 取得完了待ちループ（200ms 間隔で完了確認。再描画は fb0 では5秒に1回＝取得スレッドに CPU を譲る）
     hourly = daily = None
     fetch_ok = False
+    redraw_every = 5.0 if fb_display.RENDER_MODE == "fb0" else 0.2
+    last_frame = time.time()   # フェードイン直後に描画済み
     while True:
         done, h, d, ok = fetcher.poll()
-        _draw_splash_frame(screen, width, height, base_font,
-                           airport_label, git_version_str, steps)
+        if time.time() - last_frame >= redraw_every:
+            _draw_splash_frame(screen, width, height, base_font,
+                               airport_label, git_version_str, steps)
+            last_frame = time.time()
         if done:
             hourly, daily, fetch_ok = h, d, bool(ok)
             break
@@ -543,6 +620,7 @@ def load_ken_image(path: str, scale_h: int = 100) -> pygame.Surface:
 # ==========================================================
 def main():
     print("=== MAIN START ===", flush=True)
+    boot_log("main01 開始")
     setup_logging()
 
     import json as _json
@@ -597,6 +675,7 @@ def main():
 
     # 描画モードを自動判定（auto: kmsdrm を検証 → 失敗時 offscreen+fb0）
     screen = init_display(args.render)
+    boot_log(f"描画初期化完了 mode={fb_display.RENDER_MODE}")
 
     if not pygame.display.get_init():
         driver = os.environ.get("SDL_VIDEODRIVER", "(unset)")
@@ -698,41 +777,61 @@ def main():
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     jma_cache_path = os.path.join(BASE_DIR, f"jma_{airport}.json")
 
-    jma_data = get_overview_and_warning(
-        office_code=cfg["office_code"],
-        area_codes=cfg["area_codes"],
-        cache_json_path=jma_cache_path
+    # ── 起動高速化：前回スナップショットの利用判定 ─────────────
+    # 時刻同期を待ってから判定（未同期だとデータの新しさを正しく判断できないため）
+    synced = wait_time_sync(15)
+    boot_log(f"時刻同期 {'済' if synced else '未（スナップショットは使わない）'}")
+    now_ts = time.time()
+    snap = load_snapshot() if synced else None
+    if snap and snap.get("airport") != airport:
+        snap = None
+    table_start = get_target_datetimes()[0].strftime("%Y-%m-%dT%H")
+    weather_fresh = bool(
+        snap and snap.get("hourly")
+        and now_ts - snap.get("weather_at", 0) < args.interval_hours * 3600
+        and snap.get("table_start") == table_start
     )
-    headline_text = jma_data.get("headline", "")
-    updated_text  = jma_data.get("updated", "")
-    overview_text = jma_data.get("overview", "")
+    jma_fresh = bool(snap and now_ts - snap.get("jma_at", 0) < 3600)
+    wbgt_fresh = bool(snap and now_ts - snap.get("wbgt_at", 0) < 3600)
+    boot_log(f"スナップショット 天気={'利用' if weather_fresh else '不可'} "
+             f"警報={'利用' if jma_fresh else '後で取得'} WBGT={'利用' if wbgt_fresh else '後で取得'}")
 
-    try:
-        warning_text, _ = fetch_warning_data(airport)
-        logging.info(f"初回警報取得完了: {warning_text}")
-    except Exception as e:
-        logging.error(f"初回警報取得失敗: {e}")
-        warning_text = "警報取得失敗"
-    last_jma_update = time.time()
-    weather_updated_text = ""
+    # 警報・天気概況：新しければ前回値。古い/無ければ前回値（あれば）を仮表示し、起動 20 秒後に取得
+    snap_or = lambda k, d: (snap.get(k, d) if snap else d)
+    warning_text  = snap_or("warning_text", "取得中…")
+    headline_text = snap_or("headline_text", "")
+    updated_text  = snap_or("updated_text", "")
+    overview_text = snap_or("overview_text", "")
+    jma_at = snap_or("jma_at", 0.0)
+    last_jma_update = jma_at if jma_fresh else now_ts - 3600 + DEFER_INITIAL_FETCH_S
 
-    # ── スプラッシュ表示 + 初回天気取得 ──────────────────
     fetcher = WeatherFetcher(cfg, args)
-    splash_hourly, splash_daily, fetch_ok = run_splash(
-        screen, width, height, BASE_FONT,
-        airport_label, git_version_str, fetcher
-    )
-    if splash_hourly is not None:
-        hourly, daily = splash_hourly, splash_daily
-        last_weather_update = datetime.datetime.now(JST)
-        weather_updated_text = last_weather_update.strftime("天気更新 %H:%M")
-        logging.info("初回天気取得成功")
+    if weather_fresh:
+        # 前回データで即表示（スプラッシュ省略）。次回の定期取得は前回取得から interval 後
+        hourly, daily = snap["hourly"], snap["daily"]
+        weather_at = snap["weather_at"]
+        last_weather_update = datetime.datetime.fromtimestamp(weather_at, JST)
+        weather_updated_text = snap_or("weather_updated_text", last_weather_update.strftime("天気更新 %H:%M"))
+        fetch_ok = True
+        logging.info("前回スナップショットで即表示")
     else:
-        hourly, daily = load_cached_weather()
+        # ── スプラッシュ表示 + 初回天気取得 ──────────────────
+        boot_log("スプラッシュ開始（天気取得）")
+        splash_hourly, splash_daily, fetch_ok = run_splash(
+            screen, width, height, BASE_FONT,
+            airport_label, git_version_str, fetcher
+        )
+        weather_at = time.time()
         last_weather_update = datetime.datetime.now(JST)
         weather_updated_text = last_weather_update.strftime("天気更新 %H:%M")
-        fetch_ok = False
-        logging.warning("スプラッシュ中断またはフェッチ失敗: キャッシュ使用")
+        if splash_hourly is not None:
+            hourly, daily = splash_hourly, splash_daily
+            logging.info("初回天気取得成功")
+        else:
+            hourly, daily = (snap["hourly"], snap["daily"]) if snap and snap.get("hourly") else load_cached_weather()
+            fetch_ok = False
+            logging.warning("スプラッシュ中断またはフェッチ失敗: キャッシュ使用")
+        boot_log(f"スプラッシュ終了（取得{'成功' if fetch_ok else '失敗'}）")
 
     last_time_update_minute = -1
     xdotool = shutil.which("xdotool")
@@ -742,9 +841,10 @@ def main():
     _sunrise_date = None
     sunrise_str, sunset_str = "", ""
 
-    # WBGT 初期化
-    wbgt_alert = args.wbgt_alert
-    wbgt_level_info = None
+    # WBGT 初期化（新しければ前回値。無ければ起動 20 秒後に取得）
+    wbgt_alert = args.wbgt_alert or bool(snap_or("wbgt_alert", False) and wbgt_fresh)
+    wbgt_level_info = snap_or("wbgt_level_info", None) if wbgt_fresh else None
+    wbgt_at = snap_or("wbgt_at", 0.0)
     if args.wbgt_test is not None:
         v = args.wbgt_test
         for threshold, label, bg, fg in WBGT_LEVELS:
@@ -753,7 +853,26 @@ def main():
                 break
         wbgt_alert = wbgt_alert or (v >= 33)
         logging.info(f"WBGT テストモード: value={v} level={wbgt_level_info and wbgt_level_info['label']}")
-    last_wbgt_update = 0.0 if args.wbgt_test is None else time.time()
+    if args.wbgt_test is not None:
+        last_wbgt_update = time.time()
+    else:
+        last_wbgt_update = wbgt_at if wbgt_fresh else time.time() - 3600 + DEFER_INITIAL_FETCH_S
+
+    def _save_state():
+        save_snapshot({
+            "airport": airport, "saved_at": time.time(),
+            "weather_at": weather_at, "jma_at": jma_at, "wbgt_at": wbgt_at,
+            "table_start": (hourly[0]["datetime"].strftime("%Y-%m-%dT%H")
+                            if hourly and isinstance(hourly[0].get("datetime"), datetime.datetime) else ""),
+            "hourly": hourly, "daily": daily, "weather_updated_text": weather_updated_text,
+            "warning_text": warning_text, "headline_text": headline_text,
+            "updated_text": updated_text, "overview_text": overview_text,
+            "wbgt_alert": wbgt_alert, "wbgt_level_info": wbgt_level_info,
+        })
+
+    if fetch_ok and not weather_fresh:
+        _save_state()
+    _first_draw_logged = False
 
     work_summary = build_work_summary(hourly)
     _fetch_pending = False
@@ -841,8 +960,9 @@ def main():
                 _, wbgt_alert, wbgt_level_info = fetch_wbgt(airport)
                 if args.wbgt_alert:
                     wbgt_alert = True
-                last_wbgt_update = time.time()
+                last_wbgt_update = wbgt_at = time.time()
                 needs_redraw = True
+                _save_state()
             except Exception as e:
                 logging.error(f"WBGT更新失敗: {e}")
 
@@ -858,8 +978,9 @@ def main():
                 headline_text = jma_data.get("headline", "")
                 updated_text  = jma_data.get("updated", "")
                 overview_text = jma_data.get("overview", "")
-                last_jma_update = time.time()
+                last_jma_update = jma_at = time.time()
                 needs_redraw = True
+                _save_state()
                 logging.info(f"JMA更新完了: {warning_text}")
             except Exception as e:
                 logging.error(f"JMA更新失敗: {e}")
@@ -883,6 +1004,8 @@ def main():
                     weather_updated_text = now.strftime("天気更新 %H:%M")
                     work_summary = build_work_summary(hourly)
                     fetch_ok = True
+                    weather_at = time.time()
+                    _save_state()
                     logging.info("天気取得完了")
                 else:
                     last_weather_update = now - datetime.timedelta(hours=args.interval_hours) \
@@ -946,6 +1069,9 @@ def main():
 
         present(screen)
         last_drawn_minute = now.minute
+        if not _first_draw_logged:
+            boot_log("天気画面を表示")
+            _first_draw_logged = True
 
         for event in pygame.event.get():
             if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:

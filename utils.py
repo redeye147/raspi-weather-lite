@@ -131,7 +131,7 @@ def iso_parse_datetime(s):
     dt = datetime.datetime.fromisoformat(s)
 
     if dt.tzinfo is None:
-        dt = JST.localize(dt)
+        dt = dt.replace(tzinfo=JST)
 
     return dt
 
