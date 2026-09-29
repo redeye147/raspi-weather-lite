@@ -419,6 +419,79 @@ def get_setup_hotspot_ssid() -> str:
         return ""
 
 
+def is_on_setup_hotspot() -> bool:
+    """いま設定用テザリング（setup-hotspot）で接続しているか"""
+    try:
+        r = subprocess.run(["nmcli", "-t", "-f", "NAME", "connection", "show", "--active"],
+                           capture_output=True, text=True, timeout=5)
+        return SETUP_HOTSPOT_CON in r.stdout.splitlines()
+    except Exception:
+        return False
+
+
+def show_hotspot_announce(screen, ip: str, ssid: str, seconds: int = 30) -> bool:
+    """テザリングで仮接続したことと、現場 WiFi の設定手順を seconds 秒表示する。
+    ESC / 終了要求なら False を返す。描画は1回だけ（fb0 モードで重いため）。"""
+    screen.fill((10, 12, 20))
+    w, h = screen.get_size()
+    k = h / 1080
+    F = lambda size, bold=False: (lambda f: (f.set_bold(bold), f)[1])(pygame.font.Font(BASE_FONT, max(12, int(size * k))))
+    url = f"http://{ip}:8080" if ip else "http://<PiのIP>:8080"
+
+    qr_size = int(h * 0.36)
+    qr = make_qr_surface(url, max_size=qr_size) if ip else None
+    text_w = w - (qr_size + int(160 * k) if qr else int(120 * k))
+    x = int(80 * k)
+    y = int(90 * k)
+
+    def line(text, size, color, bold=False, gap=10):
+        nonlocal y
+        surf = F(size, bold).render(text, True, color)
+        screen.blit(surf, (x, y))
+        y += surf.get_height() + int(gap * k)
+
+    line("スマホのテザリングで仮接続しました", 56, (255, 170, 60), True, 14)
+    line(f"テザリング名「{ssid}」   この Pi の IP：{ip or '取得中'}", 30, (200, 200, 200), False, 40)
+    line("現場の WiFi を設定する手順", 38, (255, 255, 255), True, 18)
+    for step in (
+        "① テザリング中のスマホで右の QR コードを読み取る",
+        f"　（または ブラウザで {url} を開く）",
+        "② 「WiFi 設定」で現場の WiFi を選び、パスワードを入力",
+        "③ 「保存して再起動」を押す → Pi が現場の WiFi につながる",
+        "④ 天気画面の左上の「仮接続中」が消えたら、テザリングをオフにする",
+    ):
+        line(step, 32, (230, 230, 230), False, 12)
+
+    if qr:
+        qx = w - qr.get_width() - int(100 * k)
+        qy = int(h * 0.30)
+        pygame.draw.rect(screen, (255, 255, 255), (qx - 12, qy - 12, qr.get_width() + 24, qr.get_height() + 24))
+        screen.blit(qr, (qx, qy))
+
+    foot = F(28).render(f"{seconds}秒後に天気画面に切り替わります（仮接続中は左上にラベルを表示）", True, (150, 150, 150))
+    screen.blit(foot, ((w - foot.get_width()) // 2, h - foot.get_height() - int(60 * k)))
+    present(screen)
+
+    end = time.time() + seconds
+    while time.time() < end:
+        pygame.time.wait(500)
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
+                return False
+    return True
+
+
+def draw_hotspot_label(screen, height):
+    """天気画面の左上に「仮接続中」ラベルを描く（テザリング接続中のみ呼ぶ）"""
+    f = pygame.font.Font(BASE_FONT, max(14, int(height * 0.032)))
+    f.set_bold(True)
+    t = f.render("仮接続中", True, (255, 255, 255))
+    pad = 10
+    rect = pygame.Rect(12, 12, t.get_width() + pad * 2, t.get_height() + pad)
+    pygame.draw.rect(screen, (230, 110, 0), rect, border_radius=8)
+    screen.blit(t, (rect.x + pad, rect.y + pad // 2))
+
+
 def show_no_dongle_screen(screen, hotspot_ssid: str = ""):
     screen.fill((10, 12, 20))
     w, h = screen.get_size()
@@ -579,6 +652,13 @@ def main():
     _local_ip = get_local_ip()
     qr_surf = make_qr_surface(f"http://{_local_ip}:8080", max_size=54) if _local_ip else None
 
+    # 設定用テザリングで仮接続している場合は、手順を 30 秒案内してから天気画面へ
+    on_hotspot = is_on_setup_hotspot()
+    if on_hotspot:
+        logging.info("設定用テザリングで仮接続中")
+        if not show_hotspot_announce(screen, _local_ip, get_setup_hotspot_ssid()):
+            pygame.quit(); return
+
     KEN1_PATH = os.path.join(ICON_DIR, "ken1.png")
     KEN6_PATH = os.path.join(ICON_DIR, "ken6.png")
     ken_img = None
@@ -703,6 +783,13 @@ def main():
             if not is_wifi_connected() and has_wlan1() and not is_ap_mode_active():
                 logging.warning("WiFi切断検出 → AP モード自動起動")
                 trigger_ap_mode()
+            _hs = is_on_setup_hotspot()
+            if _hs != on_hotspot:
+                logging.info("設定用テザリングで仮接続" if _hs else "設定用テザリングから通常の WiFi に切替")
+                if _hs and not show_hotspot_announce(screen, get_local_ip(), get_setup_hotspot_ssid()):
+                    pygame.quit(); return
+                on_hotspot = _hs
+                needs_redraw = True
 
         if time.time() - last_cpu_update >= 10:
             cpu = psutil.cpu_percent(interval=None)
@@ -842,6 +929,9 @@ def main():
             airport_label, sunrise_str, sunset_str, "", "",
             wbgt_level_info=wbgt_level_info,
         )
+
+        if on_hotspot:
+            draw_hotspot_label(screen, height)
 
         if ken_img is not None:
             margin = 30
