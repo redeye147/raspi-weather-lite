@@ -85,6 +85,8 @@ chmod +x "$REPO_DIR/start.sh"
 sudo cp "$REPO_DIR/main01.service" /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable main01
+# 有線 LAN の経路優先度を WiFi より下げる（両方つながっていれば WiFi を使う）
+sudo cp "$REPO_DIR/wifi_setup/nm-wired-lower-priority.conf" /etc/NetworkManager/conf.d/98-wired-lower-priority.conf
 
 # ── [5/6] WiFiポータル systemd ────────────────────
 echo -e "\n${YELLOW}[5/6] WiFiポータルをsystemdに登録中...${NC}"

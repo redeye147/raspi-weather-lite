@@ -123,6 +123,9 @@ async function init() {
     if (st.connected) {
       badge.className = 'badge-connected';
       badge.textContent = '現在のWiFi: ' + st.ssid;
+    } else if (st.wired) {
+      badge.className = 'badge-connected';
+      badge.textContent = '有線LANで接続中 — 以下からWiFiを設定できます';
     } else {
       badge.className = 'badge-disconnected';
       badge.textContent = 'WiFi未接続 — 以下からWiFiを設定してください';
@@ -271,10 +274,17 @@ def status():
     except Exception:
         ssid = ""
         connected = False
+    try:
+        dev = subprocess.run(["nmcli", "-t", "-f", "TYPE,STATE", "device"],
+                             capture_output=True, text=True, timeout=5).stdout
+        wired = any(l.startswith("ethernet:connected") for l in dev.splitlines())
+    except Exception:
+        wired = False
     cfg = _load_config()
     return _no_cache(jsonify({
         "connected": connected,
         "ssid": ssid,
+        "wired": wired,
         "airport": cfg.get("airport", "centrair")
     }))
 

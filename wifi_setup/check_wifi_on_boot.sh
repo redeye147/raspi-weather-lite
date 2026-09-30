@@ -23,6 +23,11 @@ while [ $ELAPSED -lt $TIMEOUT ]; do
         logger -t wifi-setup-auto "wlan0 connected: SSID='${SSID}' IP=${IPV4} (poll=${ELAPSED}s)"
         exit 0
     fi
+    # 登録 WiFi が無くても、有線 LAN（USB-LAN アダプタ）が DHCP でつながっていれば設定モードに入らない
+    if nmcli -t -f TYPE,STATE device 2>/dev/null | grep -q '^ethernet:connected'; then
+        logger -t wifi-setup-auto "wired LAN connected (poll=${ELAPSED}s) - skip setup mode"
+        exit 0
+    fi
     sleep $INTERVAL
     ELAPSED=$((ELAPSED + INTERVAL))
 done

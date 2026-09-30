@@ -430,6 +430,20 @@ chmod +x install.sh
 - ポータル URL: `http://192.168.50.1/`（接続後ブラウザが自動で開く）
 - ハードウェア例: 10Gtek WD-1513B (RTL8710BU, VID:PID `0bda:b711`)
 
+### 有線 LAN で使う（USB-LAN アダプタ）
+
+Pi Zero W / Zero 2 W には LAN 端子が無いため、**USB-LAN アダプタ＋ micro USB OTG 変換**（または LAN 付き拡張ボード）で有線接続できます。
+**Realtek RTL8152/8153** または **ASIX** チップのものはドライバ不要で、Pi Zero の「USB」側の端子に挿せば NetworkManager が DHCP で自動接続します。
+
+| 状況 | 動作 |
+|------|------|
+| 登録済み WiFi がある | WiFi に接続（有線も同時につながっていても **WiFi 優先**。有線の経路優先度を下げる設定を `setup.sh` / `update.sh` が配置） |
+| 登録 WiFi が無く、有線 LAN が DHCP でつながった | **有線 LAN で天気を表示**。左上に「有線LAN接続」ラベル。設定モード（AP）には入らない |
+| どちらも無い | 「LANケーブル または USBドングルを接続してください」画面（テザリング登録済みならテザリング案内） |
+
+有線でつながったら、画面の QR コードをスマホ（同じ LAN の WiFi に接続）で読み取り、WiFi ポータルで現場の WiFi を設定できます（ポータルには「有線LANで接続中」と表示）。
+WiFi 設定後は再起動で WiFi に切り替わり、ラベルが消えます。LAN ケーブルは外して構いません。
+
 ### 未登録の WiFi 環境で使う（スマホのテザリングで設定）
 
 ドングルが無くても、**設定用のスマホテザリング**を全台に登録しておけば、現場でスマホのテザリングをオンにするだけで Pi がつながり、現場の WiFi を設定できます。
@@ -500,7 +514,8 @@ raspi-weather-lite/
 ├── wifi_setup/          # WiFi 設定モード（AP + キャプティブポータル）
 │   ├── install.sh       #   導入スクリプト（profiles/ があれば WiFi も取り込み）
 │   ├── export_wifi.sh   #   保存済み WiFi を profiles/ に書き出し（別 Pi への引き継ぎ用）
-│   └── add_setup_hotspot.sh # 設定用スマホテザリングを登録（未登録 WiFi 環境での設定用）
+│   ├── add_setup_hotspot.sh # 設定用スマホテザリングを登録（未登録 WiFi 環境での設定用）
+│   └── nm-wired-lower-priority.conf # 有線 LAN の経路優先度を WiFi より下げる設定
 └── weather_icons/       # 天気アイコン画像
 ```
 

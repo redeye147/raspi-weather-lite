@@ -394,12 +394,39 @@ def _ms_until_next_check(max_ms: int = 10000) -> int:
     return max(50, min(max_ms, to_next_min))
 
 
-def is_wifi_connected() -> bool:
+def parse_connection_kind(nmcli_device_out: str, hotspot_con: str) -> str:
+    """`nmcli -t -f TYPE,STATE,CONNECTION device` の出力から接続の種類を返す。
+    'wifi'（登録 WiFi）/ 'hotspot'（設定用テザリング）/ 'ethernet'（有線 LAN）/ ''（未接続）。
+    WiFi と有線の両方がつながっていれば WiFi を優先して返す（経路も WiFi 優先に設定している）。"""
+    wifi_con = None
+    wired = False
+    for line in nmcli_device_out.splitlines():
+        parts = line.split(":", 2)
+        if len(parts) < 3 or parts[1] != "connected":
+            continue
+        dev_type, _, con = parts
+        con = con.replace("\\:", ":")
+        if dev_type == "wifi":
+            wifi_con = con
+        elif dev_type == "ethernet":
+            wired = True
+    if wifi_con is not None:
+        return "hotspot" if wifi_con == hotspot_con else "wifi"
+    return "ethernet" if wired else ""
+
+
+def get_connection_kind() -> str:
     try:
-        result = subprocess.run(["iwgetid", "-r"], capture_output=True, text=True, timeout=3)
-        return bool(result.stdout.strip())
+        r = subprocess.run(["nmcli", "-t", "-f", "TYPE,STATE,CONNECTION", "device"],
+                           capture_output=True, text=True, timeout=5)
+        return parse_connection_kind(r.stdout, SETUP_HOTSPOT_CON)
     except Exception:
-        return True
+        return "unknown"   # 判定できないときは接続中扱い（誤って設定モードに入らないため）
+
+
+def is_network_connected() -> bool:
+    """WiFi・テザリング・有線 LAN のいずれかでつながっているか"""
+    return get_connection_kind() != ""
 
 
 def is_ap_mode_active() -> bool:
@@ -498,12 +525,7 @@ def get_setup_hotspot_ssid() -> str:
 
 def is_on_setup_hotspot() -> bool:
     """いま設定用テザリング（setup-hotspot）で接続しているか"""
-    try:
-        r = subprocess.run(["nmcli", "-t", "-f", "NAME", "connection", "show", "--active"],
-                           capture_output=True, text=True, timeout=5)
-        return SETUP_HOTSPOT_CON in r.stdout.splitlines()
-    except Exception:
-        return False
+    return get_connection_kind() == "hotspot"
 
 
 def show_hotspot_announce(screen, ip: str, ssid: str, seconds: int = 30) -> bool:
@@ -558,14 +580,23 @@ def show_hotspot_announce(screen, ip: str, ssid: str, seconds: int = 30) -> bool
     return True
 
 
-def draw_hotspot_label(screen, height):
-    """天気画面の左上に「仮接続中」ラベルを描く（テザリング接続中のみ呼ぶ）"""
+CONN_LABELS = {
+    "hotspot":  ("仮接続中", (230, 110, 0)),
+    "ethernet": ("有線LAN接続", (30, 100, 200)),
+}
+
+
+def draw_conn_label(screen, height, kind: str):
+    """天気画面の左上に接続状態ラベルを描く（テザリング＝仮接続中、有線のみ＝有線LAN接続）"""
+    if kind not in CONN_LABELS:
+        return
+    text, color = CONN_LABELS[kind]
     f = pygame.font.Font(BASE_FONT, max(14, int(height * 0.032)))
     f.set_bold(True)
-    t = f.render("仮接続中", True, (255, 255, 255))
+    t = f.render(text, True, (255, 255, 255))
     pad = 10
     rect = pygame.Rect(12, 12, t.get_width() + pad * 2, t.get_height() + pad)
-    pygame.draw.rect(screen, (230, 110, 0), rect, border_radius=8)
+    pygame.draw.rect(screen, color, rect, border_radius=8)
     screen.blit(t, (rect.x + pad, rect.y + pad // 2))
 
 
@@ -583,13 +614,14 @@ def show_no_dongle_screen(screen, hotspot_ssid: str = ""):
             (f"テザリング名「{hotspot_ssid}」（2.4GHz / WPA2）", 30, (255, 215, 0), True),
             ("つながると天気画面になります。「今日の天気」欄の右端のQRコードから現場のWiFiを設定できます", 24, (160, 160, 160), False),
             ("", 36, None, False),
-            ("または USBドングルを接続（自動で設定モードが起動します）", 26, (160, 160, 160), False),
+            ("または LANケーブルを接続（有線LANで天気を表示）／ USBドングルを接続（設定モード）", 26, (160, 160, 160), False),
         ]
     else:
         lines += [
-            ("USBドングルを接続してください", 38, (255, 255, 255), True),
+            ("LANケーブル または USBドングルを接続してください", 38, (255, 255, 255), True),
             ("", 24, None, False),
-            ("ドングルを挿すと自動で設定モードが起動します", 26, (160, 160, 160), False),
+            ("LAN：有線でそのまま天気を表示（QRコードから WiFi を設定可能）", 26, (160, 160, 160), False),
+            ("ドングル：自動で設定モードが起動します", 26, (160, 160, 160), False),
         ]
     total_h = sum(pygame.font.Font(BASE_FONT, size).get_height() + 8 if text else size
                   for text, size, _, _ in lines)
@@ -700,10 +732,10 @@ def main():
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                     pygame.quit(); return
 
-    if not is_wifi_connected() or is_ap_mode_active():
+    if not is_network_connected() or is_ap_mode_active():
         hotspot_ssid = get_setup_hotspot_ssid()
         while True:
-            if is_wifi_connected() and not is_ap_mode_active():
+            if is_network_connected() and not is_ap_mode_active():
                 break
             if is_ap_mode_active():
                 show_ap_screen(screen)
@@ -732,7 +764,9 @@ def main():
     qr_surf = make_qr_surface(f"http://{_local_ip}:8080", max_size=54) if _local_ip else None
 
     # 設定用テザリングで仮接続している場合は、手順を 30 秒案内してから天気画面へ
-    on_hotspot = is_on_setup_hotspot()
+    conn_kind = get_connection_kind()
+    boot_log(f"接続 {conn_kind or '未接続'}")
+    on_hotspot = conn_kind == "hotspot"
     if on_hotspot:
         logging.info("設定用テザリングで仮接続中")
         if not show_hotspot_announce(screen, _local_ip, get_setup_hotspot_ssid()):
@@ -910,10 +944,15 @@ def main():
 
         if time.time() - last_wifi_check >= 30:
             last_wifi_check = time.time()
-            if not is_wifi_connected() and has_wlan1() and not is_ap_mode_active():
-                logging.warning("WiFi切断検出 → AP モード自動起動")
+            _kind = get_connection_kind()
+            if not _kind and has_wlan1() and not is_ap_mode_active():
+                logging.warning("ネットワーク切断検出 → AP モード自動起動")
                 trigger_ap_mode()
-            _hs = is_on_setup_hotspot()
+            if _kind != conn_kind:
+                logging.info(f"接続の種類が変化: {conn_kind or '未接続'} → {_kind or '未接続'}")
+                conn_kind = _kind
+                needs_redraw = True
+            _hs = _kind == "hotspot"
             if _hs != on_hotspot:
                 logging.info("設定用テザリングで仮接続" if _hs else "設定用テザリングから通常の WiFi に切替")
                 if _hs and not show_hotspot_announce(screen, get_local_ip(), get_setup_hotspot_ssid()):
@@ -1064,8 +1103,7 @@ def main():
             wbgt_level_info=wbgt_level_info,
         )
 
-        if on_hotspot:
-            draw_hotspot_label(screen, height)
+        draw_conn_label(screen, height, conn_kind)
 
         if ken_img is not None:
             margin = 30
