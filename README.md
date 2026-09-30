@@ -33,9 +33,32 @@
 ## 動作環境
 
 - **ハードウェア**: Raspberry Pi Zero W / Zero 2W / Pi 3 / Pi 4
-- **OS**: Raspberry Pi OS Lite 32-bit（Bookworm 推奨）
+- **OS**: Raspberry Pi OS **Lite** 32-bit（**Bookworm / Trixie** 対応。Bullseye 以前は非対応。デスクトップ版は非推奨）
 - **Python**: 3.11+
 - **ディスプレイ**: HDMI接続（解像度不問、フルスクリーン表示）
+
+## 設置環境の前提
+
+設置先には次の設備がある前提とします。
+
+| 設置先の設備 | 用途 | Pi 側で用意するもの |
+|------|------|------|
+| **有線 LAN（DHCP）** | 登録 WiFi が無いときの接続手段。WiFi 設定までの足がかり | USB-LAN アダプタ（Realtek RTL8152/8153 または ASIX チップ）＋ micro USB OTG 変換（Pi Zero の「USB」側端子に挿す） |
+| **WiFi（DHCP）** | 通常の接続手段（登録済みなら自動接続・有線より優先） | **2.4GHz**・**WPA2 パスワード方式**であること（5GHz・ID が必要な WPA2-Enterprise・Web ログイン型は不可） |
+| **HDMI 入力のディスプレイ** | 天気表示 | mini HDMI → HDMI ケーブル（または変換アダプタ）。DSI・USB 映像入力のディスプレイは使えない |
+| **USB 電源** | Pi の電源 | **5V・2.5A 以上**（LAN アダプタにも Pi から給電するため） |
+
+WiFi 設定用の USB ドングル・スマホのテザリングは、**有線 LAN が無い場所向けの予備手段**です。
+
+### 現場での設置の流れ
+
+1. LAN ケーブル・HDMI・電源をつなぐ → 有線 LAN で天気が表示される（左上に「有線LAN接続」）
+   - その現場の WiFi を登録済みなら、WiFi で接続されラベルは出ない
+2. 画面の QR コード（「今日の天気」欄の右端）を、同じ LAN の WiFi につないだスマホで読み取る
+3. WiFi ポータル（「有線LANで接続中」と表示）で現場の WiFi を選び、パスワードを入力して「保存して再起動」
+4. 再起動後は WiFi で接続（ラベルが消える）。LAN ケーブルはつないだままでも外しても可
+
+> WiFi につながらないときは「トラブルシューティング → 現地で WiFi につながらない」を参照。
 
 ## セットアップ
 
@@ -632,6 +655,26 @@ vcgencmd get_throttled                                     # 0x0 以外なら電
 ```
 
 > 旧版の `update.sh` は更新中も古い手順のまま動くため、最初の1回は `cd ~/raspi-weather-lite && git pull --ff-only && bash update.sh` で実行すると確実です。
+
+### 現地で WiFi につながらない
+
+パスワード間違い以外に、次の原因がよくあります。
+
+| 原因 | 対処 |
+|------|------|
+| 5GHz しか無い（Buffalo なら SSID に「-A-」） | 2.4GHz の SSID（Buffalo なら「-G-」）を選ぶ |
+| ID とパスワードが必要（WPA2-Enterprise） | 非対応。有線 LAN を使う |
+| Web ログイン・同意が必要（ゲスト WiFi 等） | 非対応。有線 LAN を使う |
+| 登録機器しか使えない（MAC アドレス制限） | 管理者に Pi の登録を依頼 |
+| 国設定が JP でない（12・13ch が使えない） | `iw reg get` で `country JP` を確認 |
+
+持ち帰ってから原因を調べるには：
+
+```bash
+journalctl -u NetworkManager --since "-2 days" --no-pager | grep -iE "reason|secrets|ssid-not-found|auth" | tail -20
+```
+
+`no-secrets` / `secrets required` ならパスワード違い、`ssid-not-found` なら SSID が見えていない（5GHz・電波が届かない）。
 
 ### `update.sh: command not found`
 
