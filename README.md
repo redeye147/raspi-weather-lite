@@ -15,6 +15,7 @@
 - 警報欄の空きスペースに、気象庁の天気概況から**今日・明日の見通しを3行**で表示
 - **熱中症リスク（WBGT）バッジ**をヘッダー右端に表示（環境省データを1時間ごとに取得）
 - **熱中症警戒アラートバナー**：アラート発令時はヘッダー直下に赤帯を表示
+- **WiFi と有線 LAN（USB-LAN アダプタ）の両対応**：登録 WiFi があれば WiFi、無ければ有線 LAN（DHCP）で表示し、画面の QR コードから現場の WiFi を設定できる
 - ブラウザから空港・WiFi を設定できる WiFi ポータル機能付き
 - タイトルバーにWiFiポータルのQRコードを常時表示
 
@@ -236,6 +237,7 @@ WantedBy=multi-user.target
 
 起動後、自動的にフルスクリーンで天気が表示されます。
 
+- **左上ラベル**: 有線 LAN のみで接続中は「有線LAN接続」（青）、設定用テザリングで接続中は「仮接続中」（オレンジ）。WiFi 接続時は表示なし
 - **ヘッダー左**: 日付・時刻・日の出／日の入り時刻・空港名
 - **ヘッダー右**: WBGTバッジ（熱中症リスクレベルをカラー表示）
 - **アラートバナー**: 熱中症警戒アラート発令時はヘッダー直下に赤帯を表示
@@ -466,6 +468,23 @@ Pi Zero W / Zero 2 W には LAN 端子が無いため、**USB-LAN アダプタ�
 
 有線でつながったら、画面の QR コードをスマホ（同じ LAN の WiFi に接続）で読み取り、WiFi ポータルで現場の WiFi を設定できます（ポータルには「有線LANで接続中」と表示）。
 WiFi 設定後は再起動で WiFi に切り替わり、ラベルが消えます。LAN ケーブルは外して構いません。
+
+**仕組み**
+
+- 接続判定は NetworkManager の接続種類（`nmcli -t -f TYPE,STATE,CONNECTION device`）で行う（起動時と30秒ごと）。WiFi・テザリング・有線のいずれかがつながっていれば「接続中」
+- `wifi_setup/check_wifi_on_boot.sh` も有線接続を検出すると設定モードに入らない
+- `nm-wired-lower-priority.conf`（有線の route-metric を 700 に）で WiFi（600）を優先。`update.sh` 実行後の**再起動から有効**
+- 起動直後に HDMI の画面出力（`/dev/dri`・`/dev/fb0`）の準備が遅れた場合は、現れるまで最大90秒待ってから描画
+
+**実機確認（Pi Zero 2 W・WiFi オフ・有線 LAN のみ）**：`接続 ethernet` と判定され、電源 ON から **52.8秒**で天気を表示（WiFi 接続時と同等）。
+
+```bash
+# 有線のみで試す（終わったら sudo nmcli radio wifi on で戻す）
+sudo nmcli radio wifi off && sudo reboot
+# 確認
+journalctl -u main01 -b --no-pager | grep -E "display|\[boot\]"
+nmcli -t -f TYPE,STATE,CONNECTION device
+```
 
 ### 未登録の WiFi 環境で使う（スマホのテザリングで設定）
 
