@@ -125,9 +125,34 @@ def _init_fb0_mode():
         _fw, _fh = 1920, 1080
     screen = pygame.display.set_mode((_fw, _fh))
     _init_fb()
+    if _fb_mmap is None:
+        raise RuntimeError("/dev/fb0 を開けない（描画先なし）")
     RENDER_MODE = 'fb0'
     print(f"[display] mode=fb0 size={screen.get_size()}", flush=True)
     return screen
+
+
+def _display_device_ready() -> bool:
+    """画面出力の装置（KMS の /dev/dri/card* または /dev/fb0）が用意されているか"""
+    import glob
+    return bool(glob.glob('/dev/dri/card*')) or os.path.exists('/sys/class/graphics/fb0/virtual_size')
+
+
+def wait_display_device(timeout_s: float = 90) -> bool:
+    """起動直後は HDMI/DRM の準備が main01 より遅れることがあるため、装置が現れるまで待つ"""
+    end = time.time() + timeout_s
+    waited = False
+    while not _display_device_ready():
+        if time.time() >= end:
+            return False
+        if not waited:
+            print("[display] 画面出力の装置がまだ無い → 待機", flush=True)
+            waited = True
+        time.sleep(1)
+    if waited:
+        time.sleep(2)   # 現れた直後は初期化途中のことがあるので少し待つ
+        print("[display] 画面出力の装置を検出", flush=True)
+    return True
 
 
 def init_display(mode_request):
@@ -137,6 +162,11 @@ def init_display(mode_request):
     """
     global RENDER_MODE
     pygame.font.init()
+
+    # X11 以外は画面出力の装置が必要。見つからなければ例外で終了し、systemd に再起動させる
+    if not (mode_request == 'x11' or (mode_request == 'auto' and os.environ.get('DISPLAY'))):
+        if not wait_display_device():
+            raise RuntimeError("画面出力の装置（/dev/dri, /dev/fb0）が見つからない（HDMI 未接続？）")
 
     # X11 環境（DISPLAY が設定されている）はそのまま使う
     if mode_request == 'x11' or (mode_request == 'auto' and os.environ.get('DISPLAY')):

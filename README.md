@@ -656,6 +656,12 @@ vcgencmd get_throttled                                     # 0x0 以外なら電
 
 > 旧版の `update.sh` は更新中も古い手順のまま動くため、最初の1回は `cd ~/raspi-weather-lite && git pull --ff-only && bash update.sh` で実行すると確実です。
 
+### 起動後もコンソール画面のまま（天気が出ない）
+
+起動直後は HDMI の画面出力（`/dev/dri`・`/dev/fb0`）の準備が main01 より遅れることがあります。main01 は装置が現れるまで最大90秒待ち、それでも無ければ5秒後にやり直します。
+ずっと出ない場合は HDMI ケーブル・ディスプレイの電源・入力切替を確認し、`sudo systemctl restart main01` を試してください。
+`journalctl -u main01 -b --no-pager | grep display` で「画面出力の装置がまだ無い → 待機」が続いていれば、HDMI が認識されていません。
+
 ### 現地で WiFi につながらない
 
 パスワード間違い以外に、次の原因がよくあります。
