@@ -109,6 +109,8 @@ sudo systemctl enable main01
 sudo systemctl enable wifi-portal
 # .profile から pi ユーザーで起動していた旧インスタンスが画面を掴んでいると二重起動になるので止める
 pkill -u pi -f "raspi-weather-lite/main01.py" 2>/dev/null || true
+# 短時間に何度も更新・再起動すると StartLimitBurst（10分で5回）に達して起動できなくなるため記録を消す
+sudo systemctl reset-failed main01 2>/dev/null || true
 sudo systemctl restart main01
 sudo systemctl restart wifi-portal
 echo -e "  ${GREEN}完了${NC}"
