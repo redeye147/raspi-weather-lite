@@ -789,14 +789,25 @@ def main():
         hotspot_ssid = get_setup_hotspot_ssid()
         last_screen = None
         connected_streak = 0
+        wait_start = time.time()
+        last_state = None
         while True:
             connected = is_network_connected()
-            if connected and not is_ap_mode_active():
+            ap = is_ap_mode_active()
+            # 待機中の状態が変わったときだけ記録（画面を見ていなくても後でログで確認できるように）
+            state = (f"接続={'あり' if connected else 'なし'} LANケーブル={'あり' if wired_cable_status() else 'なし'} "
+                     f"設定モード={'中' if ap else '-'} ドングル={'あり' if has_wlan1() else 'なし'}")
+            if state != last_state:
+                boot_log(f"ネットワーク待機 {state}")
+                last_state = state
+            if connected and not ap:
+                boot_log(f"ネットワーク待機終了（{time.time() - wait_start:.0f}秒待機）")
                 break
             if is_ap_mode_active():
                 # 設定モード中でも有線/WiFi で IP が取れたら（2回連続＝約10秒）自動で設定モードを終える
                 connected_streak = connected_streak + 1 if connected else 0
-                if connected_streak >= 2:
+                if connected_streak == 2:
+                    boot_log("設定モード中に接続を検出 → 設定モードを終了")
                     stop_ap_mode()
                 show_ap_screen(screen)
                 last_screen = "ap"
@@ -1006,7 +1017,8 @@ def main():
                         pygame.quit(); return
                 # 設定モード中でも有線/WiFi で IP が取れたら（2回連続）自動で設定モードを終える
                 connected_streak = connected_streak + 1 if is_network_connected() else 0
-                if connected_streak >= 2:
+                if connected_streak == 2:
+                    logging.info("設定モード中に接続を検出 → 設定モードを終了")
                     stop_ap_mode()
                 show_ap_screen(screen)
             logging.info("APモード終了: 通常画面に復帰")
@@ -1020,7 +1032,8 @@ def main():
                 logging.warning("ネットワーク切断検出 → AP モード自動起動")
                 trigger_ap_mode()
             if _kind != conn_kind:
-                logging.info(f"接続の種類が変化: {conn_kind or '未接続'} → {_kind or '未接続'}")
+                boot_log(f"接続の種類が変化: {conn_kind or '未接続'} → {_kind or '未接続'}"
+                         f"{'（有線ケーブルあり・IP なし）' if not _kind and wired_cable_status() else ''}")
                 conn_kind = _kind
                 needs_redraw = True
             _hs = _kind == "hotspot"
