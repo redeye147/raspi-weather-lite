@@ -101,6 +101,9 @@ for _f in /home/pi/.profile /home/pi/.bash_profile; do
 done
 # 有線 LAN の経路優先度を WiFi より下げる（両方つながっていれば WiFi を使う）
 sudo cp "$REPO_DIR/wifi_setup/nm-wired-lower-priority.conf" /etc/NetworkManager/conf.d/98-wired-lower-priority.conf
+# 有線＋WiFi 同時接続時の「IP 重複」誤検知を防ぐ ARP 設定
+sudo cp "$REPO_DIR/wifi_setup/sysctl-arp.conf" /etc/sysctl.d/98-raspi-weather-arp.conf
+sudo sysctl -q -p /etc/sysctl.d/98-raspi-weather-arp.conf || true
 sudo systemctl daemon-reload
 sudo systemctl enable main01
 sudo systemctl enable wifi-portal

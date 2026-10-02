@@ -394,17 +394,30 @@ def _ms_until_next_check(max_ms: int = 10000) -> int:
     return max(50, min(max_ms, to_next_min))
 
 
-def parse_connection_kind(nmcli_device_out: str, hotspot_con: str) -> str:
-    """`nmcli -t -f TYPE,STATE,CONNECTION device` の出力から接続の種類を返す。
+def ipv4_devices(ip_out: str) -> set:
+    """`ip -4 -o addr show scope global` の出力から、IPv4 アドレスを持つデバイス名の集合を返す"""
+    devs = set()
+    for line in ip_out.splitlines():
+        parts = line.split()
+        if len(parts) >= 2:
+            devs.add(parts[1])
+    return devs
+
+
+def parse_connection_kind(nmcli_device_out: str, hotspot_con: str, ipv4_devs=None) -> str:
+    """`nmcli -t -f DEVICE,TYPE,STATE,CONNECTION device` の出力から接続の種類を返す。
     'wifi'（登録 WiFi）/ 'hotspot'（設定用テザリング）/ 'ethernet'（有線 LAN）/ ''（未接続）。
+    ipv4_devs を渡すと、IPv4 アドレスの無いデバイスは未接続扱い（IPv6 だけ取れた場合など）。
     WiFi と有線の両方がつながっていれば WiFi を優先して返す（経路も WiFi 優先に設定している）。"""
     wifi_con = None
     wired = False
     for line in nmcli_device_out.splitlines():
-        parts = line.split(":", 2)
-        if len(parts) < 3 or parts[1] != "connected":
+        parts = line.split(":", 3)
+        if len(parts) < 4 or parts[2] != "connected":
             continue
-        dev_type, _, con = parts
+        dev, dev_type, _, con = parts
+        if ipv4_devs is not None and dev not in ipv4_devs:
+            continue
         con = con.replace("\\:", ":")
         if dev_type == "wifi":
             wifi_con = con
@@ -417,16 +430,44 @@ def parse_connection_kind(nmcli_device_out: str, hotspot_con: str) -> str:
 
 def get_connection_kind() -> str:
     try:
-        r = subprocess.run(["nmcli", "-t", "-f", "TYPE,STATE,CONNECTION", "device"],
+        r = subprocess.run(["nmcli", "-t", "-f", "DEVICE,TYPE,STATE,CONNECTION", "device"],
                            capture_output=True, text=True, timeout=5)
-        return parse_connection_kind(r.stdout, SETUP_HOTSPOT_CON)
+        ip = subprocess.run(["ip", "-4", "-o", "addr", "show", "scope", "global"],
+                            capture_output=True, text=True, timeout=5)
+        return parse_connection_kind(r.stdout, SETUP_HOTSPOT_CON, ipv4_devices(ip.stdout))
     except Exception:
         return "unknown"   # 判定できないときは接続中扱い（誤って設定モードに入らないため）
 
 
 def is_network_connected() -> bool:
-    """WiFi・テザリング・有線 LAN のいずれかでつながっているか"""
+    """WiFi・テザリング・有線 LAN のいずれかで（IPv4 アドレス付きで）つながっているか"""
     return get_connection_kind() != ""
+
+
+def wired_cable_status() -> str:
+    """有線 LAN の状態：'' = ケーブル無し（またはアダプタ無し）/ 'no_ip' = ケーブルは挿さっているが IP 未取得"""
+    try:
+        for dev in os.listdir("/sys/class/net"):
+            if not os.path.exists(f"/sys/class/net/{dev}/device") or dev.startswith("wlan"):
+                continue   # 実デバイスのみ（lo・仮想 IF・WiFi を除く）
+            try:
+                carrier = open(f"/sys/class/net/{dev}/carrier").read().strip() == "1"
+            except OSError:
+                carrier = False
+            if carrier:
+                return "no_ip"
+    except Exception:
+        pass
+    return ""
+
+
+def stop_ap_mode() -> None:
+    try:
+        subprocess.Popen(["sudo", "systemctl", "stop", "wifi-setup-mode"],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        logging.info("ネットワーク接続を検出 → 設定モード（AP）を自動終了")
+    except Exception as e:
+        logging.error(f"wifi-setup-mode 停止失敗: {e}")
 
 
 def is_ap_mode_active() -> bool:
@@ -600,13 +641,21 @@ def draw_conn_label(screen, height, kind: str):
     screen.blit(t, (rect.x + pad, rect.y + pad // 2))
 
 
-def show_no_dongle_screen(screen, hotspot_ssid: str = ""):
+def show_no_dongle_screen(screen, hotspot_ssid: str = "", wired: str = ""):
     screen.fill((10, 12, 20))
     w, h = screen.get_size()
     lines = [
-        ("WiFiに接続できません", 42, (255, 80, 80), True),
-        ("", 40, None, False),
+        ("ネットワークに接続できません", 42, (255, 80, 80), True),
+        ("", 24, None, False),
     ]
+    if wired == "no_ip":
+        lines += [
+            ("有線LAN：ケーブル接続済み・IP取得中（DHCP の応答がありません）", 30, (255, 215, 0), True),
+            ("ルーター/ハブ側のケーブル・DHCP 設定を確認してください（IP が取れれば自動で天気画面になります）", 22, (160, 160, 160), False),
+            ("", 24, None, False),
+        ]
+    else:
+        lines += [("", 16, None, False)]
     if hotspot_ssid:
         lines += [
             ("スマホのテザリングをオンにしてください", 38, (255, 255, 255), True),
@@ -615,6 +664,10 @@ def show_no_dongle_screen(screen, hotspot_ssid: str = ""):
             ("つながると天気画面になります。「今日の天気」欄の右端のQRコードから現場のWiFiを設定できます", 24, (160, 160, 160), False),
             ("", 36, None, False),
             ("または LANケーブルを接続（有線LANで天気を表示）／ USBドングルを接続（設定モード）", 26, (160, 160, 160), False),
+        ]
+    elif wired == "no_ip":
+        lines += [
+            ("または USBドングルを接続すると設定モードが起動します", 28, (200, 200, 200), False),
         ]
     else:
         lines += [
@@ -734,16 +787,29 @@ def main():
 
     if not is_network_connected() or is_ap_mode_active():
         hotspot_ssid = get_setup_hotspot_ssid()
+        last_screen = None
+        connected_streak = 0
         while True:
-            if is_network_connected() and not is_ap_mode_active():
+            connected = is_network_connected()
+            if connected and not is_ap_mode_active():
                 break
             if is_ap_mode_active():
+                # 設定モード中でも有線/WiFi で IP が取れたら（2回連続＝約10秒）自動で設定モードを終える
+                connected_streak = connected_streak + 1 if connected else 0
+                if connected_streak >= 2:
+                    stop_ap_mode()
                 show_ap_screen(screen)
+                last_screen = "ap"
             elif has_wlan1():
                 trigger_ap_mode()
                 show_ap_screen(screen)
+                last_screen = "ap"
             else:
-                show_no_dongle_screen(screen, hotspot_ssid)
+                # 画面が変わるときだけ描き直す（fb0 では全面描画が重いため）
+                cur = ("nodongle", wired_cable_status())
+                if cur != last_screen:
+                    show_no_dongle_screen(screen, hotspot_ssid, cur[1])
+                    last_screen = cur
             pygame.time.wait(5000)
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
@@ -932,11 +998,16 @@ def main():
         if is_ap_mode_active():
             logging.warning("APモード検出: 設定画面を表示")
             show_ap_screen(screen)
+            connected_streak = 0
             while is_ap_mode_active():
                 pygame.time.wait(5000)
                 for event in pygame.event.get():
                     if event.type == pygame.QUIT:
                         pygame.quit(); return
+                # 設定モード中でも有線/WiFi で IP が取れたら（2回連続）自動で設定モードを終える
+                connected_streak = connected_streak + 1 if is_network_connected() else 0
+                if connected_streak >= 2:
+                    stop_ap_mode()
                 show_ap_screen(screen)
             logging.info("APモード終了: 通常画面に復帰")
             needs_redraw = True

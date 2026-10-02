@@ -24,7 +24,9 @@ while [ $ELAPSED -lt $TIMEOUT ]; do
         exit 0
     fi
     # 登録 WiFi が無くても、有線 LAN（USB-LAN アダプタ）が DHCP でつながっていれば設定モードに入らない
-    if nmcli -t -f TYPE,STATE device 2>/dev/null | grep -q '^ethernet:connected'; then
+    # （IPv4 アドレスが付いていることも確認。IPv6 だけでは天気サイトに届かないことがある）
+    if nmcli -t -f DEVICE,TYPE,STATE device 2>/dev/null | awk -F: '$2=="ethernet" && $3=="connected"{print $1}' \
+         | while read -r d; do ip -4 -o addr show dev "$d" scope global | grep -q inet && echo ok; done | grep -q ok; then
         logger -t wifi-setup-auto "wired LAN connected (poll=${ELAPSED}s) - skip setup mode"
         exit 0
     fi
