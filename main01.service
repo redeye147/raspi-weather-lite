@@ -14,6 +14,8 @@ WorkingDirectory=/home/pi/raspi-weather-lite
 ExecStart=/home/pi/raspi-weather-lite/start.sh
 Restart=on-failure
 RestartSec=30
+# 停止指示から 10 秒で強制終了（既定の 90 秒待ちで再起動・シャットダウンが遅くならないように）
+TimeoutStopSec=10
 
 [Install]
 WantedBy=multi-user.target

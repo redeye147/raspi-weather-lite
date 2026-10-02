@@ -11,6 +11,11 @@ main01.py
 
 import sys
 import os
+import signal
+# SDL が SIGTERM/SIGINT を横取りして「QUIT イベント」に変えると、run_forever が main() を
+# やり直してしまい systemd の停止（再起動・シャットダウン時）が 90 秒のタイムアウトまで待たされる。
+# pygame を import する前に SDL のシグナル処理を無効にし、Python 側で即終了させる。
+os.environ["SDL_NO_SIGNAL_HANDLERS"] = "1"
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 import pygame
@@ -1232,5 +1237,11 @@ def run_forever():
         time.sleep(backoff)
 
 
+def _on_sigterm(signum, frame):
+    print(f"signal {signum} 受信: 終了します", flush=True)
+    raise SystemExit(0)   # run_forever は Exception しか捕まえないので、そのまま終了する
+
+
 if __name__ == "__main__":
+    signal.signal(signal.SIGTERM, _on_sigterm)
     run_forever()
