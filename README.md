@@ -84,6 +84,20 @@ bash ~/raspi-weather-lite/update.sh
 
 `config.json`（Pi ごとの空港設定）は `update.sh` が更新の前後で退避・復元するので、ポータルで空港を変えていても更新で消えたり衝突したりしません。
 
+**`update.sh` が自動で行うこと**
+
+| 処理 | 目的 |
+|------|------|
+| `git config core.fileMode false` | 実行権限（`chmod +x start.sh`）の差分で pull・ブランチ切替が止まらないように |
+| `config.json` の退避 → `git pull --ff-only` → 復元 | 空港設定を保持したまま更新。失敗時は案内を表示して停止 |
+| root の python3 で astral・pytz を確認 | `main01.service`（root）が起動失敗を繰り返さないように |
+| 旧方式の起動（`~/.profile` の main01.py・`startx`、旧 `raspi-weather.service`）を無効化 | 二重起動・X11 モード・CPU 過負荷の防止 |
+| 有線 LAN の経路優先度設定・ARP 設定を配置 | WiFi 優先、WiFi＋有線同時接続時の IP 重複誤検知の防止 |
+| `systemctl reset-failed main01` → `restart` | テスト・更新で短時間に何度も再起動しても、起動回数上限（10分で5回）で止まらないように |
+| watchdog の確認・設定 | 固まったときの自動復旧 |
+
+> `update.sh` は実行開始時に読み込んだ版のまま最後まで動きます。`update.sh` 自体が修正された回は、新しい処理が効くのは**次回の実行から**です。
+
 ### OS書き込み時の準備（Raspberry Pi Imager）
 
 Imager の「詳細設定」で以下を事前設定しておくと SSH で接続できます。
@@ -667,6 +681,16 @@ Pi Zero W で CPU が常時 50〜80% になっていた事例の調査結果で�
 調べ方は「トラブルシューティング → CPU 使用率が高い」を参照。
 
 ## トラブルシューティング
+
+### `update.sh` が `start of the service was attempted too often` で止まる
+
+テストなどで短時間に main01 を何度も再起動し、起動回数の上限（10分で5回）に達した状態です。現行の `update.sh` は再起動前に記録を消すため通常は起きませんが、古い `update.sh` で止まった場合は：
+
+```bash
+sudo systemctl reset-failed main01
+sudo systemctl restart main01
+bash ~/raspi-weather-lite/update.sh
+```
 
 ### `update.sh` が `divergent branches` で止まる
 
