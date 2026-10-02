@@ -647,7 +647,7 @@ raspi-weather-lite/
 | 起動の高速化（スナップショット） | 取得が成功するたびに表示データ一式と状態（取得時刻・表の開始日）を `cache/snapshot.json` に保存。起動時は時刻同期を最大3秒確認し、同期済みなら**同じ空港・2時間以内・同じ日の表**のとき前回データで即表示（取得も省略）。未同期（再起動直後に多い）なら前回データでまず表示し、裏ですぐ取り直して差し替える。警報・WBGT は1時間以内なら前回値、古ければ起動20秒後に取得 |
 | 軽量スプラッシュ | fb0 モードではフェード（計38回の全面描画）を省略し、取得待ち中の再描画を5秒に1回に（取得スレッドに CPU を譲る） |
 | 起動時間の記録 | `journalctl -u main01 -b \| grep "\[boot\]"` で起動からの経過秒数（main01 開始／描画初期化／時刻同期／スナップショット判定／スプラッシュ／天気画面表示）を確認できる |
-| 停止の高速化 | SDL のシグナル処理を無効化（`SDL_NO_SIGNAL_HANDLERS`）し、SIGTERM で即終了。以前は SDL が SIGTERM を QUIT イベントに変え、`run_forever` が main() をやり直すため、**停止（再起動・シャットダウン）のたびに 90 秒のタイムアウトまで待たされていた**。保険として `main01.service` に `TimeoutStopSec=10` |
+| 停止の高速化 | SDL のシグナル処理を無効化（`SDL_NO_SIGNAL_HANDLERS`）し、SIGTERM で即終了。以前は SDL が SIGTERM を QUIT イベントに変え、`run_forever` が main() をやり直すため、**停止（再起動・シャットダウン）のたびに 90 秒のタイムアウトまで待たされていた**。保険として `main01.service` に `TimeoutStopSec=10`。待機も SIGTERM で即座に起きる `time.sleep` に変更。**実測（Pi Zero 2 W）：`systemctl restart` 0.8秒、再起動時の停止 1秒（以前は90秒）** |
 | 日の出計算 | 日付変更時のみ再計算 |
 | スクロール廃止 | 作業サマリーを静的テキスト表示に変更 |
 | 点滅廃止 | WBGT 危険バッジは紫固定。常時10秒スリープ |
@@ -681,6 +681,26 @@ Pi Zero W で CPU が常時 50〜80% になっていた事例の調査結果で�
 調べ方は「トラブルシューティング → CPU 使用率が高い」を参照。
 
 ## トラブルシューティング
+
+### 再起動前のログを見たい（`journalctl -b -1` が使えない）
+
+Raspberry Pi OS は SD カードの書き込みを減らすため、ログをメモリにだけ保存する設定（`Storage=volatile`）になっていることがあります。この場合 `journalctl -b -1` で `no persistent journal was found` と出て、前回起動時やシャットダウン時のログを見られません。調査時は次で SD カードへの保存を有効にします。
+
+```bash
+sudo mkdir -p /var/log/journal /etc/systemd/journald.conf.d
+echo -e "[Journal]\nStorage=persistent" | sudo tee /etc/systemd/journald.conf.d/99-persistent.conf
+sudo systemctl restart systemd-journald
+journalctl --list-boots --no-pager | tail -3   # 今回の起動（0）が出れば OK
+```
+
+設定した起動以降のログが残ります（設定前の起動分は残らないため、確認には**設定後にもう1回再起動**が必要）。保存量は自動で上限が決まります（空き容量の約10%または4GBの小さい方）。
+
+```bash
+# 例：前回シャットダウン時に main01 がすぐ止まったか
+journalctl -u main01 -b -1 --no-pager | grep -E "Stopping|Stopped|signal"
+# 元に戻す（メモリ保存に戻す）
+sudo rm /etc/systemd/journald.conf.d/99-persistent.conf && sudo rm -rf /var/log/journal && sudo systemctl restart systemd-journald
+```
 
 ### `update.sh` が `start of the service was attempted too often` で止まる
 
