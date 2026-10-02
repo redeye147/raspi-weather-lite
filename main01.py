@@ -332,7 +332,7 @@ def _fade(screen, width, height, base_font, airport_label,
         veil.set_alpha(alpha)
         screen.blit(veil, (0, 0))
         present(screen)
-        pygame.time.wait(delay_ms)
+        _wait_ms(delay_ms)
 
 
 def run_splash(screen, width, height, base_font,
@@ -371,7 +371,7 @@ def run_splash(screen, width, height, base_font,
         for ev in pygame.event.get():
             if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
                 return None, None, False
-        pygame.time.wait(200)
+        _wait_ms(200)
 
     # 完了ステップを表示して0.8秒待つ
     if fetch_ok:
@@ -380,7 +380,7 @@ def run_splash(screen, width, height, base_font,
         steps[2] = ("取得失敗（キャッシュ使用）", "done")
     _draw_splash_frame(screen, width, height, base_font,
                        airport_label, git_version_str, steps)
-    pygame.time.wait(800)
+    _wait_ms(800)
 
     # フェードアウト
     _fade(screen, width, height, base_font, airport_label,
@@ -392,6 +392,12 @@ def run_splash(screen, width, height, base_font,
 # ==========================================================
 # WiFi / AP 関連
 # ==========================================================
+def _wait_ms(ms: int) -> None:
+    """待機。pygame.time.wait（SDL_Delay）は C の中で眠るため SIGTERM の処理が待機明けまで遅れる。
+    time.sleep ならシグナルで即座に起きてハンドラが動く（停止が最大 10 秒遅れるのを防ぐ）。"""
+    time.sleep(max(0, ms) / 1000)
+
+
 def _ms_until_next_check(max_ms: int = 10000) -> int:
     """最大 max_ms 待つが、分替わりをまたぐ場合は次の :00 直後に起きる（時計表示の遅れ防止）"""
     now = datetime.datetime.now(JST)
@@ -619,7 +625,7 @@ def show_hotspot_announce(screen, ip: str, ssid: str, seconds: int = 30) -> bool
 
     end = time.time() + seconds
     while time.time() < end:
-        pygame.time.wait(500)
+        _wait_ms(500)
         for event in pygame.event.get():
             if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
                 return False
@@ -783,7 +789,7 @@ def main():
         else:
             show_no_dongle_screen(screen, get_setup_hotspot_ssid())
         while True:
-            pygame.time.wait(200)
+            _wait_ms(200)
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     pygame.quit(); return
@@ -826,7 +832,7 @@ def main():
                 if cur != last_screen:
                     show_no_dongle_screen(screen, hotspot_ssid, cur[1])
                     last_screen = cur
-            pygame.time.wait(5000)
+            _wait_ms(5000)
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     pygame.quit(); return
@@ -1016,7 +1022,7 @@ def main():
             show_ap_screen(screen)
             connected_streak = 0
             while is_ap_mode_active():
-                pygame.time.wait(5000)
+                _wait_ms(5000)
                 for event in pygame.event.get():
                     if event.type == pygame.QUIT:
                         pygame.quit(); return
@@ -1170,7 +1176,7 @@ def main():
             for event in pygame.event.get():
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                     pygame.quit(); return
-            pygame.time.wait(_ms_until_next_check())
+            _wait_ms(_ms_until_next_check())
             continue
 
         draw_weather(
@@ -1215,7 +1221,7 @@ def main():
             if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                 pygame.quit(); return
 
-        pygame.time.wait(_ms_until_next_check())
+        _wait_ms(_ms_until_next_check())
 
 
 def run_forever():
