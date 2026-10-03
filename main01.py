@@ -509,7 +509,7 @@ def main():
             main._updated_0600_date = now.strftime("%Y-%m-%d")
             logging.info("6:00定時取得開始")
 
-        # 航空気象（METAR）：毎時 05・35 分に取得し、新しい観測がまだ届いていなければ 5 分おきに最大3回取り直す
+        # 航空気象（METAR）：毎時 05・35 分に取得し、新しい観測がまだ届いていなければ 5 分おきに最大4回取り直す（試験中は 1 分おき。decisions.AVIATION_PROBE）
         # （6:05〜23:50）。裏で取得し、生電文と観測時刻はログにも出る。更新されたら再描画
         if cfg.get("icao"):
             _latest = aviation_state["metar"]["obs_utc"] if aviation_state.get("metar") else None

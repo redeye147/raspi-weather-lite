@@ -261,8 +261,14 @@ def fetch_into(icao: str, holder: dict, expected_obs=None) -> None:
     logging.info(f"[aviation] METAR raw: {raw}")
     got = f"{metar['obs_utc'].astimezone(JST):%H:%M}" if metar else "-"
     exp = f"{expected_obs:%H:%M}" if expected_obs else "-"
-    state = "新しい観測" if metar and expected_obs and metar["obs_utc"] >= expected_obs else "まだ届いていない"
-    logging.info(f"[aviation] 期待 {exp} 観測 / 取得 {got} 観測（{state}） 表示: {format_metar_line(metar)}")
+    is_new = bool(metar and expected_obs and metar["obs_utc"] >= expected_obs)
+    state = "新しい観測" if is_new else "まだ届いていない"
+    # 新しい観測が取れたら、観測時刻から何分後に取れたかも出す（NOAA に届くまでの時間の目安）
+    lag = ""
+    if is_new:
+        sec = int((now - metar["obs_utc"]).total_seconds())
+        lag = f" 観測から {sec // 60}分{sec % 60:02d}秒後"
+    logging.info(f"[aviation] 期待 {exp} 観測 / 取得 {got} 観測（{state}）{lag} 表示: {format_metar_line(metar)}")
     if metar:
         holder.update({"metar": metar, "raw": raw, "fetched_at": time.time()})
 

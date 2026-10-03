@@ -79,6 +79,12 @@ AVIATION_FIRST_WAIT_MIN = 5      # 観測（毎時 00・30 分）の 5 分後に
 AVIATION_RETRY_STEP_MIN = 5      # 新しい観測がまだ届いていなければ 5 分おきに取り直す
 AVIATION_MAX_ATTEMPTS = 4        # 1回の観測につき最大 4 回（例 :05 :10 :15 :20）
 
+# 試験：NOAA に観測が届く時刻を 1 分単位で調べる（観測の 5 分後から 1 分おき、:05〜:20 の最大 16 回。届いたらその回は終わり）。
+# 結果を見て AVIATION_FIRST_WAIT_MIN を決めたら False に戻す
+AVIATION_PROBE = True
+AVIATION_PROBE_STEP_MIN = 1
+AVIATION_PROBE_MAX_ATTEMPTS = 16
+
 
 def aviation_expected_obs(now: datetime.datetime):
     """今の時刻で取れているはずの観測時刻（直近の 00/30 分のうち、5 分以上たったもの）。
@@ -90,23 +96,27 @@ def aviation_expected_obs(now: datetime.datetime):
     return mark
 
 
-def aviation_fetch_due(now: datetime.datetime, latest_obs, last_attempt):
+def aviation_fetch_due(now: datetime.datetime, latest_obs, last_attempt, probe=None):
     """航空気象（METAR）を今取得するか。取得するなら「試行の区切り」を返す（次回 last_attempt に渡す）。取得しないなら None。
 
     - 期待する観測（直近の 00/30 分）がまだ無ければ、5 分ごとの区切りで1回ずつ、最大4回取得する
     - 期待する観測（またはそれより新しい観測）が取れていれば取得しない
     - まだ何も取れていない（起動直後・通信障害）ときは、6 時台以降なら 5 分ごとに取得を試みる
+    - probe（既定は AVIATION_PROBE）のときは 5 分を 1 分に、最大 4 回を 16 回にして、届いた時刻を調べる
     """
+    probe = AVIATION_PROBE if probe is None else probe
+    step_min = AVIATION_PROBE_STEP_MIN if probe else AVIATION_RETRY_STEP_MIN
+    max_attempts = AVIATION_PROBE_MAX_ATTEMPTS if probe else AVIATION_MAX_ATTEMPTS
     mark = aviation_expected_obs(now)
     if mark is None:
         return None
-    step = int((now - mark).total_seconds() // 60 - AVIATION_FIRST_WAIT_MIN) // AVIATION_RETRY_STEP_MIN
+    step = int((now - mark).total_seconds() // 60 - AVIATION_FIRST_WAIT_MIN) // step_min
     attempt = (mark, step)
     if attempt == last_attempt:
         return None
     if latest_obs is None:
         return attempt
-    if latest_obs >= mark or step >= AVIATION_MAX_ATTEMPTS:
+    if latest_obs >= mark or step >= max_attempts:
         return None
     return attempt
 

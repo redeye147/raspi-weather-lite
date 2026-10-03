@@ -167,24 +167,46 @@ def test_aviation_expected_obs(hh, mm, mark):
 
 
 def test_aviation_no_fetch_when_new_obs_already_there():
-    assert aviation_fetch_due(at(3, 10, 5), at(3, 10, 0), None) is None
-    assert aviation_fetch_due(at(3, 10, 5), at(3, 10, 2), None) is None      # 特別観測（SPECI）など、より新しい
+    assert aviation_fetch_due(at(3, 10, 5), at(3, 10, 0), None, probe=False) is None
+    assert aviation_fetch_due(at(3, 10, 5), at(3, 10, 2), None, probe=False) is None      # 特別観測（SPECI）など、より新しい
 
 
 def test_aviation_retry_until_new_obs():
     """10:00 の観測がまだ届いていない → 10:05 / 10:10 / 10:15 / 10:20 に1回ずつ。10:25 以降は 10:35 まで待つ"""
     old_obs, last, tried = at(3, 9, 30), None, []
     for minute in range(5, 35):
-        a = aviation_fetch_due(at(3, 10, minute), old_obs, last)
+        a = aviation_fetch_due(at(3, 10, minute), old_obs, last, probe=False)
         if a:
             last = a; tried.append(f"10:{minute:02d}")
     assert tried == ["10:05", "10:10", "10:15", "10:20"]
 
 
+def test_aviation_probe_every_minute_until_new_obs():
+    """試験モード：10:00 の観測が 10:08 に届く → 10:05 / 10:06 / 10:07 / 10:08 で取れて、その回は終わり"""
+    arrive, last, tried, shown = at(3, 10, 8), None, [], at(3, 9, 30)
+    for minute in range(5, 35):
+        now = at(3, 10, minute)
+        a = aviation_fetch_due(now, shown, last, probe=True)
+        if a:
+            last = a; tried.append(minute)
+            if now >= arrive:
+                shown = at(3, 10, 0)
+    assert tried == [5, 6, 7, 8]
+
+
+def test_aviation_probe_gives_up_at_20():
+    last, tried = None, []
+    for minute in range(5, 35):
+        a = aviation_fetch_due(at(3, 10, minute), at(3, 9, 30), last, probe=True)
+        if a:
+            last = a; tried.append(minute)
+    assert tried == list(range(5, 21))
+
+
 def test_aviation_without_any_data_keeps_trying_every_5_min():
     last, tried = None, []
     for minute in range(5, 35):
-        a = aviation_fetch_due(at(3, 10, minute), None, last)
+        a = aviation_fetch_due(at(3, 10, minute), None, last, probe=False)
         if a:
             last = a; tried.append(minute)
     assert tried == [5, 10, 15, 20, 25, 30]
@@ -200,7 +222,7 @@ def simulate_aviation_day(delay_min: int):
     last, shown, fetches, worst = None, None, 0, 0
     for minute in range(24 * 60):
         now = at(3, 0) + datetime.timedelta(minutes=minute)
-        a = aviation_fetch_due(now, shown, last)
+        a = aviation_fetch_due(now, shown, last, probe=False)
         if a:
             last, fetches = a, fetches + 1
             shown = _half_hour_floor(now - datetime.timedelta(minutes=delay_min))   # その時点で NOAA にある最新の観測

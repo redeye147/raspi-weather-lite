@@ -204,4 +204,4 @@ def test_fetch_into_logs_expected_and_obtained(monkeypatch, caplog):
     caplog.clear()
     with caplog.at_level(logging.INFO):
         av.fetch_into("RJAA", {}, expected_obs=datetime.datetime(2026, 10, 3, 22, 30, tzinfo=JST))
-    assert "取得 22:30 観測（新しい観測）" in caplog.text
+    assert "取得 22:30 観測（新しい観測） 観測から " in caplog.text      # 届くまでの時間も出す
