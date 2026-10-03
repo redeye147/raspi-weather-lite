@@ -4,8 +4,8 @@ import datetime
 import pytest
 
 from decisions import (decide_snapshot, periodic_fetch_action, retry_base_after_failure,
-                       should_fetch_0600, should_fetch_2350, should_fetch_aviation,
-                       aviation_slot, aviation_band_visible)
+                       should_fetch_0600, should_fetch_2350,
+                       aviation_expected_obs, aviation_fetch_due, aviation_band_visible)
 
 JST = datetime.timezone(datetime.timedelta(hours=9))
 T = 1_790_000_000.0          # 起動時刻（UNIX 秒）
@@ -155,33 +155,82 @@ def test_overnight_schedule_with_failure_at_6():
     assert simulate_night(fail_at="06:00") == ["23:50[23:50]", "06:00[6:00](失敗)", "06:30", "08:30"]
 
 
-# ---------------------------------------------------------------- 航空気象の取得（毎時 05・35 分、6:05〜23:35）
-@pytest.mark.parametrize("hh, mm, slot", [
-    (0, 0, None), (5, 59, None), (6, 0, None), (6, 4, None),       # 0:00〜6:04 は取得しない
-    (6, 5, (6, 5)), (6, 34, (6, 5)), (6, 35, (6, 35)), (7, 4, (6, 35)),
-    (12, 10, (12, 5)), (23, 35, (23, 35)), (23, 59, (23, 35)),
+# ---------------------------------------------------------------- 航空気象の取得（観測の5分後、届くまで5分おきに最大4回）
+@pytest.mark.parametrize("hh, mm, mark", [
+    (0, 0, None), (5, 59, None), (6, 4, None),                     # 0:00〜6:04 は取得しない
+    (6, 5, (6, 0)), (6, 34, (6, 0)), (6, 35, (6, 30)), (7, 4, (6, 30)),
+    (23, 35, (23, 30)), (23, 59, (23, 30)),
 ])
-def test_aviation_slot(hh, mm, slot):
-    s = aviation_slot(at(3, hh, mm))
-    assert (None if s is None else (s.hour, s.minute)) == slot
+def test_aviation_expected_obs(hh, mm, mark):
+    m = aviation_expected_obs(at(3, hh, mm))
+    assert (None if m is None else (m.hour, m.minute)) == mark
 
 
-def test_aviation_fetch_schedule_per_day():
-    """1分刻みで1日回すと、6:05 から 23:35 まで毎時 05・35 分に 36 回取得"""
-    last, times = None, []
+def test_aviation_no_fetch_when_new_obs_already_there():
+    assert aviation_fetch_due(at(3, 10, 5), at(3, 10, 0), None) is None
+    assert aviation_fetch_due(at(3, 10, 5), at(3, 10, 2), None) is None      # 特別観測（SPECI）など、より新しい
+
+
+def test_aviation_retry_until_new_obs():
+    """10:00 の観測がまだ届いていない → 10:05 / 10:10 / 10:15 / 10:20 に1回ずつ。10:25 以降は 10:35 まで待つ"""
+    old_obs, last, tried = at(3, 9, 30), None, []
+    for minute in range(5, 35):
+        a = aviation_fetch_due(at(3, 10, minute), old_obs, last)
+        if a:
+            last = a; tried.append(f"10:{minute:02d}")
+    assert tried == ["10:05", "10:10", "10:15", "10:20"]
+
+
+def test_aviation_without_any_data_keeps_trying_every_5_min():
+    last, tried = None, []
+    for minute in range(5, 35):
+        a = aviation_fetch_due(at(3, 10, minute), None, last)
+        if a:
+            last = a; tried.append(minute)
+    assert tried == [5, 10, 15, 20, 25, 30]
+
+
+def _half_hour_floor(t):
+    return t.replace(minute=30 if t.minute >= 30 else 0, second=0, microsecond=0)
+
+
+def simulate_aviation_day(delay_min: int):
+    """NOAA に観測が届くまで delay_min 分かかるとして、7:00〜23:59 を1分刻みで回す（6時台は前夜の続きなので除く）。
+    戻り値: (1日の取得回数, 観測が発表されてから画面に出るまでの最大の遅れ（分）)"""
+    last, shown, fetches, worst = None, None, 0, 0
     for minute in range(24 * 60):
         now = at(3, 0) + datetime.timedelta(minutes=minute)
-        if should_fetch_aviation(now, last):
-            last = aviation_slot(now); times.append(f"{now:%H:%M}")
-    assert len(times) == 36 and times[:3] == ["06:05", "06:35", "07:05"] and times[-1] == "23:35"
+        a = aviation_fetch_due(now, shown, last)
+        if a:
+            last, fetches = a, fetches + 1
+            shown = _half_hour_floor(now - datetime.timedelta(minutes=delay_min))   # その時点で NOAA にある最新の観測
+        if now.hour >= 7:
+            issued = _half_hour_floor(now)              # 実際に発表済みの最新の観測
+            if shown < issued:
+                worst = max(worst, int((now - issued).total_seconds() // 60))
+    return fetches, worst
 
 
-def test_aviation_fetch_on_boot_within_slot():
-    """起動直後（取得枠の途中）はその枠ですぐ取得し、同じ枠ではもう取らない"""
-    now = at(3, 10, 20)
-    assert should_fetch_aviation(now, None) is True
-    assert should_fetch_aviation(now + datetime.timedelta(minutes=10), aviation_slot(now)) is False
-    assert should_fetch_aviation(at(3, 10, 35), aviation_slot(now)) is True
+@pytest.mark.parametrize("delay, max_fetch", [(3, 36), (7, 72), (12, 108), (18, 144)])
+def test_aviation_requests_per_day(delay, max_fetch):
+    """届くまでの時間が長いほど取り直しが増えるが、1日 144 回（1時間に最大8回）を超えない"""
+    fetches, _ = simulate_aviation_day(delay)
+    assert fetches <= max_fetch
+
+
+@pytest.mark.parametrize("delay, fetches_per_day, worst_lag", [
+    (3, 36, 4),     # 5 分後の1回で取れる
+    (7, 72, 9),     # 5 分後はまだ → 10 分後に取れる
+    (12, 108, 14),  # 15 分後に取れる
+])
+def test_aviation_display_lag(delay, fetches_per_day, worst_lag):
+    """観測が発表されてから画面に出るまでの最大の遅れは「届くまでの時間の次の5分刻み」程度"""
+    assert simulate_aviation_day(delay) == (fetches_per_day, worst_lag)
+
+
+def test_aviation_display_lag_before_change():
+    """参考：以前の方式（05・35 分に1回だけ）で 7 分かかると、次の枠まで最大約 34 分遅れていた"""
+    assert simulate_aviation_day(7)[1] < 34
 
 
 @pytest.mark.parametrize("hh, visible", [(0, False), (3, False), (5, False), (6, True), (23, True)])

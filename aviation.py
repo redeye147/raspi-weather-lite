@@ -253,15 +253,19 @@ def fetch_and_parse(icao: str, now_utc=None):
         return None, None
 
 
-def fetch_into(icao: str, holder: dict) -> None:
-    """取得して holder に最新の METAR を入れる（失敗時は前回の値を残す）。生電文と表示内容はログに出す"""
+def fetch_into(icao: str, holder: dict, expected_obs=None) -> None:
+    """取得して holder に最新の METAR を入れる（失敗時は前回の値を残す）。
+    生電文・表示内容と、期待した観測時刻／取れた観測時刻をログに出す（NOAA に届くまでの時間の確認用）"""
     now = datetime.datetime.now(UTC)
     metar, raw = fetch_and_parse(icao, now)
     logging.info(f"[aviation] METAR raw: {raw}")
-    logging.info(f"[aviation] 表示: {format_metar_line(metar)}")
+    got = f"{metar['obs_utc'].astimezone(JST):%H:%M}" if metar else "-"
+    exp = f"{expected_obs:%H:%M}" if expected_obs else "-"
+    state = "新しい観測" if metar and expected_obs and metar["obs_utc"] >= expected_obs else "まだ届いていない"
+    logging.info(f"[aviation] 期待 {exp} 観測 / 取得 {got} 観測（{state}） 表示: {format_metar_line(metar)}")
     if metar:
         holder.update({"metar": metar, "raw": raw, "fetched_at": time.time()})
 
 
-def start_fetch_in_background(icao: str, holder: dict) -> None:
-    threading.Thread(target=fetch_into, args=(icao, holder), daemon=True).start()
+def start_fetch_in_background(icao: str, holder: dict, expected_obs=None) -> None:
+    threading.Thread(target=fetch_into, args=(icao, holder, expected_obs), daemon=True).start()

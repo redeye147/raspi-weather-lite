@@ -191,3 +191,17 @@ def test_fetch_into_keeps_last_good(monkeypatch):
     monkeypatch.setattr(av, "fetch_and_parse", lambda icao, now=None: (None, None))
     av.fetch_into("RJAA", holder)                                   # 失敗しても前回の値を残す
     assert holder["raw"] == "RAW1"
+
+
+def test_fetch_into_logs_expected_and_obtained(monkeypatch, caplog):
+    """ログに「期待した観測」と「取得できた観測」を出す（NOAA に届くまでの時間の確認用）"""
+    import logging
+    JST = datetime.timezone(datetime.timedelta(hours=9))
+    monkeypatch.setattr(av, "fetch_and_parse", lambda icao, now=None: (metar("RJAA 031330Z 01007KT CAVOK 17/11 Q1021"), "RAW"))
+    with caplog.at_level(logging.INFO):
+        av.fetch_into("RJAA", {}, expected_obs=datetime.datetime(2026, 10, 3, 23, 0, tzinfo=JST))
+    assert "期待 23:00 観測 / 取得 22:30 観測（まだ届いていない）" in caplog.text
+    caplog.clear()
+    with caplog.at_level(logging.INFO):
+        av.fetch_into("RJAA", {}, expected_obs=datetime.datetime(2026, 10, 3, 22, 30, tzinfo=JST))
+    assert "取得 22:30 観測（新しい観測）" in caplog.text

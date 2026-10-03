@@ -74,28 +74,41 @@ def retry_base_after_failure(now: datetime.datetime, interval_hours: float) -> d
     return now - datetime.timedelta(hours=interval_hours) + datetime.timedelta(minutes=30)
 
 
-AVIATION_START_HOUR = 6          # 航空気象は 6 時台から取得・表示（0:00〜5:59 は取得せず、帯も出さない）
-AVIATION_SLOT_MINUTES = (5, 35)  # 日本の主な空港の METAR は毎時 00・30 分に発表 → その 5 分後に取得
+AVIATION_START_HOUR = 6          # 航空気象は 6 時台から取得・表示（0:00〜6:04 は取得せず、0:00 に帯を消す）
+AVIATION_FIRST_WAIT_MIN = 5      # 観測（毎時 00・30 分）の 5 分後に最初の取得
+AVIATION_RETRY_STEP_MIN = 5      # 新しい観測がまだ届いていなければ 5 分おきに取り直す
+AVIATION_MAX_ATTEMPTS = 4        # 1回の観測につき最大 4 回（例 :05 :10 :15 :20）
 
 
-def aviation_slot(now: datetime.datetime):
-    """今が属する取得枠（直近の 05分 または 35分）。0:00〜6:04 は取得しないので None"""
-    if now.minute >= AVIATION_SLOT_MINUTES[1]:
-        slot = now.replace(minute=AVIATION_SLOT_MINUTES[1], second=0, microsecond=0)
-    elif now.minute >= AVIATION_SLOT_MINUTES[0]:
-        slot = now.replace(minute=AVIATION_SLOT_MINUTES[0], second=0, microsecond=0)
-    else:
-        slot = (now - datetime.timedelta(hours=1)).replace(minute=AVIATION_SLOT_MINUTES[1], second=0, microsecond=0)
-    if slot.date() != now.date() or slot.hour < AVIATION_START_HOUR:
+def aviation_expected_obs(now: datetime.datetime):
+    """今の時刻で取れているはずの観測時刻（直近の 00/30 分のうち、5 分以上たったもの）。
+    0:00〜6:04 は取得しないので None"""
+    base = now - datetime.timedelta(minutes=AVIATION_FIRST_WAIT_MIN)
+    mark = base.replace(minute=30 if base.minute >= 30 else 0, second=0, microsecond=0)
+    if mark.date() != now.date() or mark.hour < AVIATION_START_HOUR:
         return None
-    return slot
+    return mark
 
 
-def should_fetch_aviation(now: datetime.datetime, last_slot) -> bool:
-    """航空気象（METAR）を取得するか：毎時 05・35 分の枠ごとに1回（6:05〜23:35、1日36回）。
-    起動直後や取得し損ねたときは、その枠の時間内なら取得する"""
-    slot = aviation_slot(now)
-    return slot is not None and slot != last_slot
+def aviation_fetch_due(now: datetime.datetime, latest_obs, last_attempt):
+    """航空気象（METAR）を今取得するか。取得するなら「試行の区切り」を返す（次回 last_attempt に渡す）。取得しないなら None。
+
+    - 期待する観測（直近の 00/30 分）がまだ無ければ、5 分ごとの区切りで1回ずつ、最大4回取得する
+    - 期待する観測（またはそれより新しい観測）が取れていれば取得しない
+    - まだ何も取れていない（起動直後・通信障害）ときは、6 時台以降なら 5 分ごとに取得を試みる
+    """
+    mark = aviation_expected_obs(now)
+    if mark is None:
+        return None
+    step = int((now - mark).total_seconds() // 60 - AVIATION_FIRST_WAIT_MIN) // AVIATION_RETRY_STEP_MIN
+    attempt = (mark, step)
+    if attempt == last_attempt:
+        return None
+    if latest_obs is None:
+        return attempt
+    if latest_obs >= mark or step >= AVIATION_MAX_ATTEMPTS:
+        return None
+    return attempt
 
 
 def aviation_band_visible(now: datetime.datetime) -> bool:

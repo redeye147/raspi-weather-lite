@@ -41,7 +41,7 @@ from splash import run_splash
 import aviation
 from decisions import (decide_snapshot, should_fetch_2350, should_fetch_0600,
                        periodic_fetch_action, retry_base_after_failure,
-                       should_fetch_aviation, aviation_slot, aviation_band_visible)
+                       aviation_fetch_due, aviation_band_visible)
 from screens import show_ap_screen, show_hotspot_announce, draw_conn_label, show_no_dongle_screen
 from netstate import (
     get_connection_kind,
@@ -418,7 +418,7 @@ def main():
     if fetch_ok and not weather_fresh:
         _save_state()
     _first_draw_logged = False
-    last_aviation_slot = None   # 直近に取得した枠（毎時 05・35 分）
+    last_aviation_attempt = None   # 直近に航空気象を取得した区切り（decisions.aviation_fetch_due）
     shown_metar_raw = aviation_state.get("raw")
     _fetch_pending = False
     if kick_fetch:
@@ -509,10 +509,14 @@ def main():
             main._updated_0600_date = now.strftime("%Y-%m-%d")
             logging.info("6:00定時取得開始")
 
-        # 航空気象（METAR）：毎時 05・35 分（6:05〜23:35）に裏で取得（生電文はログにも出る）。更新されたら再描画
-        if cfg.get("icao") and should_fetch_aviation(now, last_aviation_slot):
-            last_aviation_slot = aviation_slot(now)
-            aviation.start_fetch_in_background(cfg["icao"], aviation_state)
+        # 航空気象（METAR）：毎時 05・35 分に取得し、新しい観測がまだ届いていなければ 5 分おきに最大3回取り直す
+        # （6:05〜23:50）。裏で取得し、生電文と観測時刻はログにも出る。更新されたら再描画
+        if cfg.get("icao"):
+            _latest = aviation_state["metar"]["obs_utc"] if aviation_state.get("metar") else None
+            _attempt = aviation_fetch_due(now, _latest, last_aviation_attempt)
+            if _attempt:
+                last_aviation_attempt = _attempt
+                aviation.start_fetch_in_background(cfg["icao"], aviation_state, expected_obs=_attempt[0])
         if aviation_state.get("raw") != shown_metar_raw:
             shown_metar_raw = aviation_state.get("raw")
             needs_redraw = True
