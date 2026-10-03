@@ -4,7 +4,7 @@ import datetime
 import pytest
 
 from decisions import (decide_snapshot, periodic_fetch_action, retry_base_after_failure,
-                       should_fetch_0600, should_fetch_2350)
+                       should_fetch_0600, should_fetch_2350, should_fetch_aviation)
 
 JST = datetime.timezone(datetime.timedelta(hours=9))
 T = 1_790_000_000.0          # 起動時刻（UNIX 秒）
@@ -152,3 +152,26 @@ def test_overnight_schedule():
 def test_overnight_schedule_with_failure_at_6():
     """6:00 の取得に失敗したら 30 分後に再試行"""
     assert simulate_night(fail_at="06:00") == ["23:50[23:50]", "06:00[6:00](失敗)", "06:30", "08:30"]
+
+
+# ---------------------------------------------------------------- 航空気象の取得（0:00〜5:59 は取得しない）
+@pytest.mark.parametrize("hh, mm, expected", [(0, 0, False), (3, 0, False), (5, 59, False),
+                                              (6, 0, True), (12, 0, True), (23, 59, True)])
+def test_aviation_fetch_hours(hh, mm, expected):
+    assert should_fetch_aviation(at(3, hh, mm), T, T - 3600, 1800) is expected
+
+
+def test_aviation_fetch_interval():
+    assert should_fetch_aviation(at(3, 12), T, T - 1799, 1800) is False
+    assert should_fetch_aviation(at(3, 12), T, T - 1800, 1800) is True
+
+
+def test_aviation_fetch_count_per_day():
+    """1日（30分間隔）で何回取得するか：6:00〜23:59 の 36 回。最初は 6:00 ちょうど"""
+    last, times = 0.0, []
+    for minute in range(24 * 60):
+        now = at(3, 0) + datetime.timedelta(minutes=minute)
+        ts = T + minute * 60
+        if should_fetch_aviation(now, ts, last, 1800):
+            last = ts; times.append(f"{now:%H:%M}")
+    assert len(times) == 36 and times[0] == "06:00" and times[-1] == "23:30"

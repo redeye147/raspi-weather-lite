@@ -40,7 +40,7 @@ from startup import boot_log, wait_time_sync, save_snapshot, load_snapshot
 from splash import run_splash
 import aviation
 from decisions import (decide_snapshot, should_fetch_2350, should_fetch_0600,
-                       periodic_fetch_action, retry_base_after_failure)
+                       periodic_fetch_action, retry_base_after_failure, should_fetch_aviation)
 from screens import show_ap_screen, show_hotspot_announce, draw_conn_label, show_no_dongle_screen
 from netstate import (
     get_connection_kind,
@@ -508,8 +508,8 @@ def main():
             main._updated_0600_date = now.strftime("%Y-%m-%d")
             logging.info("6:00定時取得開始")
 
-        # 航空気象（METAR）：30 分ごとに裏で取得（生電文と表示案はログにも出る）。更新されたら再描画
-        if cfg.get("icao") and time.time() - last_aviation_log >= aviation.FETCH_INTERVAL_S:
+        # 航空気象（METAR）：6:00〜23:59 に 30 分ごと、裏で取得（生電文と表示案はログにも出る）。更新されたら再描画
+        if cfg.get("icao") and should_fetch_aviation(now, time.time(), last_aviation_log, aviation.FETCH_INTERVAL_S):
             last_aviation_log = time.time()
             aviation.start_fetch_in_background(cfg["icao"], aviation_state)
         if aviation_state.get("raw") != shown_metar_raw:

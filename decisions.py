@@ -72,3 +72,11 @@ def periodic_fetch_action(now: datetime.datetime, last_weather_update: datetime.
 def retry_base_after_failure(now: datetime.datetime, interval_hours: float) -> datetime.datetime:
     """取得失敗時の last_weather_update。定期取得の判断で 30 分後に再試行になるように戻す"""
     return now - datetime.timedelta(hours=interval_hours) + datetime.timedelta(minutes=30)
+
+
+AVIATION_START_HOUR = 6          # 航空気象は 6:00〜23:59 だけ取得（0:00〜5:59 は取得しない）
+
+
+def should_fetch_aviation(now: datetime.datetime, now_ts: float, last_ts: float, interval_s: float) -> bool:
+    """航空気象（METAR）を取得するか：6:00〜23:59 の間で、前回から interval_s 以上たっていれば取得"""
+    return now.hour >= AVIATION_START_HOUR and now_ts - last_ts >= interval_s
