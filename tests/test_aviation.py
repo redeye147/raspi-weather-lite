@@ -226,3 +226,19 @@ def test_fetch_into_keeps_last_good(monkeypatch):
     monkeypatch.setattr(av, "fetch_and_parse", lambda icao, now=None: (None, None, None, None))
     av.fetch_into("RJAA", holder)                                   # 失敗しても前回の値を残す
     assert holder["raw"] == "RAW1"
+
+
+@pytest.mark.parametrize("cloud_group", ["NSC", "SKC", "CLR", "NCD"])
+def test_no_cloud_is_shown(cloud_group):
+    """雲なし（NSC 等）は「雲なし」と表示"""
+    m = metar(f"RJAA 031200Z 02005KT 9999 {cloud_group} 17/12 Q1021")
+    assert m["no_cloud"] and m["clouds"] == [] and m["category"] == "VFR"
+    assert [t for t, _ in av.band_parts(m)] == ["RJAA 21:00観測", "風 020° 3m/s(5kt)", "視程10km以上", "雲なし", "17℃"]
+
+
+def test_missing_cloud_group_shows_nothing():
+    """雲の通報そのものが無い／観測不能（///）なら、雲は表示しない（「雲なし」とは断定しない）"""
+    for raw in ("RJAA 031200Z 02005KT 9999 17/12 Q1021", "RJAA 031200Z 02005KT 9999 //////// 17/12 Q1021"):
+        m = metar(raw)
+        assert not m["no_cloud"]
+        assert not any("雲" in t for t, _ in av.band_parts(m))

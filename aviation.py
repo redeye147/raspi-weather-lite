@@ -53,7 +53,8 @@ def wx_to_japanese(token: str):
 def _parse_elements(tokens):
     """風・視程・天気・雲・気温・気圧を読み取る（METAR 本文・TAF の各グループ共通）"""
     out = {"wind_dir": None, "wind_kt": None, "gust_kt": None, "wind_var": None, "vis_m": None,
-           "cavok": False, "nsw": False, "wx": [], "clouds": [], "temp": None, "dew": None, "qnh": None}
+           "cavok": False, "nsw": False, "wx": [], "clouds": [], "no_cloud": False,
+           "temp": None, "dew": None, "qnh": None}
     for t in tokens:
         if m := _WIND_RE.match(t):
             spd = int(m.group(2)); gst = int(m.group(3)) if m.group(3) else None
@@ -69,8 +70,8 @@ def _parse_elements(tokens):
             out["vis_m"] = 10000 if t == "9999" else int(t)
         elif t == "NSW":
             out["nsw"] = True
-        elif t in ("NSC", "SKC", "CLR", "NCD"):
-            out["clouds"] = []
+        elif t in ("NSC", "SKC", "CLR", "NCD"):   # 雲なし（電文で明示されたとき）
+            out["clouds"] = []; out["no_cloud"] = True
         elif m := _CLOUD_RE.match(t):
             if m.group(2) != "///":
                 out["clouds"].append({"cover": m.group(1), "base_ft": int(m.group(2)) * 100, "type": m.group(3)})
@@ -252,7 +253,7 @@ def _cloud_text(d) -> str:
         # 実際の雲の高さは通報されないので「以上」で保証される下限を示す
         return "雲1500m(5000ft)以上(CAVOK)"
     if not d["clouds"]:
-        return ""
+        return "雲なし" if d.get("no_cloud") else ""   # 雲の通報自体が無いときは何も出さない
     c = next((c for c in d["clouds"] if c["cover"] in ("BKN", "OVC", "VV")), d["clouds"][0])
     m = round(c["base_ft"] * FT_TO_M / 10) * 10
     return f"雲 {c['cover']} {m}m({c['base_ft']}ft)" + (f" {c['type']}" if c["type"] else "")
