@@ -57,6 +57,53 @@ def _scan_ssids() -> list:
 
 
 # ==========================================
+# 登録済み WiFi（NetworkManager の接続プロファイル）
+# ==========================================
+SETUP_HOTSPOT_CON = "setup-hotspot"
+
+
+def _split_terse(line: str) -> list:
+    """nmcli -t の1行を ':' で分割（値の中の '\:' はエスケープされた ':'）"""
+    out, cur, i = [], "", 0
+    while i < len(line):
+        c = line[i]
+        if c == "\\" and i + 1 < len(line):
+            cur += line[i + 1]; i += 2; continue
+        if c == ":":
+            out.append(cur); cur = ""
+        else:
+            cur += c
+        i += 1
+    out.append(cur)
+    return out
+
+
+def _saved_wifi() -> list:
+    """登録済み WiFi の一覧（設定用テザリングは最後、ほかは優先度の高い順）"""
+    r = subprocess.run(["nmcli", "-t", "-f", "UUID,TYPE,NAME,AUTOCONNECT-PRIORITY,ACTIVE", "connection", "show"],
+                       capture_output=True, text=True, timeout=10)
+    items = []
+    for line in r.stdout.splitlines():
+        f = _split_terse(line)
+        if len(f) < 5 or f[1] != "802-11-wireless":
+            continue
+        uuid, _, name, prio, active = f[:5]
+        try:
+            ssid = subprocess.run(["nmcli", "-g", "802-11-wireless.ssid", "connection", "show", "uuid", uuid],
+                                  capture_output=True, text=True, timeout=5).stdout.strip()
+        except Exception:
+            ssid = ""
+        items.append({
+            "uuid": uuid, "name": name, "ssid": ssid or name,
+            "priority": int(prio) if prio.lstrip("-").isdigit() else 0,
+            "active": active == "yes",
+            "hotspot": name == SETUP_HOTSPOT_CON,
+        })
+    items.sort(key=lambda x: (x["hotspot"], -x["priority"], x["ssid"].lower()))
+    return items
+
+
+# ==========================================
 # HTML
 # ==========================================
 HTML = """<!DOCTYPE html>
@@ -80,6 +127,16 @@ HTML = """<!DOCTYPE html>
   .badge-disconnected { font-size: 13px; color: #ef4444; margin-bottom: 4px; }
   .section-box { background: #1e2233; border-radius: 10px; padding: 14px; margin-top: 12px; }
   .scanning { font-size: 13px; color: #888; }
+  .wifi-row { display: flex; align-items: center; gap: 6px; padding: 8px 0; border-bottom: 1px solid #2c3350; }
+  .wifi-row .nm { flex: 1; min-width: 0; font-size: 15px; overflow-wrap: anywhere; }
+  .wifi-row button { flex: none; }
+  .wifi-row .sub { font-size: 12px; color: #888; }
+  .wifi-row button { width: auto; margin: 0; padding: 8px 12px; font-size: 14px; }
+  .wifi-row button.del { background: #b91c1c; }
+  .wifi-row button:disabled { background: #444; color: #888; }
+  .tag { font-size: 11px; padding: 2px 6px; border-radius: 6px; margin-left: 4px; }
+  .tag-on { background: #065f46; color: #a7f3d0; }
+  .tag-hs { background: #7c2d12; color: #fed7aa; }
 </style>
 </head><body>
 <h2>天気サイネージ 設定</h2>
@@ -111,6 +168,14 @@ HTML = """<!DOCTYPE html>
 
 <button id="save-btn" onclick="save()">保存して再起動</button>
 <p id="msg"></p>
+
+<div class="section-box">
+  <h3>📋 登録済み WiFi（上ほど優先して接続）</h3>
+  <p class="scanning">▲▼で優先順を変更、削除で登録を消去（接続中の WiFi は削除できません）。
+  パスワードを間違えて登録した WiFi は、削除してから上の「WiFi 設定」で登録し直してください。</p>
+  <div id="saved-list"><p class="scanning">読み込み中...</p></div>
+  <p id="saved-msg" class="scanning"></p>
+</div>
 
 <script>
 let currentSsid = '';
@@ -237,7 +302,66 @@ async function save() {
   }
 }
 
+let saved = [];
+
+function esc(t) {
+  return String(t).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+async function loadSaved() {
+  const box = document.getElementById('saved-list');
+  try {
+    saved = await fetch('/wifi/list').then(r => r.json());
+  } catch(e) {
+    box.innerHTML = '<p class="scanning">読み込み失敗</p>'; return;
+  }
+  const normal = saved.filter(w => !w.hotspot);
+  box.innerHTML = '';
+  if (saved.length === 0) { box.innerHTML = '<p class="scanning">登録なし</p>'; return; }
+  saved.forEach(w => {
+    const i = normal.indexOf(w);
+    const row = document.createElement('div');
+    row.className = 'wifi-row';
+    row.innerHTML =
+      '<div class="nm">' + esc(w.ssid) +
+      (w.active ? '<span class="tag tag-on">接続中</span>' : '') +
+      (w.hotspot ? '<span class="tag tag-hs">設定用テザリング</span>' : '') +
+      (w.name !== w.ssid ? '<div class="sub">登録名: ' + esc(w.name) + '</div>' : '') + '</div>';
+    const up = document.createElement('button'); up.textContent = '▲';
+    const dn = document.createElement('button'); dn.textContent = '▼';
+    const del = document.createElement('button'); del.textContent = '削除'; del.className = 'del';
+    up.disabled = w.hotspot || i <= 0;
+    dn.disabled = w.hotspot || i < 0 || i >= normal.length - 1;
+    del.disabled = w.active;
+    up.onclick = () => move(i, -1);
+    dn.onclick = () => move(i, +1);
+    del.onclick = () => removeWifi(w);
+    row.append(up, dn, del);
+    box.appendChild(row);
+  });
+}
+
+async function move(i, d) {
+  const normal = saved.filter(w => !w.hotspot);
+  const j = i + d;
+  if (j < 0 || j >= normal.length) return;
+  [normal[i], normal[j]] = [normal[j], normal[i]];
+  const res = await fetch('/wifi/order', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                                          body: JSON.stringify({uuids: normal.map(w => w.uuid)})});
+  document.getElementById('saved-msg').textContent = await res.text();
+  loadSaved();
+}
+
+async function removeWifi(w) {
+  if (!confirm('「' + w.ssid + '」の登録を削除しますか？')) return;
+  const res = await fetch('/wifi/delete', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                                           body: JSON.stringify({uuid: w.uuid})});
+  document.getElementById('saved-msg').textContent = await res.text();
+  loadSaved();
+}
+
 init();
+loadSaved();
 </script>
 </body></html>"""
 
@@ -292,6 +416,45 @@ def status():
 @app.route("/scan")
 def scan():
     return _no_cache(jsonify(_scan_ssids()))
+
+
+@app.route("/wifi/list")
+def wifi_list():
+    try:
+        return _no_cache(jsonify(_saved_wifi()))
+    except Exception as e:
+        app.logger.error(f"wifi list: {e}")
+        return _no_cache(jsonify([]))
+
+
+@app.route("/wifi/delete", methods=["POST"])
+def wifi_delete():
+    uuid = (request.get_json(silent=True) or {}).get("uuid", "")
+    target = next((w for w in _saved_wifi() if w["uuid"] == uuid), None)
+    if not target:
+        return "対象の WiFi が見つかりません", 404
+    if target["active"]:
+        return "接続中の WiFi は削除できません（ネットワークが切れるため）", 400
+    r = subprocess.run(["nmcli", "connection", "delete", "uuid", uuid], capture_output=True, text=True, timeout=15)
+    app.logger.info(f"wifi delete {target['ssid']}: rc={r.returncode} {r.stderr.strip()}")
+    if r.returncode != 0:
+        return f"削除失敗: {r.stderr.strip() or r.stdout.strip()}", 500
+    return f"「{target['ssid']}」を削除しました"
+
+
+@app.route("/wifi/order", methods=["POST"])
+def wifi_order():
+    """登録済み WiFi（設定用テザリング以外）の優先度を、並び順どおりに 100, 90, 80 … と付け直す"""
+    uuids = (request.get_json(silent=True) or {}).get("uuids", [])
+    known = {w["uuid"] for w in _saved_wifi() if not w["hotspot"]}
+    if not isinstance(uuids, list) or len(uuids) != len(set(uuids)) or set(uuids) != known:
+        return "一覧が最新ではありません。画面を再読み込みしてください", 409
+    for n, uuid in enumerate(uuids):
+        prio = max(10, 100 - n * 10)
+        subprocess.run(["nmcli", "connection", "modify", "uuid", uuid,
+                        "connection.autoconnect-priority", str(prio)],
+                       capture_output=True, text=True, timeout=15)
+    return "優先順を保存しました（次に WiFi を探すときから有効）"
 
 
 @app.route("/save-airport", methods=["POST"])
