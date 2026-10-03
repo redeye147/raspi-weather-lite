@@ -4,7 +4,8 @@ import datetime
 import pytest
 
 from decisions import (decide_snapshot, periodic_fetch_action, retry_base_after_failure,
-                       should_fetch_0600, should_fetch_2350, should_fetch_aviation)
+                       should_fetch_0600, should_fetch_2350, should_fetch_aviation,
+                       aviation_slot, aviation_band_visible)
 
 JST = datetime.timezone(datetime.timedelta(hours=9))
 T = 1_790_000_000.0          # 起動時刻（UNIX 秒）
@@ -154,24 +155,36 @@ def test_overnight_schedule_with_failure_at_6():
     assert simulate_night(fail_at="06:00") == ["23:50[23:50]", "06:00[6:00](失敗)", "06:30", "08:30"]
 
 
-# ---------------------------------------------------------------- 航空気象の取得（0:00〜5:59 は取得しない）
-@pytest.mark.parametrize("hh, mm, expected", [(0, 0, False), (3, 0, False), (5, 59, False),
-                                              (6, 0, True), (12, 0, True), (23, 59, True)])
-def test_aviation_fetch_hours(hh, mm, expected):
-    assert should_fetch_aviation(at(3, hh, mm), T, T - 3600, 1800) is expected
+# ---------------------------------------------------------------- 航空気象の取得（毎時 05・35 分、6:05〜23:35）
+@pytest.mark.parametrize("hh, mm, slot", [
+    (0, 0, None), (5, 59, None), (6, 0, None), (6, 4, None),       # 0:00〜6:04 は取得しない
+    (6, 5, (6, 5)), (6, 34, (6, 5)), (6, 35, (6, 35)), (7, 4, (6, 35)),
+    (12, 10, (12, 5)), (23, 35, (23, 35)), (23, 59, (23, 35)),
+])
+def test_aviation_slot(hh, mm, slot):
+    s = aviation_slot(at(3, hh, mm))
+    assert (None if s is None else (s.hour, s.minute)) == slot
 
 
-def test_aviation_fetch_interval():
-    assert should_fetch_aviation(at(3, 12), T, T - 1799, 1800) is False
-    assert should_fetch_aviation(at(3, 12), T, T - 1800, 1800) is True
-
-
-def test_aviation_fetch_count_per_day():
-    """1日（30分間隔）で何回取得するか：6:00〜23:59 の 36 回。最初は 6:00 ちょうど"""
-    last, times = 0.0, []
+def test_aviation_fetch_schedule_per_day():
+    """1分刻みで1日回すと、6:05 から 23:35 まで毎時 05・35 分に 36 回取得"""
+    last, times = None, []
     for minute in range(24 * 60):
         now = at(3, 0) + datetime.timedelta(minutes=minute)
-        ts = T + minute * 60
-        if should_fetch_aviation(now, ts, last, 1800):
-            last = ts; times.append(f"{now:%H:%M}")
-    assert len(times) == 36 and times[0] == "06:00" and times[-1] == "23:30"
+        if should_fetch_aviation(now, last):
+            last = aviation_slot(now); times.append(f"{now:%H:%M}")
+    assert len(times) == 36 and times[:3] == ["06:05", "06:35", "07:05"] and times[-1] == "23:35"
+
+
+def test_aviation_fetch_on_boot_within_slot():
+    """起動直後（取得枠の途中）はその枠ですぐ取得し、同じ枠ではもう取らない"""
+    now = at(3, 10, 20)
+    assert should_fetch_aviation(now, None) is True
+    assert should_fetch_aviation(now + datetime.timedelta(minutes=10), aviation_slot(now)) is False
+    assert should_fetch_aviation(at(3, 10, 35), aviation_slot(now)) is True
+
+
+@pytest.mark.parametrize("hh, visible", [(0, False), (3, False), (5, False), (6, True), (23, True)])
+def test_aviation_band_hidden_from_midnight(hh, visible):
+    """0:00 ちょうどに帯を消し、6 時台（6:05 の取得後）に再表示"""
+    assert aviation_band_visible(at(3, hh)) is visible

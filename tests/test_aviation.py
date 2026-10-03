@@ -1,4 +1,4 @@
-"""航空気象（METAR / TAF）の解析と1行表示の整形
+"""航空気象（METAR）の解析と1行表示の整形
 
 電文は国際書式の例（日本の空港は視程を m で通報）。実データは段階②のログで確認する。
 """
@@ -83,47 +83,6 @@ def test_flight_category(vis, ceil, cat):
     assert av.flight_category(vis, ceil) == cat
 
 
-# ---------------------------------------------------------------- TAF
-TAF = ("TAF RJGG 031105Z 0312/0418 33010KT 9999 FEW030 "
-       "BECMG 0315/0317 36005KT "
-       "TEMPO 0313/0316 4000 -SHRA BKN010 "
-       "PROB30 TEMPO 0400/0403 2000 BR "
-       "FM040600 18015G25KT 8000 SCT020")
-
-
-def test_parse_taf_groups():
-    t = av.parse_taf(TAF, NOW)
-    assert t["icao"] == "RJGG"
-    assert t["valid_from"] == datetime.datetime(2026, 10, 3, 12, tzinfo=UTC)
-    assert t["valid_to"] == datetime.datetime(2026, 10, 4, 18, tzinfo=UTC)
-    assert t["base"]["wind_dir"] == 330 and t["base"]["vis_m"] == 10000
-    kinds = [c["kind"] for c in t["changes"]]
-    assert kinds == ["BECMG", "TEMPO", "PROB30 TEMPO", "FM"]
-    tempo = t["changes"][1]
-    assert tempo["vis_m"] == 4000 and tempo["wx"] == ["弱いにわか雨"] and tempo["ceiling_ft"] == 1000
-    fm = t["changes"][3]
-    assert fm["start"] == datetime.datetime(2026, 10, 4, 6, tzinfo=UTC)
-    assert fm["end"] == t["valid_to"]              # FM は有効期間の終わりまで
-    assert (fm["wind_kt"], fm["gust_kt"]) == (15, 25)
-
-
-def test_hour_24_in_taf():
-    t = av.parse_taf("TAF RJTT 031105Z 0312/0324 18010KT 9999 FEW030", NOW)
-    assert t["valid_to"] == datetime.datetime(2026, 10, 4, 0, tzinfo=UTC)
-
-
-def test_next_change_picks_ongoing_or_earliest():
-    t = av.parse_taf(TAF, NOW)
-    # 21:10 JST（12:10Z）：TEMPO 13-16Z が次（BECMG 15-17Z より早い）
-    assert av.next_change(t, NOW)["kind"] == "TEMPO"
-    # 14:00Z：TEMPO は継続中なのでまだ TEMPO
-    assert av.next_change(t, NOW.replace(hour=14))["kind"] == "TEMPO"
-    # 16:30Z：TEMPO 終了 → BECMG（継続中）
-    assert av.next_change(t, NOW.replace(hour=16, minute=30))["kind"] == "BECMG"
-    # 有効期間の後 → なし
-    assert av.next_change(t, datetime.datetime(2026, 10, 5, 0, tzinfo=UTC)) is None
-
-
 # ---------------------------------------------------------------- 1行表示
 def test_format_metar_line_units_both():
     m = metar("RJTT 031200Z 18018G30KT 3000 -SHRA BKN012 18/17 Q1005")
@@ -136,53 +95,15 @@ def test_format_metar_line_cavok_calm():
     assert av.format_metar_line(m) == "RJCC 21:00観測 風 静穏 視程10km以上 雲1500m(5000ft)以上(CAVOK) -2℃ [VFR]"   # CAVOK は実測値なし → 保証される下限を表示
 
 
-def test_format_change_line():
-    t = av.parse_taf(TAF, NOW)
-    line = av.format_change_line(av.next_change(t, NOW), NOW)
-    assert line == "TAF 一時 22:00-翌01:00 視程4km 弱いにわか雨 雲 BKN 300m(1000ft)"
 
 
-def test_format_change_line_prob_and_none():
-    t = av.parse_taf(TAF, NOW)
-    prob = t["changes"][2]
-    assert av.format_change_line(prob, NOW).startswith("TAF 30%で一時 翌09:00-翌12:00 視程2km もや")
-    assert av.format_change_line(None, NOW) == "TAF 大きな変化なし"
 
-
-def test_format_line_is_one_line_and_handles_failure():
-    t = av.parse_taf(TAF, NOW)
-    line = av.format_line(metar("RJGG 031200Z 33012KT 9999 FEW030 22/15 Q1013"), t, NOW)
-    assert "\n" not in line and line.startswith("✈ RJGG 21:00観測") and "｜ TAF 一時" in line
-    assert av.format_line(None, None, NOW) == "✈ METAR 取得失敗 ｜ TAF 大きな変化なし"
-
-
-def test_fetch_and_parse_with_mocked_network(monkeypatch):
-    raws = {"metar": "RJGG 031200Z 33012KT 9999 FEW030 22/15 Q1013\n", "taf": TAF.replace(" BECMG", "\n  BECMG")}
-    monkeypatch.setattr(av, "fetch_raw", lambda url, timeout=10: raws["metar" if "metar" in url else "taf"])
-    m, t, raw_m, raw_t = av.fetch_and_parse("RJGG", NOW)
-    assert m["icao"] == "RJGG" and t["changes"][0]["kind"] == "BECMG"
-    assert "\n" not in raw_t
-
-
-def test_fetch_failure_is_not_fatal(monkeypatch):
-    def boom(url, timeout=10):
-        raise OSError("network down")
-    monkeypatch.setattr(av, "fetch_raw", boom)
-    assert av.fetch_and_parse("RJGG", NOW) == (None, None, None, None)
 
 
 # ---------------------------------------------------------------- 実データ（2026-10-03 22:09 JST に Pi で取得した成田）
 REAL_NOW = datetime.datetime(2026, 10, 3, 13, 9, tzinfo=UTC)
 REAL_METAR = "METAR RJAA 031300Z 02005KT CAVOK 17/12 Q1021 NOSIG"
-REAL_TAF = "TAF RJAA 031105Z 0312/0418 36008KT 9999 FEW030"
 
-
-def test_real_rjaa_line():
-    m = av.parse_metar(REAL_METAR, REAL_NOW)
-    t = av.parse_taf(REAL_TAF, REAL_NOW)
-    assert m["cavok"] and m["qnh"] == 1021 and t["changes"] == []
-    assert av.format_line(m, t, REAL_NOW) == (
-        "✈ RJAA 22:00観測 風 020° 3m/s(5kt) 視程10km以上 雲1500m(5000ft)以上(CAVOK) 17℃ [VFR] ｜ TAF 大きな変化なし")
 
 
 # ---------------------------------------------------------------- 画面の帯（観測のみ）
@@ -218,15 +139,6 @@ def test_is_stale(age_min, stale):
     assert av.is_stale(None, NOW) is True
 
 
-def test_fetch_into_keeps_last_good(monkeypatch):
-    holder = {}
-    monkeypatch.setattr(av, "fetch_and_parse", lambda icao, now=None: (metar(REAL_METAR.replace("031300Z", "031200Z")), None, "RAW1", None))
-    av.fetch_into("RJAA", holder)
-    assert holder["raw"] == "RAW1" and holder["metar"]["icao"] == "RJAA"
-    monkeypatch.setattr(av, "fetch_and_parse", lambda icao, now=None: (None, None, None, None))
-    av.fetch_into("RJAA", holder)                                   # 失敗しても前回の値を残す
-    assert holder["raw"] == "RAW1"
-
 
 @pytest.mark.parametrize("cloud_group", ["NSC", "SKC", "CLR", "NCD"])
 def test_no_cloud_is_shown(cloud_group):
@@ -242,3 +154,40 @@ def test_missing_cloud_group_shows_nothing():
         m = metar(raw)
         assert not m["no_cloud"]
         assert not any("雲" in t for t, _ in av.band_parts(m))
+
+
+def test_real_rjaa_line():
+    m = av.parse_metar(REAL_METAR, REAL_NOW)
+    assert m["cavok"] and m["qnh"] == 1021
+    assert av.format_metar_line(m) == "RJAA 22:00観測 風 020° 3m/s(5kt) 視程10km以上 雲1500m(5000ft)以上(CAVOK) 17℃ [VFR]"
+
+
+def test_format_metar_line_failure():
+    assert av.format_metar_line(None) == "METAR 取得失敗"
+
+
+def test_fetch_and_parse_with_mocked_network(monkeypatch):
+    urls = []
+    def fake(url, timeout=10):
+        urls.append(url); return "RJGG 031200Z 33012KT 9999 FEW030 22/15 Q1013\n"
+    monkeypatch.setattr(av, "fetch_raw", fake)
+    m, raw = av.fetch_and_parse("RJGG", NOW)
+    assert m["icao"] == "RJGG" and raw.startswith("RJGG 031200Z")
+    assert len(urls) == 1 and "metar" in urls[0]          # TAF は取得しない
+
+
+def test_fetch_failure_is_not_fatal(monkeypatch):
+    def boom(url, timeout=10):
+        raise OSError("network down")
+    monkeypatch.setattr(av, "fetch_raw", boom)
+    assert av.fetch_and_parse("RJGG", NOW) == (None, None)
+
+
+def test_fetch_into_keeps_last_good(monkeypatch):
+    holder = {}
+    monkeypatch.setattr(av, "fetch_and_parse", lambda icao, now=None: (metar(REAL_METAR.replace("031300Z", "031200Z")), "RAW1"))
+    av.fetch_into("RJAA", holder)
+    assert holder["raw"] == "RAW1" and holder["metar"]["icao"] == "RJAA"
+    monkeypatch.setattr(av, "fetch_and_parse", lambda icao, now=None: (None, None))
+    av.fetch_into("RJAA", holder)                                   # 失敗しても前回の値を残す
+    assert holder["raw"] == "RAW1"

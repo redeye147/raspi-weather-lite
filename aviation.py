@@ -1,6 +1,6 @@
 """
 aviation.py
-空港の航空気象（METAR：定時観測、TAF：飛行場予報）の取得・解析・1行表示用の整形。
+空港の航空気象（METAR：定時観測）の取得・解析・1行表示用の整形。
 
 - 取得元: NOAA Aviation Weather Center（aviationweather.gov、無料・登録不要）の生電文（format=raw）
 - 解析は国際書式の電文を直接読む（取得元の JSON 項目名の変更に影響されない）
@@ -18,8 +18,6 @@ JST = datetime.timezone(datetime.timedelta(hours=9))
 UTC = datetime.timezone.utc
 
 METAR_URL = "https://aviationweather.gov/api/data/metar?ids={icao}&format=raw"
-TAF_URL = "https://aviationweather.gov/api/data/taf?ids={icao}&format=raw"
-FETCH_INTERVAL_S = 30 * 60
 
 KT_TO_MS = 0.514444
 FT_TO_M = 0.3048
@@ -51,7 +49,7 @@ def wx_to_japanese(token: str):
 
 
 def _parse_elements(tokens):
-    """風・視程・天気・雲・気温・気圧を読み取る（METAR 本文・TAF の各グループ共通）"""
+    """風・視程・天気・雲・気温・気圧を読み取る（METAR 本文）"""
     out = {"wind_dir": None, "wind_kt": None, "gust_kt": None, "wind_var": None, "vis_m": None,
            "cavok": False, "nsw": False, "wx": [], "clouds": [], "no_cloud": False,
            "temp": None, "dew": None, "qnh": None}
@@ -92,7 +90,7 @@ def _parse_elements(tokens):
 def _utc_from_dh(day: int, hour: int, minute: int, ref_utc: datetime.datetime) -> datetime.datetime:
     """電文の「日・時・分」（月が書かれていない）を、基準時刻に最も近い UTC の日時にする"""
     extra = datetime.timedelta(0)
-    if hour == 24:                          # TAF の「24時」は翌日 0 時
+    if hour == 24:                          # 「24時」と書かれたら翌日 0 時
         hour, extra = 0, datetime.timedelta(days=1)
     best = None
     for months in (-1, 0, 1):
@@ -150,79 +148,6 @@ def parse_metar(raw: str, ref_utc: datetime.datetime):
     return out
 
 
-_GROUP_START_RE = re.compile(r"^(FM\d{6}|BECMG|TEMPO|PROB\d{2})$")
-_PERIOD_RE = re.compile(r"^(\d{2})(\d{2})/(\d{2})(\d{2})$")
-
-
-def parse_taf(raw: str, ref_utc: datetime.datetime):
-    """生の TAF を解析。{'icao','valid_from','valid_to','base','changes':[...]}。読めなければ None"""
-    tokens = raw.split()
-    while tokens and tokens[0] in ("TAF", "AMD", "COR"):
-        tokens.pop(0)
-    if len(tokens) < 3:
-        return None
-    icao = tokens[0]
-    i = 1
-    if re.fullmatch(r"\d{6}Z", tokens[i]):
-        i += 1
-    m = _PERIOD_RE.match(tokens[i]) if i < len(tokens) else None
-    if not m:
-        return None
-    v_from = _utc_from_dh(int(m.group(1)), int(m.group(2)), 0, ref_utc)
-    v_to = _utc_from_dh(int(m.group(3)), int(m.group(4)), 0, ref_utc)
-    tokens = [t for t in tokens[i + 1:] if t != "RMK"]
-
-    # グループに分割
-    groups, cur = [], {"kind": "BASE", "tokens": []}
-    j = 0
-    while j < len(tokens):
-        t = tokens[j]
-        if _GROUP_START_RE.match(t):
-            groups.append(cur)
-            kind = t
-            if t.startswith("PROB") and j + 1 < len(tokens) and tokens[j + 1] == "TEMPO":
-                kind = t + " TEMPO"; j += 1
-            cur = {"kind": kind, "tokens": []}
-        else:
-            cur["tokens"].append(t)
-        j += 1
-    groups.append(cur)
-
-    base = None
-    changes = []
-    for g in groups:
-        toks = g["tokens"]
-        start = end = None
-        if g["kind"].startswith("FM"):
-            s = g["kind"][2:]
-            start = _utc_from_dh(int(s[0:2]), int(s[2:4]), int(s[4:6]), ref_utc)
-            g["kind"] = "FM"
-        elif toks and (pm := _PERIOD_RE.match(toks[0])):
-            start = _utc_from_dh(int(pm.group(1)), int(pm.group(2)), 0, ref_utc)
-            end = _utc_from_dh(int(pm.group(3)), int(pm.group(4)), 0, ref_utc)
-            toks = toks[1:]
-        el = _parse_elements(toks)
-        el["ceiling_ft"] = ceiling_ft(el["clouds"])
-        entry = {"kind": g["kind"], "start": start, "end": end, **el}
-        if g["kind"] == "BASE":
-            base = entry
-        else:
-            changes.append(entry)
-    # FM は次の FM（または有効期間の終わり）まで
-    fms = [c for c in changes if c["kind"] == "FM"]
-    for a, b in zip(fms, fms[1:] + [None]):
-        a["end"] = b["start"] if b else v_to
-    return {"icao": icao, "valid_from": v_from, "valid_to": v_to, "base": base, "changes": changes}
-
-
-def next_change(taf, now_utc: datetime.datetime):
-    """「これからの変化」：今も続いている、またはこれから始まる変化のうち、一番早いもの"""
-    if not taf:
-        return None
-    upcoming = [c for c in taf["changes"] if c["start"] and c["end"] and c["end"] > now_utc]
-    return min(upcoming, key=lambda c: c["start"]) if upcoming else None
-
-
 # ------------------------------------------------------------------ 1行表示用の整形
 def _wind_text(d) -> str:
     if d["wind_kt"] is None:
@@ -267,32 +192,6 @@ def format_metar_line(metar) -> str:
              _vis_text(metar), " ".join(metar["wx"]), _cloud_text(metar),
              f"{metar['temp']}℃" if metar["temp"] is not None else "", f"[{metar['category']}]"]
     return " ".join(p for p in parts if p)
-
-
-_KIND_JA = {"TEMPO": "一時", "BECMG": "次第に", "FM": "以降"}
-
-
-def format_change_line(change, now_utc: datetime.datetime) -> str:
-    """例: 'TAF 一時 22:00-02:00 視程4km 弱いにわか雨 雲 BKN 300m(1000ft)'"""
-    if not change:
-        return "TAF 大きな変化なし"
-    kind = change["kind"]
-    if kind.startswith("PROB"):
-        p = kind[4:6]
-        label = f"{p}%で" + ("一時" if kind.endswith("TEMPO") else "")
-    else:
-        label = _KIND_JA.get(kind, kind)
-    s_jst, e_jst = change["start"].astimezone(JST), change["end"].astimezone(JST)
-    today = now_utc.astimezone(JST).date()
-    fmt = lambda t: ("翌" if t.date() > today else "") + f"{t:%H:%M}"
-    parts = ["TAF", label, f"{fmt(s_jst)}-{fmt(e_jst)}", _wind_text(change), _vis_text(change),
-             " ".join(change["wx"]), "天気回復" if change["nsw"] else "", _cloud_text(change)]
-    return " ".join(p for p in parts if p)
-
-
-def format_line(metar, taf, now_utc: datetime.datetime) -> str:
-    """ヘッダー下の帯に出す1行（METAR ＋ TAF のこれからの変化）"""
-    return f"✈ {format_metar_line(metar)} ｜ {format_change_line(next_change(taf, now_utc), now_utc)}"
 
 
 # ------------------------------------------------------------------ 画面の帯（観測のみ、1行）
@@ -344,31 +243,24 @@ def fetch_raw(url: str, timeout: float = 10) -> str:
 
 
 def fetch_and_parse(icao: str, now_utc=None):
-    """METAR と TAF を取得して解析。戻り値 (metar, taf, raw_metar, raw_taf)。失敗した方は None"""
+    """METAR を取得して解析。戻り値 (metar, raw)。失敗したら (None, None)"""
     now_utc = now_utc or datetime.datetime.now(UTC)
-    metar = taf = raw_m = raw_t = None
     try:
-        raw_m = fetch_raw(METAR_URL.format(icao=icao)).splitlines()[0]
-        metar = parse_metar(raw_m, now_utc)
+        raw = fetch_raw(METAR_URL.format(icao=icao)).splitlines()[0]
+        return parse_metar(raw, now_utc), raw
     except Exception as e:
         logging.warning(f"METAR 取得失敗 ({icao}): {e}")
-    try:
-        raw_t = " ".join(fetch_raw(TAF_URL.format(icao=icao)).split())
-        taf = parse_taf(raw_t, now_utc)
-    except Exception as e:
-        logging.warning(f"TAF 取得失敗 ({icao}): {e}")
-    return metar, taf, raw_m, raw_t
+        return None, None
 
 
 def fetch_into(icao: str, holder: dict) -> None:
-    """取得して holder に最新の METAR を入れる（失敗時は前回の値を残す）。生電文と表示案はログに出す"""
+    """取得して holder に最新の METAR を入れる（失敗時は前回の値を残す）。生電文と表示内容はログに出す"""
     now = datetime.datetime.now(UTC)
-    metar, taf, raw_m, raw_t = fetch_and_parse(icao, now)
-    logging.info(f"[aviation] METAR raw: {raw_m}")
-    logging.info(f"[aviation] TAF raw: {raw_t}")
-    logging.info(f"[aviation] 表示案: {format_line(metar, taf, now)}")
+    metar, raw = fetch_and_parse(icao, now)
+    logging.info(f"[aviation] METAR raw: {raw}")
+    logging.info(f"[aviation] 表示: {format_metar_line(metar)}")
     if metar:
-        holder.update({"metar": metar, "raw": raw_m, "fetched_at": time.time()})
+        holder.update({"metar": metar, "raw": raw, "fetched_at": time.time()})
 
 
 def start_fetch_in_background(icao: str, holder: dict) -> None:

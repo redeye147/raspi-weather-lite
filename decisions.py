@@ -74,9 +74,30 @@ def retry_base_after_failure(now: datetime.datetime, interval_hours: float) -> d
     return now - datetime.timedelta(hours=interval_hours) + datetime.timedelta(minutes=30)
 
 
-AVIATION_START_HOUR = 6          # 航空気象は 6:00〜23:59 だけ取得（0:00〜5:59 は取得しない）
+AVIATION_START_HOUR = 6          # 航空気象は 6 時台から取得・表示（0:00〜5:59 は取得せず、帯も出さない）
+AVIATION_SLOT_MINUTES = (5, 35)  # 日本の主な空港の METAR は毎時 00・30 分に発表 → その 5 分後に取得
 
 
-def should_fetch_aviation(now: datetime.datetime, now_ts: float, last_ts: float, interval_s: float) -> bool:
-    """航空気象（METAR）を取得するか：6:00〜23:59 の間で、前回から interval_s 以上たっていれば取得"""
-    return now.hour >= AVIATION_START_HOUR and now_ts - last_ts >= interval_s
+def aviation_slot(now: datetime.datetime):
+    """今が属する取得枠（直近の 05分 または 35分）。0:00〜6:04 は取得しないので None"""
+    if now.minute >= AVIATION_SLOT_MINUTES[1]:
+        slot = now.replace(minute=AVIATION_SLOT_MINUTES[1], second=0, microsecond=0)
+    elif now.minute >= AVIATION_SLOT_MINUTES[0]:
+        slot = now.replace(minute=AVIATION_SLOT_MINUTES[0], second=0, microsecond=0)
+    else:
+        slot = (now - datetime.timedelta(hours=1)).replace(minute=AVIATION_SLOT_MINUTES[1], second=0, microsecond=0)
+    if slot.date() != now.date() or slot.hour < AVIATION_START_HOUR:
+        return None
+    return slot
+
+
+def should_fetch_aviation(now: datetime.datetime, last_slot) -> bool:
+    """航空気象（METAR）を取得するか：毎時 05・35 分の枠ごとに1回（6:05〜23:35、1日36回）。
+    起動直後や取得し損ねたときは、その枠の時間内なら取得する"""
+    slot = aviation_slot(now)
+    return slot is not None and slot != last_slot
+
+
+def aviation_band_visible(now: datetime.datetime) -> bool:
+    """帯を出す時間帯か（0:00 ちょうどに消し、6 時台の取得で再表示）"""
+    return now.hour >= AVIATION_START_HOUR

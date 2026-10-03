@@ -40,7 +40,8 @@ from startup import boot_log, wait_time_sync, save_snapshot, load_snapshot
 from splash import run_splash
 import aviation
 from decisions import (decide_snapshot, should_fetch_2350, should_fetch_0600,
-                       periodic_fetch_action, retry_base_after_failure, should_fetch_aviation)
+                       periodic_fetch_action, retry_base_after_failure,
+                       should_fetch_aviation, aviation_slot, aviation_band_visible)
 from screens import show_ap_screen, show_hotspot_announce, draw_conn_label, show_no_dongle_screen
 from netstate import (
     get_connection_kind,
@@ -417,7 +418,7 @@ def main():
     if fetch_ok and not weather_fresh:
         _save_state()
     _first_draw_logged = False
-    last_aviation_log = time.time() - aviation.FETCH_INTERVAL_S + DEFER_INITIAL_FETCH_S   # 初回は起動 20 秒後
+    last_aviation_slot = None   # 直近に取得した枠（毎時 05・35 分）
     shown_metar_raw = aviation_state.get("raw")
     _fetch_pending = False
     if kick_fetch:
@@ -508,9 +509,9 @@ def main():
             main._updated_0600_date = now.strftime("%Y-%m-%d")
             logging.info("6:00定時取得開始")
 
-        # 航空気象（METAR）：6:00〜23:59 に 30 分ごと、裏で取得（生電文と表示案はログにも出る）。更新されたら再描画
-        if cfg.get("icao") and should_fetch_aviation(now, time.time(), last_aviation_log, aviation.FETCH_INTERVAL_S):
-            last_aviation_log = time.time()
+        # 航空気象（METAR）：毎時 05・35 分（6:05〜23:35）に裏で取得（生電文はログにも出る）。更新されたら再描画
+        if cfg.get("icao") and should_fetch_aviation(now, last_aviation_slot):
+            last_aviation_slot = aviation_slot(now)
             aviation.start_fetch_in_background(cfg["icao"], aviation_state)
         if aviation_state.get("raw") != shown_metar_raw:
             shown_metar_raw = aviation_state.get("raw")
@@ -614,7 +615,8 @@ def main():
             screen, width, height, BASE_FONT,
             airport_label, sunrise_str, sunset_str, "", "",
             wbgt_level_info=wbgt_level_info,
-            aviation_metar=None if aviation.is_stale(_metar, datetime.datetime.now(datetime.timezone.utc)) else _metar,
+            aviation_metar=(_metar if aviation_band_visible(now)
+                            and not aviation.is_stale(_metar, datetime.datetime.now(datetime.timezone.utc)) else None),
             fetch_error=not fetch_ok,
         )
 
