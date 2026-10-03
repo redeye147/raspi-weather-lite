@@ -1,0 +1,9 @@
+# テスト実行用（PC・CI 向け。Pi には不要）
+pytest
+pygame
+astral>=2.0
+pytz
+requests
+psutil
+qrcode
+pillow

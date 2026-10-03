@@ -677,6 +677,8 @@ raspi-weather-lite/
 ├── config.json          # 実行時設定（空港・更新間隔）※Pi ごとに書き換わる。変更をコミットしない
 ├── wifi_portal.py       # WiFi設定ポータル（Flask）
 ├── wifi-portal.service  # systemdユニットファイル
+├── tests/               # 自動テスト（PC・CI で実行。Pi では不要）
+├── pytest.ini           # テスト設定
 ├── wifi_setup/          # WiFi 設定モード（AP + キャプティブポータル）
 │   ├── install.sh       #   導入スクリプト（profiles/ があれば WiFi も取り込み）
 │   ├── export_wifi.sh   #   保存済み WiFi を profiles/ に書き出し（別 Pi への引き継ぎ用）
@@ -732,6 +734,23 @@ Pi Zero W で CPU が常時 50〜80% になっていた事例の調査結果で�
 > 同じ画面・描画方式でも Zero W と Zero 2 W で約10倍の差があるのは CPU 性能差（1コア→4コア、世代差）と、Zero 2 W の使用率が4コア平均で表示されるため。画面の物理サイズ（インチ）は負荷に関係せず、解像度（画素数）が効きます。
 
 調べ方は「トラブルシューティング → CPU 使用率が高い」を参照。
+
+## 自動テスト
+
+プログラムの部品に決まった入力を与え、期待どおりの答えが返るかを自動で確かめます。**Pi では実行しません**（PC や CI で実行）。
+
+```bash
+pip install -r tests/requirements.txt
+python3 -m pytest          # 例: 45 passed in 0.4s
+```
+
+| ファイル | 対象 | 主な確認内容 |
+|------|------|------|
+| `tests/test_connection.py` | 接続の判定（`main01.parse_connection_kind` / `ipv4_devices`） | WiFi 優先・有線のみ・IPv6 だけは未接続・DHCP 待ち・テザリング・SSID に `:` |
+| `tests/test_night.py` | 夜間の判定（`utils.is_night`）・マーク位置（`weather_draw._time_to_col`） | 空港・季節ごとの昼夜、日の出 6:00 ちょうど・日の入りちょうどの境界、表の範囲外 |
+| `tests/test_warnings.py` | 警報の解析（`jma_alerts.active_warning_names`） | 気象庁コード→名称（過去のずれの再発防止）、解除の除外、特別警報→警報→注意報の順、未知コード |
+
+過去の不具合（警報コード20 未登録、IPv4 必須判定の欠落）をわざと戻すとテストが失敗することを確認済みです。コードを変更したら、push の前に実行してください。
 
 ## トラブルシューティング
 

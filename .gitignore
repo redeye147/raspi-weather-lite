@@ -10,3 +10,6 @@ jma_*.json
 
 # WiFiプロファイル（パスワードを含む・公開リポジトリのため絶対にコミットしない）
 wifi_setup/profiles/
+
+# テスト
+.pytest_cache/
