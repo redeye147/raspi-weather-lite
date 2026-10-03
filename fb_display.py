@@ -40,22 +40,58 @@ _fb_h = 0
 RENDER_MODE = 'x11'
 
 
-def _init_fb(tty_path='/dev/tty'):
-    """offscreen モード用: VT テキスト描画を抑制して /dev/fb0 をオープン。"""
-    global _fb_mmap, _fb_w, _fb_h
+KD_TEXT     = 0
+KD_GRAPHICS = 1
+KDSETMODE   = 0x4B3A
+
+# systemd から起動すると制御端末が無く /dev/tty は開けないので、画面のコンソール（tty0＝表示中の VT）を先に試す
+CONSOLE_TTYS = ('/dev/tty0', '/dev/tty1', '/dev/tty')
+
+
+def _set_console_mode(mode, tty_paths=CONSOLE_TTYS):
+    """コンソールを KD_GRAPHICS（文字・カーソルを描かない）/ KD_TEXT に切り替える。成功した TTY を返す"""
     import fcntl
-    KD_GRAPHICS = 1
-    KDSETMODE   = 0x4B3A
+    errors = []
+    for path in tty_paths:
+        try:
+            # TTY はシーク不可なので 'wb' で開く
+            with open(path, 'wb') as tty:
+                if mode == KD_GRAPHICS:
+                    tty.write(b'\033[2J\033[H\033[?25l')   # 画面消去・カーソル非表示
+                else:
+                    tty.write(b'\033[?25h')
+                tty.flush()
+                fcntl.ioctl(tty.fileno(), KDSETMODE, mode)
+            return path
+        except Exception as e:
+            errors.append(f"{path}: {e}")
+    raise OSError("; ".join(errors))
+
+
+def _restore_console():
+    try:
+        _set_console_mode(KD_TEXT)
+    except Exception:
+        pass
+
+
+def _init_fb():
+    """offscreen モード用: VT テキスト描画（カーソルの点滅を含む）を抑制して /dev/fb0 をオープン。"""
+    global _fb_mmap, _fb_w, _fb_h
+    import atexit
     print("[fb0] _init_fb start", flush=True)
     try:
-        # TTY はシーク不可なので 'wb' で開く
-        with open(tty_path, 'wb') as tty:
-            tty.write(b'\033[2J\033[H\033[?25l')
-            tty.flush()
-            fcntl.ioctl(tty.fileno(), KDSETMODE, KD_GRAPHICS)
-        print("[fb0] KD_GRAPHICS OK", flush=True)
+        path = _set_console_mode(KD_GRAPHICS)
+        atexit.register(_restore_console)     # 停止したらコンソールを元に戻す（保守でログインできるように）
+        print(f"[fb0] KD_GRAPHICS OK ({path})", flush=True)
     except Exception as e:
         print(f"[fb0] KD_GRAPHICS FAILED: {e}", flush=True)
+    try:
+        # KD_GRAPHICS にできなかったときの保険：カーソルの点滅だけでも止める
+        with open('/sys/class/graphics/fbcon/cursor_blink', 'w') as f:
+            f.write('0')
+    except Exception:
+        pass
     try:
         print("[fb0] opening fb0 ...", flush=True)
         info = open('/sys/class/graphics/fb0/virtual_size').read().strip()
