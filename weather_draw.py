@@ -272,19 +272,20 @@ def draw_weather(
         int(height * 0.055),
     ]
 
-    summary_color = (0, 0, 0)
-    if work_summary and ("強風" in work_summary or "熱中症" in work_summary):
-        summary_color = (255, 0, 0)
-
-    summary_surf = get_font(base_font_path, 22, bold=True).render(
-        f"作業注意情報：{work_summary}", True, summary_color
-    )
-    screen.blit(summary_surf, (margin_x, y_offset))
-    y_offset += summary_surf.get_height() + 4
-    # 作業注意情報と「今日の天気」の間を1行あける（下に余裕のある高さ 1000px 以上の画面のみ。
-    # 1366×768 等は熱中症アラート時に下端まで使っているので従来どおり）
-    if height >= SUMMARY_GAP_MIN_HEIGHT:
-        y_offset += summary_surf.get_height()
+    # 作業注意情報の行は現在非表示（復活させるときは下のコメントを外す）
+    # summary_color = (0, 0, 0)
+    # if work_summary and ("強風" in work_summary or "熱中症" in work_summary):
+    #     summary_color = (255, 0, 0)
+    #
+    # summary_surf = get_font(base_font_path, 22, bold=True).render(
+    #     f"作業注意情報：{work_summary}", True, summary_color
+    # )
+    # screen.blit(summary_surf, (margin_x, y_offset))
+    # y_offset += summary_surf.get_height() + 4
+    # # 作業注意情報と「今日の天気」の間を1行あける（下に余裕のある高さ 1000px 以上の画面のみ。
+    # # 1366×768 等は熱中症アラート時に下端まで使っているので従来どおり）
+    # if height >= SUMMARY_GAP_MIN_HEIGHT:
+    #     y_offset += summary_surf.get_height()
 
     title_bar_h = 54 if qr_surf else 30
     draw_today_title_bar(
