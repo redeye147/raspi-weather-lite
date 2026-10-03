@@ -307,7 +307,9 @@ def draw_weather(
             x = margin_x + col_idx * col_w
             y = y_offset + sum(row_heights[:row_idx])
 
-            pygame.draw.rect(screen, (180, 180, 180), (x, y, col_w, row_heights[row_idx]), 1)
+            # 日付行は3時間ごとの区切り線を引かず、日付ごとにまとめて枠を描く（下で描画）
+            if not (row_idx == 0 and col_idx >= 1):
+                pygame.draw.rect(screen, (180, 180, 180), (x, y, col_w, row_heights[row_idx]), 1)
 
             if col_idx == 0:
                 text_surf = get_font(base_font_path, 22).render(label, True, (0, 0, 0))
@@ -396,6 +398,14 @@ def draw_weather(
                     text_surf,
                     (x + 5, y + (row_heights[row_idx] - text_surf.get_height()) // 2)
                 )
+
+    # 日付行：同じ日付の列をひとまとめにした枠（区切り線は日付が変わる所だけ）
+    start = 0
+    for di in range(1, data_cols + 1):
+        if di == data_cols or hourly[di]["date"] != hourly[start]["date"]:
+            gx = margin_x + (1 + start) * col_w
+            pygame.draw.rect(screen, (180, 180, 180), (gx, y_offset, (di - start) * col_w, row_heights[0]), 1)
+            start = di
 
     if latitude is not None and longitude is not None:
         _draw_sun_markers(screen, hourly, latitude, longitude, margin_x, col_w,
@@ -546,7 +556,7 @@ def draw_weather(
 
         bottom = box_y + box_h - 5
         if updated_text:
-            upd_surf = small_font.render(f"予報更新：{updated_text}", True, (0, 0, 0))
+            upd_surf = small_font.render(f"警報更新：{updated_text}", True, (0, 0, 0))
             bottom -= upd_surf.get_height()
             screen.blit(upd_surf, (box_x + 10, bottom))
 
