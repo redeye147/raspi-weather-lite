@@ -252,13 +252,7 @@ def draw_weather(
     if wbgt_alert:
         draw_alert_banner(screen, width, header_h, base_font_path)
 
-    if not fetch_ok:
-        err_surf = get_font(base_font_path, 20, bold=True).render(
-            "通信エラー：キャッシュデータを表示しています", True, (255, 255, 255)
-        )
-        bar_h = err_surf.get_height() + 8
-        pygame.draw.rect(screen, (180, 0, 0), (0, 0, width, bar_h))
-        screen.blit(err_surf, ((width - err_surf.get_width()) // 2, 4))
+    # 通信エラーの帯は header.draw_fetch_error_bar（ヘッダーの白塗りの後）で描く
 
     data_cols = len(hourly)
     total_cols = 1 + data_cols

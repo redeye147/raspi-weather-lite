@@ -133,7 +133,7 @@ def test_format_metar_line_units_both():
 
 def test_format_metar_line_cavok_calm():
     m = metar("RJCC 031200Z 00000KT CAVOK M02/M05 Q1021")
-    assert av.format_metar_line(m) == "RJCC 21:00観測 風 静穏 視程10km以上 CAVOK -2℃ [VFR]"
+    assert av.format_metar_line(m) == "RJCC 21:00観測 風 静穏 視界良好(CAVOK) -2℃ [VFR]"   # 視程と重複させない
 
 
 def test_format_change_line():
@@ -182,4 +182,47 @@ def test_real_rjaa_line():
     t = av.parse_taf(REAL_TAF, REAL_NOW)
     assert m["cavok"] and m["qnh"] == 1021 and t["changes"] == []
     assert av.format_line(m, t, REAL_NOW) == (
-        "✈ RJAA 22:00観測 風 020° 3m/s(5kt) 視程10km以上 CAVOK 17℃ [VFR] ｜ TAF 大きな変化なし")
+        "✈ RJAA 22:00観測 風 020° 3m/s(5kt) 視界良好(CAVOK) 17℃ [VFR] ｜ TAF 大きな変化なし")
+
+
+# ---------------------------------------------------------------- 画面の帯（観測のみ）
+def test_band_parts_real_rjaa():
+    m = av.parse_metar(REAL_METAR, REAL_NOW)
+    assert [t for t, _ in av.band_parts(m)] == ["RJAA 22:00観測", "風 020° 3m/s(5kt)", "視界良好(CAVOK)", "17℃"]
+
+
+def test_band_parts_priorities():
+    m = metar("RJTT 031200Z 18018G30KT 3000 -SHRA BR BKN012 18/17 Q1005")
+    assert av.band_parts(m) == [("RJTT 21:00観測", 0), ("風 180° 9m/s(18kt) 突風15m/s(30kt)", 0), ("視程3km", 0),
+                                ("弱いにわか雨", 1), ("もや", 2), ("雲 BKN 370m(1200ft)", 0), ("18℃", 3)]
+
+
+def _measure(text, size):        # 1文字 = size px とみなす簡易な幅
+    return len(text) * size
+
+
+def test_fit_band_shrinks_then_drops_low_priority():
+    parts = [("AAAA", 0), ("BB", 1), ("CC", 2), ("DD", 3)]          # 全体 13 文字
+    assert av.fit_band(parts, 13 * 24, _measure) == (["AAAA", "BB", "CC", "DD"], 24)
+    assert av.fit_band(parts, 13 * 20, _measure) == (["AAAA", "BB", "CC", "DD"], 20)
+    # 18px でも入らない → 優先度 3 → 2 の順に省く（必ず残す 0 と、1 は残る）
+    assert av.fit_band(parts, 10 * 18, _measure) == (["AAAA", "BB", "CC"], 18)
+    assert av.fit_band(parts, 7 * 18, _measure) == (["AAAA", "BB"], 18)
+    assert av.fit_band(parts, 1, _measure) == (["AAAA"], 18)        # 最後まで残すのは優先度 0
+
+
+@pytest.mark.parametrize("age_min, stale", [(0, False), (179, False), (181, True)])
+def test_is_stale(age_min, stale):
+    m = metar("RJGG 031200Z 33012KT 9999 FEW030 22/15 Q1013")
+    assert av.is_stale(m, m["obs_utc"] + datetime.timedelta(minutes=age_min)) is stale
+    assert av.is_stale(None, NOW) is True
+
+
+def test_fetch_into_keeps_last_good(monkeypatch):
+    holder = {}
+    monkeypatch.setattr(av, "fetch_and_parse", lambda icao, now=None: (metar(REAL_METAR.replace("031300Z", "031200Z")), None, "RAW1", None))
+    av.fetch_into("RJAA", holder)
+    assert holder["raw"] == "RAW1" and holder["metar"]["icao"] == "RJAA"
+    monkeypatch.setattr(av, "fetch_and_parse", lambda icao, now=None: (None, None, None, None))
+    av.fetch_into("RJAA", holder)                                   # 失敗しても前回の値を残す
+    assert holder["raw"] == "RAW1"

@@ -4,6 +4,55 @@ import time
 import pygame
 from utils import JST, get_japanese_weekday, get_font
 
+import aviation
+
+CATEGORY_COLORS = {"VFR": (0, 140, 70), "MVFR": (0, 90, 200), "IFR": (200, 0, 0), "LIFR": (140, 0, 160)}
+_plane_cache = {}
+
+
+def _plane_surface(size: int, color) -> pygame.Surface:
+    """飛行機のマーク（IPA フォントに ✈ が無いため図形で描く）"""
+    key = (size, color)
+    if key not in _plane_cache:
+        surf = pygame.Surface((size, size), pygame.SRCALPHA)
+        u = size / 20
+        for poly in ([(1, 9), (17, 8.5), (19.5, 10), (17, 11.5), (1, 11)], [(7, 9), (12, 9), (8, 1), (6, 1)],
+                     [(7, 11), (12, 11), (8, 19), (6, 19)], [(1, 9), (3.5, 9), (2, 4.5), (0.5, 4.5)],
+                     [(1, 11), (3.5, 11), (2, 15.5), (0.5, 15.5)]):
+            pygame.draw.polygon(surf, color, [(x * u, y * u) for x, y in poly])
+        _plane_cache[key] = surf
+    return _plane_cache[key]
+
+
+def draw_aviation_band(screen, x, y, w, h, base_font_path, metar):
+    """空港の観測（METAR）を1行で描く：飛行機マーク・飛行条件の印・観測値（塗りつぶしなし）"""
+    cy = y + h // 2
+    icon = _plane_surface(max(12, h - 12), (70, 70, 70))
+    screen.blit(icon, (x, cy - icon.get_height() // 2))
+    cx = x + icon.get_width() + 8
+    cat = metar["category"]
+    pill_font = get_font(base_font_path, max(12, min(20, h - 14)), bold=True)
+    t = pill_font.render(cat, True, (255, 255, 255))
+    pill = pygame.Rect(cx, cy - (t.get_height() + 4) // 2, t.get_width() + 14, t.get_height() + 4)
+    pygame.draw.rect(screen, CATEGORY_COLORS.get(cat, (90, 90, 90)), pill, border_radius=6)
+    screen.blit(t, (pill.x + 7, pill.y + 2))
+    cx = pill.right + 10
+    texts, size = aviation.fit_band(aviation.band_parts(metar), x + w - cx,
+                                    lambda s, sz: get_font(base_font_path, sz).size(s)[0],
+                                    sizes=tuple(sz for sz in (24, 22, 20, 18) if sz <= h - 6) or (h - 6,))
+    surf = get_font(base_font_path, size).render(" ".join(texts), True, (0, 0, 0))
+    screen.blit(surf, (cx, cy - surf.get_height() // 2))
+
+
+def draw_fetch_error_bar(screen, width, base_font_path):
+    """画面最上部の「通信エラー」帯（ヘッダーの白塗りの後に描く）"""
+    err_surf = get_font(base_font_path, 20, bold=True).render(
+        "通信エラー：キャッシュデータを表示しています", True, (255, 255, 255)
+    )
+    bar_h = err_surf.get_height() + 8
+    pygame.draw.rect(screen, (180, 0, 0), (0, 0, width, bar_h))
+    screen.blit(err_surf, ((width - err_surf.get_width()) // 2, 4))
+
 def get_ip_last3():
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -22,6 +71,8 @@ def draw_header(
     weather_updated_text,
     cpu_text="--",
     wbgt_level_info=None,
+    aviation_metar=None,
+    fetch_error=False,
 ):
     now = datetime.datetime.now(JST)
 
@@ -84,3 +135,16 @@ def draw_header(
         for surf in (lbl_s, lvl_s, val_s):
             screen.blit(surf, (bx + (bw - surf.get_width()) // 2, ty))
             ty += surf.get_height() + 2
+
+    # ===== 4) 航空気象（METAR）の帯：2行目の下〜ヘッダー下端の余白。狭すぎる画面では出さない =====
+    if aviation_metar:
+        band_y = y2 + info_surf.get_height() + 2
+        band_h = header_h - 6 - band_y
+        if band_h >= 22:
+            margin_x = int(width * 0.05)
+            draw_aviation_band(screen, margin_x, band_y, width - margin_x * 2,
+                               band_h, base_font_path, aviation_metar)
+
+    # ===== 5) 通信エラーの帯（ヘッダーを白で塗った後に描かないと消える） =====
+    if fetch_error:
+        draw_fetch_error_bar(screen, width, base_font_path)

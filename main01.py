@@ -394,6 +394,13 @@ def main():
     else:
         last_wbgt_update = wbgt_at if wbgt_fresh else time.time() - 3600 + DEFER_INITIAL_FETCH_S
 
+    # 航空気象（METAR）：前回の生電文があれば起動直後から帯を出す（古すぎれば is_stale で出さない）
+    aviation_state = {}
+    if synced and snap and snap.get("metar_raw"):
+        _m = aviation.parse_metar(snap["metar_raw"], datetime.datetime.now(datetime.timezone.utc))
+        if _m:
+            aviation_state.update({"metar": _m, "raw": snap["metar_raw"]})
+
     def _save_state():
         save_snapshot({
             "airport": airport, "saved_at": time.time(),
@@ -404,12 +411,14 @@ def main():
             "warning_text": warning_text, "headline_text": headline_text,
             "updated_text": updated_text, "overview_text": overview_text,
             "wbgt_alert": wbgt_alert, "wbgt_level_info": wbgt_level_info,
+            "metar_raw": aviation_state.get("raw"),
         })
 
     if fetch_ok and not weather_fresh:
         _save_state()
     _first_draw_logged = False
     last_aviation_log = time.time() - aviation.FETCH_INTERVAL_S + DEFER_INITIAL_FETCH_S   # 初回は起動 20 秒後
+    shown_metar_raw = aviation_state.get("raw")
     _fetch_pending = False
     if kick_fetch:
         fetcher.start()
@@ -499,10 +508,14 @@ def main():
             main._updated_0600_date = now.strftime("%Y-%m-%d")
             logging.info("6:00定時取得開始")
 
-        # 航空気象（METAR/TAF）：段階②として 30 分ごとに裏で取得してログに出すだけ（画面には未表示）
+        # 航空気象（METAR）：30 分ごとに裏で取得（生電文と表示案はログにも出る）。更新されたら再描画
         if cfg.get("icao") and time.time() - last_aviation_log >= aviation.FETCH_INTERVAL_S:
             last_aviation_log = time.time()
-            aviation.start_log_in_background(cfg["icao"])
+            aviation.start_fetch_in_background(cfg["icao"], aviation_state)
+        if aviation_state.get("raw") != shown_metar_raw:
+            shown_metar_raw = aviation_state.get("raw")
+            needs_redraw = True
+            _save_state()
 
         # WBGT 更新（1時間ごと、テスト時はスキップ）
         if args.wbgt_test is None and time.time() - last_wbgt_update > 3600:
@@ -596,10 +609,13 @@ def main():
             overview_text=overview_text,
         )
 
+        _metar = aviation_state.get("metar")
         draw_header(
             screen, width, height, BASE_FONT,
             airport_label, sunrise_str, sunset_str, "", "",
             wbgt_level_info=wbgt_level_info,
+            aviation_metar=None if aviation.is_stale(_metar, datetime.datetime.now(datetime.timezone.utc)) else _metar,
+            fetch_error=not fetch_ok,
         )
 
         draw_conn_label(screen, height, conn_kind)

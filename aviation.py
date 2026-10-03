@@ -12,6 +12,7 @@ import datetime
 import logging
 import re
 import threading
+import time
 
 JST = datetime.timezone(datetime.timedelta(hours=9))
 UTC = datetime.timezone.utc
@@ -236,6 +237,8 @@ def _wind_text(d) -> str:
 
 
 def _vis_text(d) -> str:
+    if d["cavok"]:
+        return ""                          # CAVOK は「視界良好(CAVOK)」にまとめて表示
     if d["vis_m"] is None:
         return ""
     if d["vis_m"] >= 10000:
@@ -245,7 +248,7 @@ def _vis_text(d) -> str:
 
 def _cloud_text(d) -> str:
     if d["cavok"]:
-        return "CAVOK"
+        return "視界良好(CAVOK)"           # 視程10km以上・1500m未満に雲なし・重要な天気なし
     if not d["clouds"]:
         return ""
     c = next((c for c in d["clouds"] if c["cover"] in ("BKN", "OVC", "VV")), d["clouds"][0])
@@ -289,7 +292,47 @@ def format_line(metar, taf, now_utc: datetime.datetime) -> str:
     return f"✈ {format_metar_line(metar)} ｜ {format_change_line(next_change(taf, now_utc), now_utc)}"
 
 
-# ------------------------------------------------------------------ 取得（段階②：ログに出すだけ）
+# ------------------------------------------------------------------ 画面の帯（観測のみ、1行）
+METAR_MAX_AGE_S = 3 * 3600
+
+
+def is_stale(metar, now_utc: datetime.datetime, max_age_s: float = METAR_MAX_AGE_S) -> bool:
+    """観測が古すぎる（または無い）なら True（帯を出さない）"""
+    return metar is None or (now_utc - metar["obs_utc"]).total_seconds() > max_age_s
+
+
+def band_parts(metar):
+    """帯に並べる文字（観測のみ）。[(文字, 優先度)]。優先度が大きいものほど、幅が足りないとき先に省く"""
+    parts = [(f"{metar['icao']} {metar['obs_utc'].astimezone(JST):%H:%M}観測", 0)]
+    for text in (_wind_text(metar), _vis_text(metar)):
+        if text:
+            parts.append((text, 0))
+    for i, w in enumerate(metar["wx"]):
+        parts.append((w, 1 if i == 0 else 2))
+    cloud = _cloud_text(metar)
+    if cloud:
+        parts.append((cloud, 0))
+    if metar["temp"] is not None:
+        parts.append((f"{metar['temp']}℃", 3))
+    return parts
+
+
+def fit_band(parts, avail: int, measure, sizes=(24, 22, 20, 18)):
+    """幅 avail に収まる (文字の並び, 文字サイズ) を返す。
+    まず文字を小さくし、それでも入らなければ優先度の大きい（重要度の低い）ものから省く"""
+    join = lambda ps: " ".join(t for t, _ in ps)
+    for size in sizes:
+        if measure(join(parts), size) <= avail:
+            return [t for t, _ in parts], size
+    size = sizes[-1]
+    for drop in sorted({p for _, p in parts if p > 0}, reverse=True):
+        parts = [p for p in parts if p[1] < drop]
+        if measure(join(parts), size) <= avail:
+            break
+    return [t for t, _ in parts], size
+
+
+# ------------------------------------------------------------------ 取得
 def fetch_raw(url: str, timeout: float = 10) -> str:
     import requests
     r = requests.get(url, timeout=timeout, headers={"User-Agent": "raspi-weather-lite (weather signage)"})
@@ -314,14 +357,16 @@ def fetch_and_parse(icao: str, now_utc=None):
     return metar, taf, raw_m, raw_t
 
 
-def log_once(icao: str) -> None:
-    """取得して生電文と整形結果をログに出す（画面には出さない）"""
+def fetch_into(icao: str, holder: dict) -> None:
+    """取得して holder に最新の METAR を入れる（失敗時は前回の値を残す）。生電文と表示案はログに出す"""
     now = datetime.datetime.now(UTC)
     metar, taf, raw_m, raw_t = fetch_and_parse(icao, now)
     logging.info(f"[aviation] METAR raw: {raw_m}")
     logging.info(f"[aviation] TAF raw: {raw_t}")
     logging.info(f"[aviation] 表示案: {format_line(metar, taf, now)}")
+    if metar:
+        holder.update({"metar": metar, "raw": raw_m, "fetched_at": time.time()})
 
 
-def start_log_in_background(icao: str) -> None:
-    threading.Thread(target=log_once, args=(icao,), daemon=True).start()
+def start_fetch_in_background(icao: str, holder: dict) -> None:
+    threading.Thread(target=fetch_into, args=(icao, holder), daemon=True).start()
