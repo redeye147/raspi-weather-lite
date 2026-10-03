@@ -550,6 +550,8 @@ def show_ap_screen(screen):
         (f"PW:   {password}", (200, 200, 200), False),
         ("", (0, 0, 0), False),
         (f"URL: {portal_url}", (100, 200, 255), True),
+        ("", (0, 0, 0), False),
+        ("設定ページで「WiFi 設定（パスワードが必要）」→ 管理パスワードを入力", (200, 200, 200), False),
     ]:
         if not text:
             info_y += 12
@@ -607,9 +609,10 @@ def show_hotspot_announce(screen, ip: str, ssid: str, seconds: int = 30) -> bool
     for step in (
         "① テザリング中のスマホで右の QR コードを読み取る",
         f"　（または ブラウザで {url} を開く）",
-        "② 「WiFi 設定」で現場の WiFi を選び、パスワードを入力",
-        "③ 「保存して再起動」を押す → Pi が現場の WiFi につながる",
+        "② 「WiFi 設定（パスワードが必要）」を押し、管理パスワードを入力",
+        "③ 現場の WiFi を選び、WiFi のパスワードを入力して「WiFi を保存して再起動」",
         "④ 天気画面の左上の「仮接続中」が消えたら、テザリングをオフにする",
+        "※ 管理パスワードは設置担当者に確認してください",
     ):
         line(step, 32, (230, 230, 230), False, 12)
 
@@ -672,7 +675,7 @@ def show_no_dongle_screen(screen, hotspot_ssid: str = "", wired: str = ""):
             ("スマホのテザリングをオンにしてください", 38, (255, 255, 255), True),
             ("", 12, None, False),
             (f"テザリング名「{hotspot_ssid}」（2.4GHz / WPA2）", 30, (255, 215, 0), True),
-            ("つながると天気画面になります。「今日の天気」欄の右端のQRコードから現場のWiFiを設定できます", 24, (160, 160, 160), False),
+            ("つながると天気画面になります。「今日の天気」欄の右端のQRコードから現場のWiFiを設定できます（管理パスワードが必要）", 24, (160, 160, 160), False),
             ("", 36, None, False),
             ("または LANケーブルを接続（有線LANで天気を表示）／ USBドングルを接続（設定モード）", 26, (160, 160, 160), False),
         ]
@@ -684,7 +687,7 @@ def show_no_dongle_screen(screen, hotspot_ssid: str = "", wired: str = ""):
         lines += [
             ("LANケーブル または USBドングルを接続してください", 38, (255, 255, 255), True),
             ("", 24, None, False),
-            ("LAN：有線でそのまま天気を表示（QRコードから WiFi を設定可能）", 26, (160, 160, 160), False),
+            ("LAN：有線でそのまま天気を表示（QRコードから WiFi を設定可能・管理パスワードが必要）", 26, (160, 160, 160), False),
             ("ドングル：自動で設定モードが起動します", 26, (160, 160, 160), False),
         ]
     total_h = sum(pygame.font.Font(BASE_FONT, size).get_height() + 8 if text else size
