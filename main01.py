@@ -38,6 +38,8 @@ from weather_draw import draw_weather
 from fetch_wbgt import fetch_wbgt, WBGT_LEVELS
 from startup import boot_log, wait_time_sync, save_snapshot, load_snapshot
 from splash import run_splash
+from decisions import (decide_snapshot, should_fetch_2350, should_fetch_0600,
+                       periodic_fetch_action, retry_base_after_failure)
 from screens import show_ap_screen, show_hotspot_announce, draw_conn_label, show_no_dongle_screen
 from netstate import (
     get_connection_kind,
@@ -320,24 +322,11 @@ def main():
     # 時刻同期は最大3秒だけ確認（再起動直後は同期に十数秒かかることがあり、待つと起動が遅くなる）
     synced = wait_time_sync(3)
     now_ts = time.time()
-    snap = load_snapshot()
-    if snap and snap.get("airport") != airport:
-        snap = None
     table_start = get_target_datetimes()[0].strftime("%Y-%m-%dT%H")
-    if synced:
-        # 時刻が正しい：同じ空港・interval 以内・同じ日の表なら前回データで表示し、取得も省略
-        weather_fresh = bool(
-            snap and snap.get("hourly")
-            and now_ts - snap.get("weather_at", 0) < args.interval_hours * 3600
-            and snap.get("table_start") == table_start
-        )
-        kick_fetch = False
-    else:
-        # 時刻が未確定：新しさは判断できないが、前回データがあればまず表示し、すぐ裏で取り直す
-        weather_fresh = bool(snap and snap.get("hourly"))
-        kick_fetch = weather_fresh
-    jma_fresh = bool(synced and snap and now_ts - snap.get("jma_at", 0) < 3600)
-    wbgt_fresh = bool(synced and snap and now_ts - snap.get("wbgt_at", 0) < 3600)
+    snap_decision = decide_snapshot(load_snapshot(), airport, synced, now_ts, args.interval_hours, table_start)
+    snap = snap_decision["snap"]
+    weather_fresh, kick_fetch = snap_decision["weather_fresh"], snap_decision["kick_fetch"]
+    jma_fresh, wbgt_fresh = snap_decision["jma_fresh"], snap_decision["wbgt_fresh"]
     boot_log(f"時刻同期{'済' if synced else '未'} スナップショット 天気={'利用' if weather_fresh else '不可'}"
              f"{'（裏で即取得）' if kick_fetch else ''} 警報={'利用' if jma_fresh else '後で取得'} "
              f"WBGT={'利用' if wbgt_fresh else '後で取得'}")
@@ -495,26 +484,18 @@ def main():
                 ken_img = None
                 ken_key_last = None
 
-        if now.hour == 23 and now.minute == 50:
-            today_str = now.strftime("%Y-%m-%d")
-            if getattr(main, "_updated_2350_date", "") != today_str and not _fetch_pending:
-                fetcher.start()
-                _fetch_pending = True
-                main._updated_2350_date = today_str
-                logging.info("23:50定時取得開始")
+        if should_fetch_2350(now, getattr(main, "_updated_2350_date", ""), _fetch_pending):
+            fetcher.start()
+            _fetch_pending = True
+            main._updated_2350_date = now.strftime("%Y-%m-%d")
+            logging.info("23:50定時取得開始")
 
-        # 6:00 定時取得：時間別の表は 6 時で「今日の 6 時〜」に切り替わるが、夜間は取得を
-        # 先送りするため次の定期取得が 7:50 頃になる。それまで前日の列が残らないよう取り直す。
-        # 6:00〜6:09 の間に 1 日 1 回（起動直後などで 6 時以降のデータが既にあれば不要）。
-        if now.hour == 6 and now.minute < 10:
-            today_str = now.strftime("%Y-%m-%d")
-            fetched_after_6 = last_weather_update.date() == now.date() and last_weather_update.hour >= 6
-            if (getattr(main, "_updated_0600_date", "") != today_str
-                    and not _fetch_pending and not fetched_after_6):
-                fetcher.start()
-                _fetch_pending = True
-                main._updated_0600_date = today_str
-                logging.info("6:00定時取得開始")
+        # 6:00 定時取得（理由は decisions.should_fetch_0600 を参照）
+        if should_fetch_0600(now, last_weather_update, getattr(main, "_updated_0600_date", ""), _fetch_pending):
+            fetcher.start()
+            _fetch_pending = True
+            main._updated_0600_date = now.strftime("%Y-%m-%d")
+            logging.info("6:00定時取得開始")
 
         # WBGT 更新（1時間ごと、テスト時はスキップ）
         if args.wbgt_test is None and time.time() - last_wbgt_update > 3600:
@@ -547,13 +528,13 @@ def main():
             except Exception as e:
                 logging.error(f"JMA更新失敗: {e}")
 
-        if not _fetch_pending and (now - last_weather_update).total_seconds() >= args.interval_hours * 3600:
-            if 5 < now.hour <= 23:
-                fetcher.start()
-                _fetch_pending = True
-                logging.info("定期天気取得開始")
-            else:
-                last_weather_update = now
+        _action = periodic_fetch_action(now, last_weather_update, _fetch_pending, args.interval_hours)
+        if _action == "fetch":
+            fetcher.start()
+            _fetch_pending = True
+            logging.info("定期天気取得開始")
+        elif _action == "postpone":
+            last_weather_update = now
 
         if _fetch_pending:
             done, new_hourly, new_daily, ok = fetcher.poll()
@@ -570,8 +551,7 @@ def main():
                     _save_state()
                     logging.info("天気取得完了")
                 else:
-                    last_weather_update = now - datetime.timedelta(hours=args.interval_hours) \
-                                              + datetime.timedelta(minutes=30)
+                    last_weather_update = retry_base_after_failure(now, args.interval_hours)
                     fetch_ok = False
                     logging.error("天気取得失敗またはタイムアウト。30分後に再試行")
                 needs_redraw = True
