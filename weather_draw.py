@@ -193,6 +193,7 @@ def draw_today_title_bar(
 
 
 ALERT_BANNER_H = 44
+SUMMARY_GAP_MIN_HEIGHT = 1000   # この高さ以上の画面で、作業注意情報の下に1行分の余白を入れる
 
 
 def draw_alert_banner(screen, width, header_h, base_font_path):
@@ -280,6 +281,10 @@ def draw_weather(
     )
     screen.blit(summary_surf, (margin_x, y_offset))
     y_offset += summary_surf.get_height() + 4
+    # 作業注意情報と「今日の天気」の間を1行あける（下に余裕のある高さ 1000px 以上の画面のみ。
+    # 1366×768 等は熱中症アラート時に下端まで使っているので従来どおり）
+    if height >= SUMMARY_GAP_MIN_HEIGHT:
+        y_offset += summary_surf.get_height()
 
     title_bar_h = 54 if qr_surf else 30
     draw_today_title_bar(
