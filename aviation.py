@@ -238,7 +238,7 @@ def _wind_text(d) -> str:
 
 def _vis_text(d) -> str:
     if d["cavok"]:
-        return ""                          # CAVOK は「視界良好(CAVOK)」にまとめて表示
+        return "視程10km以上"               # CAVOK は実測値を通報しない。保証される下限を示す
     if d["vis_m"] is None:
         return ""
     if d["vis_m"] >= 10000:
@@ -248,7 +248,9 @@ def _vis_text(d) -> str:
 
 def _cloud_text(d) -> str:
     if d["cavok"]:
-        return "視界良好(CAVOK)"           # 視程10km以上・1500m未満に雲なし・重要な天気なし
+        # CAVOK：1500m(5000ft) 未満（または最低安全高度のどちらか高い方）に雲なし・重要な天気なし。
+        # 実際の雲の高さは通報されないので「以上」で保証される下限を示す
+        return "雲1500m(5000ft)以上(CAVOK)"
     if not d["clouds"]:
         return ""
     c = next((c for c in d["clouds"] if c["cover"] in ("BKN", "OVC", "VV")), d["clouds"][0])

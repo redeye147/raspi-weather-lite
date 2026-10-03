@@ -133,7 +133,7 @@ def test_format_metar_line_units_both():
 
 def test_format_metar_line_cavok_calm():
     m = metar("RJCC 031200Z 00000KT CAVOK M02/M05 Q1021")
-    assert av.format_metar_line(m) == "RJCC 21:00観測 風 静穏 視界良好(CAVOK) -2℃ [VFR]"   # 視程と重複させない
+    assert av.format_metar_line(m) == "RJCC 21:00観測 風 静穏 視程10km以上 雲1500m(5000ft)以上(CAVOK) -2℃ [VFR]"   # CAVOK は実測値なし → 保証される下限を表示
 
 
 def test_format_change_line():
@@ -182,13 +182,13 @@ def test_real_rjaa_line():
     t = av.parse_taf(REAL_TAF, REAL_NOW)
     assert m["cavok"] and m["qnh"] == 1021 and t["changes"] == []
     assert av.format_line(m, t, REAL_NOW) == (
-        "✈ RJAA 22:00観測 風 020° 3m/s(5kt) 視界良好(CAVOK) 17℃ [VFR] ｜ TAF 大きな変化なし")
+        "✈ RJAA 22:00観測 風 020° 3m/s(5kt) 視程10km以上 雲1500m(5000ft)以上(CAVOK) 17℃ [VFR] ｜ TAF 大きな変化なし")
 
 
 # ---------------------------------------------------------------- 画面の帯（観測のみ）
 def test_band_parts_real_rjaa():
     m = av.parse_metar(REAL_METAR, REAL_NOW)
-    assert [t for t, _ in av.band_parts(m)] == ["RJAA 22:00観測", "風 020° 3m/s(5kt)", "視界良好(CAVOK)", "17℃"]
+    assert [t for t, _ in av.band_parts(m)] == ["RJAA 22:00観測", "風 020° 3m/s(5kt)", "視程10km以上", "雲1500m(5000ft)以上(CAVOK)", "17℃"]
 
 
 def test_band_parts_priorities():
