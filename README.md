@@ -98,6 +98,31 @@ bash ~/raspi-weather-lite/update.sh
 
 > `update.sh` は実行開始時に読み込んだ版のまま最後まで動きます。`update.sh` 自体が修正された回は、新しい処理が効くのは**次回の実行から**です。
 
+**更新時の注意点**
+
+| 注意点 | 内容・対処 |
+|------|------|
+| **今いるブランチが更新される** | `update.sh` は現在のブランチを最新にする。試験で作業用ブランチに切り替えた Pi はブランチのまま更新され main にならない。`git -C ~/raspi-weather-lite branch --show-current` で確認し、`main` 以外なら下の「main に戻して更新」を使う |
+| `update.sh` 自体の変更は次回から | 久しぶりに更新する Pi（別の場所の機器など）は、二重起動の片付け等の新しい処理が効くのは**2回目の実行から**。続けて2回実行してもよい |
+| **再起動は `y`（半角）** | プログラムの変更（有線 LAN 対応・起動/停止の高速化など）を含む更新では再起動推奨。有線 LAN の WiFi 優先設定も再起動から有効。全角「ｙ」は「いいえ」扱い |
+| 初回の再起動は時間がかかることがある | 停止高速化（2026-10）より前の main01 を止めるときだけ最大90秒かかる。2回目以降は1秒程度 |
+| README だけの更新 | 再起動は不要（最後の質問は `N`） |
+| テザリング登録は別作業 | `add_setup_hotspot.sh` は `update.sh` では実行されない。必要な Pi で別途実行（再起動と同時に貼り付けない） |
+| 複数コマンドをまとめて貼らない | `update.sh` の再起動で SSH が切れ、後続のコマンド（パスワード入力待ちなど）が実行されない |
+
+**main に戻して更新**（作業用ブランチで試験した Pi など。空港設定は保持）
+
+```bash
+cd ~/raspi-weather-lite && cp config.json ~/config.json.bak && git fetch origin && git checkout -B main origin/main && cp ~/config.json.bak config.json && bash update.sh
+```
+
+更新後の確認：
+
+```bash
+cd ~/raspi-weather-lite && git branch --show-current && git log --oneline -1   # main と最新コミット
+journalctl -u main01 -b --no-pager | grep "\[boot\]"                         # 再起動後：天気画面表示までの秒数
+```
+
 ### OS書き込み時の準備（Raspberry Pi Imager）
 
 Imager の「詳細設定」で以下を事前設定しておくと SSH で接続できます。
