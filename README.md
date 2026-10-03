@@ -406,6 +406,31 @@ WantedBy=multi-user.target
 
 > アイコン切替は「快晴（コード100）」の時間帯のみ適用されます。曇りや雨など他の天気コードは切替対象外です。
 
+### 航空気象（METAR / TAF）〔開発中：段階②〕
+
+空港の実際の観測（METAR）と飛行場予報（TAF）を、ヘッダー下の帯に1行で表示する予定です（段階③）。現在は**30分ごとに取得してログに出すだけ**で、画面には表示していません。
+
+| 項目 | 内容 |
+|------|------|
+| 取得元 | NOAA Aviation Weather Center（aviationweather.gov、無料・登録不要）の生電文 |
+| 空港コード | 成田 RJAA／羽田 RJTT／中部 RJGG／関西 RJBB／新千歳 RJCC／福岡 RJFF／那覇 ROAH（`config.py` の `icao`） |
+| 解析 | 国際書式の電文を直接解析（取得元の JSON 形式の変更に影響されない） |
+| 表示内容（予定） | METAR：風向・風速 **m/s と kt**・突風・視程・天気・雲底 **m と ft**・気温・飛行条件（VFR/MVFR/IFR/LIFR）／TAF：これからの変化（一時・次第に・以降・確率） |
+
+表示案の例（ログに出る1行）：
+
+```
+✈ RJGG 21:00観測 風 330° 6m/s(12kt) 視程10km以上 雲 FEW 910m(3000ft) 22℃ [VFR] ｜ TAF 一時 22:00-翌01:00 視程4km 弱いにわか雨 雲 BKN 300m(1000ft)
+```
+
+実データの確認：
+
+```bash
+grep "\[aviation\]" ~/raspi-weather-lite/displayraspi_log.txt | tail -6
+```
+
+> 表示は参考情報です。運航の判断には公式の航空気象情報を使ってください。
+
 ### 夜間の月アイコン
 
 時間別天気で、各列の時刻が **日の入り以降〜日の出前** のとき、晴れ系アイコン（`1xx`）を月アイコン（`7xx` = `1xx` + 600）に切り替えます。
@@ -670,6 +695,7 @@ raspi-weather-lite/
 ├── startup.py           # 起動の補助（起動ログ・時刻同期確認・前回表示データの保存/読込）
 ├── splash.py            # 起動時のスプラッシュ画面（初回の天気取得中の表示）
 ├── decisions.py         # メインループの判断（前回データの利用・定時/定期取得・再試行）
+├── aviation.py          # 航空気象（METAR/TAF）の取得・解析・1行表示用の整形
 ├── fb_display.py        # 描画モード自動判定（kmsdrm → /dev/fb0 フォールバック）
 ├── main01.service       # systemdユニットファイル
 ├── weather_draw.py      # 天気画面描画・アラートバナー
@@ -780,7 +806,7 @@ Pi Zero W で CPU が常時 50〜80% になっていた事例の調査結果で�
 
 ```bash
 pip install -r tests/requirements.txt
-python3 -m pytest          # 例: 74 passed in 0.4s
+python3 -m pytest          # 例: 107 passed in 0.4s
 ```
 
 | ファイル | 対象 | 主な確認内容 |
@@ -788,6 +814,7 @@ python3 -m pytest          # 例: 74 passed in 0.4s
 | `tests/test_connection.py` | 接続の判定（`netstate.parse_connection_kind` / `ipv4_devices`） | WiFi 優先・有線のみ・IPv6 だけは未接続・DHCP 待ち・テザリング・SSID に `:` |
 | `tests/test_night.py` | 夜間の判定（`utils.is_night`）・マーク位置（`weather_draw._time_to_col`） | 空港・季節ごとの昼夜、日の出 6:00 ちょうど・日の入りちょうどの境界、表の範囲外 |
 | `tests/test_warnings.py` | 警報の解析（`jma_alerts.active_warning_names`） | 気象庁コード→名称（過去のずれの再発防止）、解除の除外、特別警報→警報→注意報の順、未知コード |
+| `tests/test_aviation.py` | 航空気象（`aviation.py`） | METAR/TAF の解析（風・突風・視程・CAVOK・天気・雲底・月またぎ・TAF の24時）、飛行条件、これからの変化の選び方、1行表示（m/s・kt、m・ft） |
 | `tests/test_decisions.py` | メインループの判断（`decisions.py`） | 前回データの利用（空港・2時間・朝6時・時刻未同期）、23:50/6:00 の定時取得、夜間の先送り、失敗時30分後の再試行、一晩の取得の流れ |
 
 過去の不具合（警報コード20 未登録、IPv4 必須判定の欠落）や、判断の誤り（5時台に取得、6時以降のデータ確認なし）をわざと入れるとテストが失敗することを確認済みです。コードを変更したら、push の前に実行してください。

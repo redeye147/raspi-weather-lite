@@ -38,6 +38,7 @@ from weather_draw import draw_weather
 from fetch_wbgt import fetch_wbgt, WBGT_LEVELS
 from startup import boot_log, wait_time_sync, save_snapshot, load_snapshot
 from splash import run_splash
+import aviation
 from decisions import (decide_snapshot, should_fetch_2350, should_fetch_0600,
                        periodic_fetch_action, retry_base_after_failure)
 from screens import show_ap_screen, show_hotspot_announce, draw_conn_label, show_no_dongle_screen
@@ -408,6 +409,7 @@ def main():
     if fetch_ok and not weather_fresh:
         _save_state()
     _first_draw_logged = False
+    last_aviation_log = time.time() - aviation.FETCH_INTERVAL_S + DEFER_INITIAL_FETCH_S   # 初回は起動 20 秒後
     _fetch_pending = False
     if kick_fetch:
         fetcher.start()
@@ -496,6 +498,11 @@ def main():
             _fetch_pending = True
             main._updated_0600_date = now.strftime("%Y-%m-%d")
             logging.info("6:00定時取得開始")
+
+        # 航空気象（METAR/TAF）：段階②として 30 分ごとに裏で取得してログに出すだけ（画面には未表示）
+        if cfg.get("icao") and time.time() - last_aviation_log >= aviation.FETCH_INTERVAL_S:
+            last_aviation_log = time.time()
+            aviation.start_log_in_background(cfg["icao"])
 
         # WBGT 更新（1時間ごと、テスト時はスキップ）
         if args.wbgt_test is None and time.time() - last_wbgt_update > 3600:

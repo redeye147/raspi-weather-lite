@@ -15,6 +15,7 @@ BASE_FONT = "/usr/share/fonts/opentype/ipafont-gothic/ipag.ttf"
 
 AIRPORT_CONFIG = {
         "narita": {
+            "icao": "RJAA",          # 航空気象（METAR/TAF）の空港コード
             "office_code": "120000",
             "area_codes": ("1221100", "120010"),   # 成田市 + 千葉県北西部（warning用）
             "latitude": 35.7651,
@@ -23,6 +24,7 @@ AIRPORT_CONFIG = {
         },
 
         "haneda": {
+            "icao": "RJTT",          # 航空気象（METAR/TAF）の空港コード
             "office_code": "130000",
             # 大田区 + 東京地方
             "area_codes": ("1311100", "130010"),
@@ -32,6 +34,7 @@ AIRPORT_CONFIG = {
         },
 
         "centrair": {
+            "icao": "RJGG",          # 航空気象（METAR/TAF）の空港コード
             "office_code": "230000",
             # 常滑市 + 愛知県西部
             "area_codes": ("2321600", "230010"),
@@ -41,6 +44,7 @@ AIRPORT_CONFIG = {
         },
 
         "kanku": {
+            "icao": "RJBB",          # 航空気象（METAR/TAF）の空港コード
             "name": "関西国際空港",
             "latitude": 34.4347,
             "longitude": 135.2440,
@@ -49,6 +53,7 @@ AIRPORT_CONFIG = {
         },
 
         "chitose": {
+            "icao": "RJCC",          # 航空気象（METAR/TAF）の空港コード
             "name": "新千歳空港",
             "latitude": 42.7752,
             "longitude": 141.6922,
@@ -57,6 +62,7 @@ AIRPORT_CONFIG = {
         },
 
         "fukuoka": {
+            "icao": "RJFF",          # 航空気象（METAR/TAF）の空港コード
             "name": "福岡空港",
             "latitude": 33.5859,
             "longitude": 130.4511,
@@ -65,6 +71,7 @@ AIRPORT_CONFIG = {
         },
 
         "naha": {
+            "icao": "ROAH",          # 航空気象（METAR/TAF）の空港コード
             "name": "那覇空港",
             "latitude": 26.1958,
             "longitude": 127.6458,
