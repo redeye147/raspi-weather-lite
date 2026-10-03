@@ -665,6 +665,7 @@ raspi-weather-lite/
 ├── update.sh            # 更新スクリプト（git pull・サービス更新・watchdog）
 ├── start.sh             # 表示モード自動判定して main01.py を起動
 ├── main01.py            # メインループ（起動・描画制御）
+├── netstate.py          # 接続状態の判定（WiFi・有線・テザリング）と設定モード（AP）の操作
 ├── fb_display.py        # 描画モード自動判定（kmsdrm → /dev/fb0 フォールバック）
 ├── main01.service       # systemdユニットファイル
 ├── weather_draw.py      # 天気画面描画・アラートバナー
@@ -746,7 +747,7 @@ python3 -m pytest          # 例: 45 passed in 0.4s
 
 | ファイル | 対象 | 主な確認内容 |
 |------|------|------|
-| `tests/test_connection.py` | 接続の判定（`main01.parse_connection_kind` / `ipv4_devices`） | WiFi 優先・有線のみ・IPv6 だけは未接続・DHCP 待ち・テザリング・SSID に `:` |
+| `tests/test_connection.py` | 接続の判定（`netstate.parse_connection_kind` / `ipv4_devices`） | WiFi 優先・有線のみ・IPv6 だけは未接続・DHCP 待ち・テザリング・SSID に `:` |
 | `tests/test_night.py` | 夜間の判定（`utils.is_night`）・マーク位置（`weather_draw._time_to_col`） | 空港・季節ごとの昼夜、日の出 6:00 ちょうど・日の入りちょうどの境界、表の範囲外 |
 | `tests/test_warnings.py` | 警報の解析（`jma_alerts.active_warning_names`） | 気象庁コード→名称（過去のずれの再発防止）、解除の除外、特別警報→警報→注意報の順、未知コード |
 

@@ -1,7 +1,7 @@
 """接続の判定（nmcli / ip の出力 → 'wifi' / 'hotspot' / 'ethernet' / ''）"""
 import pytest
 
-from main01 import ipv4_devices, parse_connection_kind
+from netstate import ipv4_devices, parse_connection_kind
 
 HOTSPOT = "setup-hotspot"
 IP_WLAN = "2: wlan0    inet 192.168.1.132/24 brd 192.168.1.255 scope global dynamic wlan0"
