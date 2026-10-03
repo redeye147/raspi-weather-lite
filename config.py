@@ -11,6 +11,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ICON_DIR = os.path.join(BASE_DIR, "weather_icons")
 LOG_FILE = os.path.join(BASE_DIR, "displayraspi_log.txt")
 CACHE_FILE = os.path.join(BASE_DIR, "weather_cache.json")
+BASE_FONT = "/usr/share/fonts/opentype/ipafont-gothic/ipag.ttf"
 
 AIRPORT_CONFIG = {
         "narita": {

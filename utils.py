@@ -5,6 +5,7 @@ E61c 完全互換ユーティリティ
 
 import datetime
 import functools
+import time
 import pytz
 import socket
 import pygame
@@ -290,3 +291,9 @@ def build_work_summary(hourly):
         return "特記事項なし"
 
     return " / ".join(warnings)
+
+
+def wait_ms(ms: int) -> None:
+    """待機。pygame.time.wait（SDL_Delay）は C の中で眠るため SIGTERM の処理が待機明けまで遅れる。
+    time.sleep ならシグナルで即座に起きてハンドラが動く（停止が最大 10 秒遅れるのを防ぐ）。"""
+    time.sleep(max(0, ms) / 1000)
