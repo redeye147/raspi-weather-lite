@@ -668,6 +668,7 @@ raspi-weather-lite/
 ├── netstate.py          # 接続状態の判定（WiFi・有線・テザリング）と設定モード（AP）の操作
 ├── screens.py           # 案内画面（設定モード・テザリング案内・未接続）と左上の接続ラベル
 ├── startup.py           # 起動の補助（起動ログ・時刻同期確認・前回表示データの保存/読込）
+├── splash.py            # 起動時のスプラッシュ画面（初回の天気取得中の表示）
 ├── fb_display.py        # 描画モード自動判定（kmsdrm → /dev/fb0 フォールバック）
 ├── main01.service       # systemdユニットファイル
 ├── weather_draw.py      # 天気画面描画・アラートバナー
