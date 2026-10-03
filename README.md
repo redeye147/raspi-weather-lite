@@ -434,6 +434,8 @@ WantedBy=multi-user.target
 grep "\[aviation\]" ~/raspi-weather-lite/displayraspi_log.txt | tail -6
 ```
 
+ログの「期待 23:00 観測 / 取得 22:30 観測（まだ届いていない）」のような行で、NOAA に届くまでの時間を確認できます。
+
 > 表示は参考情報です。運航の判断には公式の航空気象情報を使ってください。
 
 ### 夜間の月アイコン
