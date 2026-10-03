@@ -26,18 +26,17 @@ import shutil
 import logging
 import logging.handlers
 import traceback
-import threading
 import socket
 import requests
 import psutil
 import subprocess
 
-import json
 import fb_display
 from fb_display import init_display, present
 from header import draw_header
 from weather_draw import draw_weather
 from fetch_wbgt import fetch_wbgt, WBGT_LEVELS
+from startup import boot_log, wait_time_sync, save_snapshot, load_snapshot
 from screens import show_ap_screen, show_hotspot_announce, draw_conn_label, show_no_dongle_screen
 from netstate import (
     get_connection_kind,
@@ -56,148 +55,20 @@ from jma_alerts import get_overview_and_warning, active_warning_names
 from config import AIRPORT_CONFIG, LOG_FILE, ICON_DIR, BASE_FONT
 
 from fetch_weather import (
-    fetch_weather_openmeteo,
-    fetch_weather_jma,
-    load_cached_weather
+    load_cached_weather,
+    FETCH_TIMEOUT,
+    WeatherFetcher,
 )
 
 
-FETCH_TIMEOUT = 30
-
-# 起動高速化：前回の表示データ（スナップショット）と、初回取得の後回し秒数
-SNAPSHOT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache", "snapshot.json")
+# 起動高速化：古い警報・WBGT を起動何秒後に取得するか（画面表示を優先）
 DEFER_INITIAL_FETCH_S = 20
 
-
-def boot_log(msg: str) -> None:
-    """起動からの経過秒数つきで journal とログに記録（起動直後の時刻ずれの影響を受けない）"""
-    try:
-        up = float(open("/proc/uptime").read().split()[0])
-    except Exception:
-        up = -1.0
-    print(f"[boot] {up:.1f}s {msg}", flush=True)
-    logging.info(f"[boot] 起動後 {up:.1f}s {msg}")
-
-
-def wait_time_sync(timeout_s: float = 15) -> bool:
-    """NTP で時刻同期済みになるまで最大 timeout_s 秒待つ（Pi は電池時計が無く起動直後は時刻がずれる）"""
-    end = time.time() + timeout_s
-    while True:
-        try:
-            r = subprocess.run(["timedatectl", "show", "-p", "NTPSynchronized", "--value"],
-                               capture_output=True, text=True, timeout=3)
-            if r.stdout.strip() == "yes":
-                return True
-        except Exception:
-            return False
-        if time.time() >= end:
-            return False
-        time.sleep(1)
-
-
-def _json_default(o):
-    if isinstance(o, (datetime.datetime, datetime.date)):
-        return o.isoformat()
-    if isinstance(o, tuple):
-        return list(o)
-    raise TypeError(type(o))
-
-
-def save_snapshot(state: dict) -> None:
-    """表示に必要なデータ一式を保存（取得・更新が成功したときだけ呼ぶ。SD 書込みを減らすため）"""
-    try:
-        os.makedirs(os.path.dirname(SNAPSHOT_FILE), exist_ok=True)
-        tmp = SNAPSHOT_FILE + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(state, f, default=_json_default, ensure_ascii=False)
-        os.replace(tmp, SNAPSHOT_FILE)
-    except Exception as e:
-        logging.warning(f"スナップショット保存失敗: {e}")
-
-
-def load_snapshot():
-    try:
-        with open(SNAPSHOT_FILE, encoding="utf-8") as f:
-            snap = json.load(f)
-        for item in snap.get("hourly", []):
-            if isinstance(item.get("datetime"), str):
-                dt = datetime.datetime.fromisoformat(item["datetime"])
-                item["datetime"] = dt.replace(tzinfo=JST) if dt.tzinfo is None else dt
-        return snap
-    except Exception:
-        return None
 
 socket.setdefaulttimeout(15)
 
 # 全角文字はIPAフォントに確実に含まれる
 _SPINNER = ["｜", "／", "―", "＼"]
-
-
-# ==========================================================
-# バックグラウンド天気取得クラス
-# ==========================================================
-class WeatherFetcher:
-    def __init__(self, cfg, args):
-        self._cfg = cfg
-        self._args = args
-        self._thread = None
-        self._result = None
-        self._ok = False
-        self._event = threading.Event()
-        self._started_at = 0.0
-
-    def start(self):
-        if self._thread and self._thread.is_alive():
-            return
-        self._result = None
-        self._ok = False
-        self._event.clear()
-        self._started_at = time.time()
-        self._thread = threading.Thread(target=self._run, daemon=True)
-        self._thread.start()
-
-    def _run(self):
-        try:
-            cfg, args = self._cfg, self._args
-            if args.jma:
-                hourly, om_daily = fetch_weather_openmeteo(cfg["latitude"], cfg["longitude"])
-                _, jma_daily = fetch_weather_jma(cfg["office_code"], cfg["area_codes"])
-                om_map = {d["date"]: d for d in om_daily}
-                daily = []
-                for d in jma_daily[:5]:
-                    od = om_map.get(d.get("date"))
-                    if od:
-                        if d.get("pop") in ("-%", "", None):
-                            d["pop"] = od.get("pop")
-                        if d.get("temp") in ("-/-", "", None):
-                            d["temp"] = od.get("temp")
-                    daily.append(d)
-            else:
-                hourly, daily = fetch_weather_openmeteo(cfg["latitude"], cfg["longitude"])
-            self._result = (hourly, daily)
-            self._ok = True
-        except Exception as e:
-            logging.error(f"WeatherFetcher error: {e}")
-            self._ok = False
-        finally:
-            self._event.set()
-
-    def poll(self):
-        if self._thread is None:
-            return False, None, None, None
-        if self._event.is_set():
-            self._thread = None
-            if self._ok and self._result:
-                return True, self._result[0], self._result[1], True
-            return True, None, None, False
-        if time.time() - self._started_at > FETCH_TIMEOUT:
-            logging.error(f"WeatherFetcher: タイムアウト ({FETCH_TIMEOUT}秒) スレッドを放棄")
-            self._thread = None
-            return True, None, None, False
-        return False, None, None, None
-
-    def is_running(self):
-        return self._thread is not None and self._thread.is_alive()
 
 
 # ==========================================================

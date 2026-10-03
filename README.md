@@ -667,11 +667,12 @@ raspi-weather-lite/
 ├── main01.py            # メインループ（起動・描画制御）
 ├── netstate.py          # 接続状態の判定（WiFi・有線・テザリング）と設定モード（AP）の操作
 ├── screens.py           # 案内画面（設定モード・テザリング案内・未接続）と左上の接続ラベル
+├── startup.py           # 起動の補助（起動ログ・時刻同期確認・前回表示データの保存/読込）
 ├── fb_display.py        # 描画モード自動判定（kmsdrm → /dev/fb0 フォールバック）
 ├── main01.service       # systemdユニットファイル
 ├── weather_draw.py      # 天気画面描画・アラートバナー
 ├── header.py            # ヘッダー描画（日付・時刻・WBGTバッジ）
-├── fetch_weather.py     # 天気データ取得（Open-Meteo / JMA）
+├── fetch_weather.py     # 天気データ取得（Open-Meteo / JMA）とバックグラウンド取得（WeatherFetcher）
 ├── fetch_wbgt.py        # WBGT取得（環境省）・WBGT_LEVELS定義
 ├── jma_alerts.py        # JMA警報・注意報取得
 ├── utils.py             # 共通ユーティリティ（フォントキャッシュ・QR生成など）

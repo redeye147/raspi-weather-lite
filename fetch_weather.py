@@ -8,6 +8,8 @@ import os
 import json
 import datetime
 import logging
+import threading
+import time
 from collections import defaultdict
 
 from config import (
@@ -315,3 +317,76 @@ def load_cached_weather():
 
     except:
         return [], []
+
+
+# ==========================================================
+# バックグラウンド天気取得クラス（main01.py から移動。中身は変更なし）
+# ==========================================================
+FETCH_TIMEOUT = 30
+
+
+# ==========================================================
+# バックグラウンド天気取得クラス
+# ==========================================================
+class WeatherFetcher:
+    def __init__(self, cfg, args):
+        self._cfg = cfg
+        self._args = args
+        self._thread = None
+        self._result = None
+        self._ok = False
+        self._event = threading.Event()
+        self._started_at = 0.0
+
+    def start(self):
+        if self._thread and self._thread.is_alive():
+            return
+        self._result = None
+        self._ok = False
+        self._event.clear()
+        self._started_at = time.time()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def _run(self):
+        try:
+            cfg, args = self._cfg, self._args
+            if args.jma:
+                hourly, om_daily = fetch_weather_openmeteo(cfg["latitude"], cfg["longitude"])
+                _, jma_daily = fetch_weather_jma(cfg["office_code"], cfg["area_codes"])
+                om_map = {d["date"]: d for d in om_daily}
+                daily = []
+                for d in jma_daily[:5]:
+                    od = om_map.get(d.get("date"))
+                    if od:
+                        if d.get("pop") in ("-%", "", None):
+                            d["pop"] = od.get("pop")
+                        if d.get("temp") in ("-/-", "", None):
+                            d["temp"] = od.get("temp")
+                    daily.append(d)
+            else:
+                hourly, daily = fetch_weather_openmeteo(cfg["latitude"], cfg["longitude"])
+            self._result = (hourly, daily)
+            self._ok = True
+        except Exception as e:
+            logging.error(f"WeatherFetcher error: {e}")
+            self._ok = False
+        finally:
+            self._event.set()
+
+    def poll(self):
+        if self._thread is None:
+            return False, None, None, None
+        if self._event.is_set():
+            self._thread = None
+            if self._ok and self._result:
+                return True, self._result[0], self._result[1], True
+            return True, None, None, False
+        if time.time() - self._started_at > FETCH_TIMEOUT:
+            logging.error(f"WeatherFetcher: タイムアウト ({FETCH_TIMEOUT}秒) スレッドを放棄")
+            self._thread = None
+            return True, None, None, False
+        return False, None, None, None
+
+    def is_running(self):
+        return self._thread is not None and self._thread.is_alive()
