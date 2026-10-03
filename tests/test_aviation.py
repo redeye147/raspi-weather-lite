@@ -169,3 +169,17 @@ def test_fetch_failure_is_not_fatal(monkeypatch):
         raise OSError("network down")
     monkeypatch.setattr(av, "fetch_raw", boom)
     assert av.fetch_and_parse("RJGG", NOW) == (None, None, None, None)
+
+
+# ---------------------------------------------------------------- 実データ（2026-10-03 22:09 JST に Pi で取得した成田）
+REAL_NOW = datetime.datetime(2026, 10, 3, 13, 9, tzinfo=UTC)
+REAL_METAR = "METAR RJAA 031300Z 02005KT CAVOK 17/12 Q1021 NOSIG"
+REAL_TAF = "TAF RJAA 031105Z 0312/0418 36008KT 9999 FEW030"
+
+
+def test_real_rjaa_line():
+    m = av.parse_metar(REAL_METAR, REAL_NOW)
+    t = av.parse_taf(REAL_TAF, REAL_NOW)
+    assert m["cavok"] and m["qnh"] == 1021 and t["changes"] == []
+    assert av.format_line(m, t, REAL_NOW) == (
+        "✈ RJAA 22:00観測 風 020° 3m/s(5kt) 視程10km以上 CAVOK 17℃ [VFR] ｜ TAF 大きな変化なし")
