@@ -4,12 +4,23 @@ wifi_portal.py
 ポート: 8080
 """
 
-from flask import Flask, request, jsonify, redirect, make_response
+from flask import Flask, request, jsonify, redirect, make_response, session
+import hmac
+import secrets
+import time
+from functools import wraps
 import json
 import os
 import subprocess
 
 app = Flask(__name__)
+# セッション鍵は起動ごとに作り直す（再起動するとパスワードの入力し直しになる）
+app.secret_key = secrets.token_bytes(32)
+app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Strict",
+                  PERMANENT_SESSION_LIFETIME=1800)
+
+DEFAULT_ADMIN_PASSWORD = "1048"
+_login_fail = {"count": 0, "until": 0.0}
 
 CONFIG_PATH = "/home/pi/raspi-weather-lite/config.json"
 
@@ -30,6 +41,21 @@ def _save_config(updates: dict) -> None:
     cfg.update(updates)
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(cfg, f, indent=2, ensure_ascii=False)
+
+
+def _admin_password() -> str:
+    """WiFi 設定のパスワード。config.json の admin_password（無ければ初期値 1048）"""
+    return str(_load_config().get("admin_password") or DEFAULT_ADMIN_PASSWORD)
+
+
+def admin_required(f):
+    """WiFi の設定・削除・並べ替え・スキャンはパスワード入力済みのセッションだけ許可"""
+    @wraps(f)
+    def wrapper(*a, **k):
+        if not session.get("admin"):
+            return "パスワードを入力してください", 401
+        return f(*a, **k)
+    return wrapper
 
 
 def _no_cache(response):
@@ -118,25 +144,33 @@ HTML = """<!DOCTYPE html>
   button { width: 100%; padding: 14px; background: #3b82f6; color: white;
            border: none; border-radius: 8px; font-size: 16px; margin-top: 8px; cursor: pointer; }
   button:active { background: #2563eb; }
+  button.sub-btn { background: #374151; }
   h2 { color: #FFD700; }
   h3 { color: #aaddff; margin-top: 24px; margin-bottom: 4px; font-size: 16px; }
   label { font-size: 13px; color: #aaa; }
-  #msg { margin-top: 16px; color: #10b981; font-weight: bold; }
+  .msg { margin-top: 12px; font-weight: bold; }
   #manual-ssid { display: none; }
   .badge-connected { font-size: 13px; color: #10b981; margin-bottom: 4px; }
   .badge-disconnected { font-size: 13px; color: #ef4444; margin-bottom: 4px; }
   .section-box { background: #1e2233; border-radius: 10px; padding: 14px; margin-top: 12px; }
+  .section-box input, .section-box select { background: #2a3048; }
   .scanning { font-size: 13px; color: #888; }
+  .hidden { display: none !important; }
   .wifi-row { display: flex; align-items: center; gap: 6px; padding: 8px 0; border-bottom: 1px solid #2c3350; }
   .wifi-row .nm { flex: 1; min-width: 0; font-size: 15px; overflow-wrap: anywhere; }
-  .wifi-row button { flex: none; }
   .wifi-row .sub { font-size: 12px; color: #888; }
-  .wifi-row button { width: auto; margin: 0; padding: 8px 12px; font-size: 14px; }
+  .wifi-row button { flex: none; width: auto; margin: 0; padding: 8px 12px; font-size: 14px; }
   .wifi-row button.del { background: #b91c1c; }
   .wifi-row button:disabled { background: #444; color: #888; }
   .tag { font-size: 11px; padding: 2px 6px; border-radius: 6px; margin-left: 4px; }
   .tag-on { background: #065f46; color: #a7f3d0; }
   .tag-hs { background: #7c2d12; color: #fed7aa; }
+  #confirm-bg { position: fixed; inset: 0; background: rgba(0,0,0,.65); display: flex;
+                align-items: center; justify-content: center; padding: 20px; }
+  #confirm-box { background: #1e2233; border: 2px solid #b91c1c; border-radius: 12px; padding: 18px; max-width: 360px; width: 100%; }
+  #confirm-box .row { display: flex; gap: 10px; }
+  #confirm-box .row button { flex: 1; }
+  #confirm-ok { background: #b91c1c; }
 </style>
 </head><body>
 <h2>天気サイネージ 設定</h2>
@@ -153,32 +187,68 @@ HTML = """<!DOCTYPE html>
     <option value="fukuoka">福岡空港</option>
     <option value="naha">那覇空港</option>
   </select>
+  <button id="airport-btn" onclick="saveAirport()">空港を保存して再起動</button>
+  <p id="airport-msg" class="msg"></p>
 </div>
 
-<div class="section-box">
-  <h3>📶 WiFi 設定</h3>
-  <label>SSID</label>
-  <p id="scan-status" class="scanning">🔄 スキャン中...</p>
-  <select id="ssid-select" onchange="onSelectChange()" style="display:none">
-  </select>
-  <input id="manual-ssid" placeholder="SSIDを手入力">
-  <label>パスワード</label>
-  <input id="pw" type="password" placeholder="パスワード（未入力の場合はWiFiは変更しません）">
+<button id="wifi-open-btn" class="sub-btn" onclick="openWifi()">🔒 WiFi 設定（パスワードが必要）</button>
+
+<div id="login-box" class="section-box hidden">
+  <h3>🔒 管理パスワード</h3>
+  <input id="admin-pw" type="password" inputmode="numeric" placeholder="パスワード" onkeydown="if(event.key==='Enter')login()">
+  <button onclick="login()">開く</button>
+  <p id="login-msg" class="msg"></p>
 </div>
 
-<button id="save-btn" onclick="save()">保存して再起動</button>
-<p id="msg"></p>
+<div id="wifi-area" class="hidden">
+  <div class="section-box">
+    <h3>📶 WiFi 設定</h3>
+    <label>SSID</label>
+    <p id="scan-status" class="scanning">🔄 スキャン中...</p>
+    <select id="ssid-select" onchange="onSelectChange()" style="display:none"></select>
+    <input id="manual-ssid" placeholder="SSIDを手入力">
+    <label>パスワード</label>
+    <input id="pw" type="password" placeholder="WiFi のパスワード">
+    <button id="save-btn" onclick="saveWifi()">WiFi を保存して再起動</button>
+    <p id="msg" class="msg"></p>
+  </div>
 
-<div class="section-box">
-  <h3>📋 登録済み WiFi（上ほど優先して接続）</h3>
-  <p class="scanning">▲▼で優先順を変更、削除で登録を消去（接続中の WiFi は削除できません）。
-  パスワードを間違えて登録した WiFi は、削除してから上の「WiFi 設定」で登録し直してください。</p>
-  <div id="saved-list"><p class="scanning">読み込み中...</p></div>
-  <p id="saved-msg" class="scanning"></p>
+  <div class="section-box">
+    <h3>📋 登録済み WiFi（上ほど優先して接続）</h3>
+    <p class="scanning">▲▼で優先順を変更、削除で登録を消去（接続中の WiFi は削除できません）。
+    パスワードを間違えて登録した WiFi は、削除してから上の「WiFi 設定」で登録し直してください。</p>
+    <div id="saved-list"><p class="scanning">読み込み中...</p></div>
+    <p id="saved-msg" class="msg"></p>
+  </div>
+</div>
+
+<div id="confirm-bg" class="hidden">
+  <div id="confirm-box">
+    <p id="confirm-text" style="font-size:16px;line-height:1.6;white-space:pre-line"></p>
+    <div class="row">
+      <button class="sub-btn" onclick="closeConfirm(false)">キャンセル</button>
+      <button id="confirm-ok" onclick="closeConfirm(true)">削除する</button>
+    </div>
+  </div>
 </div>
 
 <script>
 let currentSsid = '';
+let saved = [];
+let confirmResolve = null;
+
+function esc(t) {
+  return String(t).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function setMsg(id, text, ok) {
+  const m = document.getElementById(id);
+  m.textContent = text; m.style.color = ok ? '#10b981' : '#ef4444';
+}
+async function post(url, body) {
+  const res = await fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'},
+                                credentials: 'same-origin', body: JSON.stringify(body)});
+  return {ok: res.ok, status: res.status, text: await res.text()};
+}
 
 async function init() {
   try {
@@ -190,18 +260,48 @@ async function init() {
       badge.textContent = '現在のWiFi: ' + st.ssid;
     } else if (st.wired) {
       badge.className = 'badge-connected';
-      badge.textContent = '有線LANで接続中 — 以下からWiFiを設定できます';
+      badge.textContent = '有線LANで接続中';
     } else {
       badge.className = 'badge-disconnected';
-      badge.textContent = 'WiFi未接続 — 以下からWiFiを設定してください';
+      badge.textContent = 'WiFi未接続';
     }
-    if (st.airport) {
-      document.getElementById('airport').value = st.airport;
-    }
+    if (st.airport) document.getElementById('airport').value = st.airport;
+    if (st.admin) showWifi();
   } catch(e) {
-    document.getElementById('msg').textContent = '接続エラー: ' + e;
+    setMsg('airport-msg', '接続エラー: ' + e, false);
   }
+}
+
+async function saveAirport() {
+  const btn = document.getElementById('airport-btn');
+  btn.disabled = true; btn.textContent = '保存中...';
+  try {
+    const r = await post('/save-airport', {airport: document.getElementById('airport').value});
+    setMsg('airport-msg', r.text, r.ok);
+    if (!r.ok) { btn.disabled = false; btn.textContent = '空港を保存して再起動'; }
+  } catch(e) {
+    setMsg('airport-msg', 'エラー: ' + e, false);
+    btn.disabled = false; btn.textContent = '空港を保存して再起動';
+  }
+}
+
+function openWifi() {
+  document.getElementById('wifi-open-btn').classList.add('hidden');
+  document.getElementById('login-box').classList.remove('hidden');
+  document.getElementById('admin-pw').focus();
+}
+
+async function login() {
+  const r = await post('/login', {password: document.getElementById('admin-pw').value});
+  if (r.ok) { showWifi(); } else { setMsg('login-msg', r.text, false); }
+}
+
+function showWifi() {
+  document.getElementById('wifi-open-btn').classList.add('hidden');
+  document.getElementById('login-box').classList.add('hidden');
+  document.getElementById('wifi-area').classList.remove('hidden');
   loadSSIDs();
+  loadSaved();
 }
 
 async function loadSSIDs() {
@@ -209,31 +309,24 @@ async function loadSSIDs() {
   const sel    = document.getElementById('ssid-select');
   status.textContent = '🔄 スキャン中...';
   try {
-    const ssids = await fetch('/scan').then(r => r.json());
+    const ssids = await fetch('/scan', {credentials: 'same-origin'}).then(r => r.json());
     sel.innerHTML = '';
-    if (ssids.length === 0 && !currentSsid) {
-      status.textContent = '⚠️ SSIDが見つかりません。手入力を選択してください。';
-      const manual = document.createElement('option');
-      manual.value = '__manual__'; manual.textContent = '手入力';
-      sel.appendChild(manual);
-    } else {
-      status.textContent = '';
-      if (currentSsid) {
-        const cur = document.createElement('option');
-        cur.value = currentSsid;
-        cur.textContent = currentSsid + ' (現在接続中)';
-        sel.appendChild(cur);
-      }
-      ssids.filter(s => s !== currentSsid).forEach(ssid => {
-        const opt = document.createElement('option');
-        opt.value = ssid; opt.textContent = ssid;
-        sel.appendChild(opt);
-      });
-      const manual = document.createElement('option');
-      manual.value = '__manual__'; manual.textContent = '手入力（リストにない場合）';
-      sel.appendChild(manual);
+    status.textContent = ssids.length || currentSsid ? '' : '⚠️ SSIDが見つかりません。手入力を選択してください。';
+    if (currentSsid) {
+      const cur = document.createElement('option');
+      cur.value = currentSsid; cur.textContent = currentSsid + ' (現在接続中)';
+      sel.appendChild(cur);
     }
+    ssids.filter(s => s !== currentSsid).forEach(ssid => {
+      const opt = document.createElement('option');
+      opt.value = ssid; opt.textContent = ssid;
+      sel.appendChild(opt);
+    });
+    const manual = document.createElement('option');
+    manual.value = '__manual__'; manual.textContent = '手入力（リストにない場合）';
+    sel.appendChild(manual);
     sel.style.display = 'block';
+    onSelectChange();
   } catch(e) {
     status.textContent = 'スキャン失敗。手入力で入力してください。';
     document.getElementById('manual-ssid').style.display = 'block';
@@ -247,71 +340,31 @@ function onSelectChange() {
 
 function getSSID() {
   const sel = document.getElementById('ssid-select');
-  return sel.value === '__manual__'
-    ? document.getElementById('manual-ssid').value
-    : sel.value;
+  return sel.value === '__manual__' ? document.getElementById('manual-ssid').value : sel.value;
 }
 
-async function save() {
-  const airport = document.getElementById('airport').value;
-  const ssid    = getSSID();
-  const pw      = document.getElementById('pw').value.trim();
+async function saveWifi() {
+  const ssid = getSSID().trim();
+  const pw   = document.getElementById('pw').value.trim();
+  if (!ssid || !pw) { setMsg('msg', 'SSID とパスワードを入力してください', false); return; }
   const btn = document.getElementById('save-btn');
-  const msg = document.getElementById('msg');
-  btn.disabled = true;
-  btn.textContent = '保存中...';
-  msg.className = '';
-  msg.textContent = '';
+  btn.disabled = true; btn.textContent = '保存中...';
   try {
-    if (ssid && pw) {
-      const res = await fetch('/save', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ ssid, pw, airport })
-      });
-      const text = await res.text();
-      if (res.ok) {
-        msg.className = 'ok';
-        msg.style.color = '#10b981';
-      } else {
-        msg.className = 'err';
-        msg.style.color = '#ef4444';
-        btn.disabled = false;
-        btn.textContent = '保存して再起動';
-      }
-      msg.textContent = text;
-    } else {
-      const res = await fetch('/save-airport', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ airport })
-      });
-      const text = await res.text();
-      msg.style.color = res.ok ? '#10b981' : '#ef4444';
-      msg.textContent = text;
-      if (!res.ok) {
-        btn.disabled = false;
-        btn.textContent = '保存して再起動';
-      }
-    }
+    const r = await post('/save', {ssid, pw, airport: document.getElementById('airport').value});
+    setMsg('msg', r.text, r.ok);
+    if (!r.ok) { btn.disabled = false; btn.textContent = 'WiFi を保存して再起動'; }
   } catch(e) {
-    msg.style.color = '#ef4444';
-    msg.textContent = 'エラー: ' + e;
-    btn.disabled = false;
-    btn.textContent = '保存して再起動';
+    setMsg('msg', 'エラー: ' + e, false);
+    btn.disabled = false; btn.textContent = 'WiFi を保存して再起動';
   }
-}
-
-let saved = [];
-
-function esc(t) {
-  return String(t).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
 async function loadSaved() {
   const box = document.getElementById('saved-list');
   try {
-    saved = await fetch('/wifi/list').then(r => r.json());
+    const res = await fetch('/wifi/list', {credentials: 'same-origin'});
+    if (!res.ok) { box.innerHTML = '<p class="scanning">パスワードの有効期限切れです。再読み込みしてください</p>'; return; }
+    saved = await res.json();
   } catch(e) {
     box.innerHTML = '<p class="scanning">読み込み失敗</p>'; return;
   }
@@ -346,22 +399,31 @@ async function move(i, d) {
   const j = i + d;
   if (j < 0 || j >= normal.length) return;
   [normal[i], normal[j]] = [normal[j], normal[i]];
-  const res = await fetch('/wifi/order', {method: 'POST', headers: {'Content-Type': 'application/json'},
-                                          body: JSON.stringify({uuids: normal.map(w => w.uuid)})});
-  document.getElementById('saved-msg').textContent = await res.text();
+  const r = await post('/wifi/order', {uuids: normal.map(w => w.uuid)});
+  setMsg('saved-msg', r.text, r.ok);
   loadSaved();
 }
 
+// ブラウザ標準の confirm() は QR 読取アプリ内ブラウザ等で表示されないことがあるため、画面内の確認表示を使う
+function askConfirm(text) {
+  document.getElementById('confirm-text').textContent = text;
+  document.getElementById('confirm-bg').classList.remove('hidden');
+  return new Promise(resolve => { confirmResolve = resolve; });
+}
+function closeConfirm(ok) {
+  document.getElementById('confirm-bg').classList.add('hidden');
+  if (confirmResolve) { confirmResolve(ok); confirmResolve = null; }
+}
+
 async function removeWifi(w) {
-  if (!confirm('「' + w.ssid + '」の登録を削除しますか？')) return;
-  const res = await fetch('/wifi/delete', {method: 'POST', headers: {'Content-Type': 'application/json'},
-                                           body: JSON.stringify({uuid: w.uuid})});
-  document.getElementById('saved-msg').textContent = await res.text();
+  const ok = await askConfirm('「' + w.ssid + '」の登録を削除します。\\nこの WiFi には自動でつながらなくなります。本当に削除しますか？');
+  if (!ok) { setMsg('saved-msg', '削除を取り消しました', true); return; }
+  const r = await post('/wifi/delete', {uuid: w.uuid});
+  setMsg('saved-msg', r.text, r.ok);
   loadSaved();
 }
 
 init();
-loadSaved();
 </script>
 </body></html>"""
 
@@ -409,16 +471,38 @@ def status():
         "connected": connected,
         "ssid": ssid,
         "wired": wired,
+        "admin": bool(session.get("admin")),
         "airport": cfg.get("airport", "centrair")
     }))
 
 
+@app.route("/login", methods=["POST"])
+def login():
+    now = time.time()
+    if now < _login_fail["until"]:
+        return f"失敗が続いたため {int(_login_fail['until'] - now)} 秒間ロック中です", 429
+    pw = str((request.get_json(silent=True) or {}).get("password", ""))
+    if hmac.compare_digest(pw.encode(), _admin_password().encode()):
+        _login_fail["count"] = 0
+        session.permanent = True
+        session["admin"] = True
+        return "OK"
+    _login_fail["count"] += 1
+    if _login_fail["count"] >= 5:   # 5 回失敗で 60 秒ロック（4 桁の総当たり対策）
+        _login_fail["count"] = 0
+        _login_fail["until"] = now + 60
+        return "パスワードが違います（5回失敗したため60秒ロックします）", 403
+    return "パスワードが違います", 403
+
+
 @app.route("/scan")
+@admin_required
 def scan():
     return _no_cache(jsonify(_scan_ssids()))
 
 
 @app.route("/wifi/list")
+@admin_required
 def wifi_list():
     try:
         return _no_cache(jsonify(_saved_wifi()))
@@ -428,6 +512,7 @@ def wifi_list():
 
 
 @app.route("/wifi/delete", methods=["POST"])
+@admin_required
 def wifi_delete():
     uuid = (request.get_json(silent=True) or {}).get("uuid", "")
     target = next((w for w in _saved_wifi() if w["uuid"] == uuid), None)
@@ -443,6 +528,7 @@ def wifi_delete():
 
 
 @app.route("/wifi/order", methods=["POST"])
+@admin_required
 def wifi_order():
     """登録済み WiFi（設定用テザリング以外）の優先度を、並び順どおりに 100, 90, 80 … と付け直す"""
     uuids = (request.get_json(silent=True) or {}).get("uuids", [])
@@ -470,6 +556,7 @@ _reboot_scheduled = False
 
 
 @app.route("/save", methods=["POST"])
+@admin_required
 def save():
     global _reboot_scheduled
     if _reboot_scheduled:
