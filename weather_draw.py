@@ -185,8 +185,9 @@ def draw_today_title_bar(
         right_edge = x + w - 8
 
     if status_surf:
+        # 天気更新 / IP / CPU は下の表の一番上の罫線（y + h + 4）に寄せる
         screen.blit(status_surf, (right_edge - status_w,
-                                  y + (h - status_surf.get_height()) // 2))
+                                  y + h + 2 - status_surf.get_height()))
 
 
 ALERT_BANNER_H = 44
