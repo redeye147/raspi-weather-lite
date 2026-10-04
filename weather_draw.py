@@ -181,13 +181,14 @@ def draw_today_title_bar(
         qr_y = y + (h - qr_surf.get_height()) // 2
         screen.blit(qr_surf, (qr_x, qr_y))
         right_edge = qr_x - 6
+        # 天気更新 / IP / CPU は文字の下端（ベースライン）を QR コードの底辺にそろえる
+        status_y = qr_y + qr_surf.get_height() - status_font.get_ascent()
     else:
         right_edge = x + w - 8
+        status_y = y + (h - status_surf.get_height()) // 2 if status_surf else y
 
     if status_surf:
-        # 天気更新 / IP / CPU は下の表の一番上の罫線（y + h + 4）に寄せる
-        screen.blit(status_surf, (right_edge - status_w,
-                                  y + h + 2 - status_surf.get_height()))
+        screen.blit(status_surf, (right_edge - status_w, status_y))
 
 
 ALERT_BANNER_H = 44
