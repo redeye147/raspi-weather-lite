@@ -60,10 +60,11 @@ def test_sunset_boundary(fixed_sun):
     assert is_night(at(2026, 10, 20, 18, 0), 0, 0) is True
 
 
-def test_night_item_falls_back_to_fixed_hours_without_location():
-    """緯度経度が無いときは 21〜翌3時を夜とする"""
-    assert weather_draw._is_night_item({"hour": "21"}, None, None) is True
-    assert weather_draw._is_night_item({"hour": "18"}, None, None) is False
+@pytest.mark.parametrize("hour, night", [("06", False), ("09", False), ("12", False), ("15", False),
+                                         ("18", True), ("21", True), ("00", True), ("03", True)])
+def test_night_columns_are_fixed(hour, night):
+    """月アイコンは 18・21・00・03 時の列に一律（日の出・日の入りの時刻によらない）"""
+    assert weather_draw._is_night_item({"hour": hour}) is night
 
 
 def _table_times():

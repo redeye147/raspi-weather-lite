@@ -21,7 +21,6 @@ from utils import (
     get_japanese_weekday,
     get_font,
     make_qr_surface,
-    is_night,
     sun_times,
 )
 
@@ -31,8 +30,8 @@ ICON_DIR = os.path.join(BASE_DIR, "weather_icons")
 # 天気概況の最大行数（読みやすさ優先で短く）
 OVERVIEW_MAX_LINES = 3
 
-# 緯度経度が渡されない場合の夜間（月アイコン）時刻
-NIGHT_HOURS = {"21", "22", "23", "00", "01", "02", "03"}
+# 月アイコンにする列（日の出・日の入りの時刻によらず一律）
+NIGHT_HOURS = {"18", "21", "00", "03"}
 
 
 def _wrap_text(text, font, max_width):
@@ -122,10 +121,8 @@ def _draw_sun_markers(screen, hourly, latitude, longitude, margin_x, col_w,
                 screen.blit(label, (left_x, cy - label.get_height() // 2))
 
 
-def _is_night_item(item, latitude, longitude) -> bool:
-    dt = item.get("datetime")
-    if latitude is not None and longitude is not None and isinstance(dt, datetime.datetime):
-        return is_night(dt, latitude, longitude)
+def _is_night_item(item) -> bool:
+    """18・21・00・03 時の列は夜（月アイコン）。日の出・日の入りの時刻では判断しない"""
     return item["hour"] in NIGHT_HOURS
 
 ROW_LABELS = ["日付", "時刻", "天気", "降水量", "気温", "風速"]
@@ -336,7 +333,7 @@ def draw_weather(
 
             elif row_idx == 2:
                 icon_code = item["code"]
-                if _is_night_item(item, latitude, longitude) and icon_code.startswith("1") and len(icon_code) == 3:
+                if _is_night_item(item) and icon_code.startswith("1") and len(icon_code) == 3:
                     # 晴れ系 1xx は夜間に月アイコン 7xx へ
                     icon_code = str(int(icon_code) + 600)
                 elif icon_code == "100":
