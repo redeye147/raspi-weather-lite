@@ -11,50 +11,16 @@ import time
 from functools import wraps
 import json
 import os
-import re
 import subprocess
 
-REPO_DIR = os.path.dirname(os.path.abspath(__file__))
-CACHE_DIR = os.path.join(REPO_DIR, "cache")
-
-
-def _session_key() -> bytes:
-    """セッション鍵。ファイルに保存して、設定画面のサービスが再起動してもログイン状態が続くようにする
-    （「更新」で update.sh が wifi-portal を再起動しても、進み具合を見続けられるように）"""
-    path = os.path.join(CACHE_DIR, "portal_secret.key")
-    try:
-        with open(path, "rb") as f:
-            key = f.read()
-        if len(key) >= 32:
-            return key
-    except OSError:
-        pass
-    key = secrets.token_bytes(32)
-    try:
-        os.makedirs(CACHE_DIR, exist_ok=True)
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "wb") as f:
-            f.write(key)
-    except OSError:
-        pass
-    return key
-
-
 app = Flask(__name__)
-app.secret_key = _session_key()
+# セッション鍵は起動ごとに作り直す（再起動するとパスワードの入力し直しになる）
+app.secret_key = secrets.token_bytes(32)
 app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Strict",
                   PERMANENT_SESSION_LIFETIME=1800)
 
 DEFAULT_ADMIN_PASSWORD = "1048"
-DEFAULT_UPDATE_PASSWORD = "10481048n"
 _login_fail = {"count": 0, "until": 0.0}
-_update_fail = {"count": 0, "until": 0.0}
-
-# 「更新」ボタン：update.sh は最後に wifi-portal 自身を再起動するので、このプロセスの子として動かすと
-# 途中で一緒に止まる。systemd-run で別のサービス（signage-update）として切り離して実行する
-UPDATE_UNIT = "signage-update"
-UPDATE_LOG = os.path.join(CACHE_DIR, "update.log")
-UPDATE_RC = os.path.join(CACHE_DIR, "update.rc")
 
 CONFIG_PATH = "/home/pi/raspi-weather-lite/config.json"
 
@@ -80,27 +46,6 @@ def _save_config(updates: dict) -> None:
 def _admin_password() -> str:
     """WiFi 設定のパスワード。config.json の admin_password（無ければ初期値 1048）"""
     return str(_load_config().get("admin_password") or DEFAULT_ADMIN_PASSWORD)
-
-
-def _update_password() -> str:
-    """更新ボタンのパスワード。config.json の update_password（無ければ初期値 10481048n）"""
-    return str(_load_config().get("update_password") or DEFAULT_UPDATE_PASSWORD)
-
-
-def _check_password(given: str, expected: str, fail: dict):
-    """パスワード照合（5 回失敗で 60 秒ロック）。戻り値 (OK か, エラー文, HTTP コード)"""
-    now = time.time()
-    if now < fail["until"]:
-        return False, f"失敗が続いたため {int(fail['until'] - now)} 秒間ロック中です", 429
-    if hmac.compare_digest(given.encode(), expected.encode()):
-        fail["count"] = 0
-        return True, "", 200
-    fail["count"] += 1
-    if fail["count"] >= 5:   # 4 桁の総当たり対策
-        fail["count"] = 0
-        fail["until"] = now + 60
-        return False, "パスワードが違います（5回失敗したため60秒ロックします）", 403
-    return False, "パスワードが違います", 403
 
 
 def admin_required(f):
@@ -144,7 +89,7 @@ SETUP_HOTSPOT_CON = "setup-hotspot"
 
 
 def _split_terse(line: str) -> list:
-    r"""nmcli -t の1行を ':' で分割（値の中の '\:' はエスケープされた ':'）"""
+    """nmcli -t の1行を ':' で分割（値の中の '\:' はエスケープされた ':'）"""
     out, cur, i = [], "", 0
     while i < len(line):
         c = line[i]
@@ -226,8 +171,6 @@ HTML = """<!DOCTYPE html>
   #confirm-box .row { display: flex; gap: 10px; }
   #confirm-box .row button { flex: 1; }
   #confirm-ok { background: #b91c1c; }
-  #update-log { background: #0f1220; color: #cbd5e1; font-size: 11px; padding: 8px; border-radius: 8px;
-                max-height: 320px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 </style>
 </head><body>
 <h2>天気サイネージ 設定</h2>
@@ -250,19 +193,6 @@ HTML = """<!DOCTYPE html>
 
 <button id="wifi-open-btn" class="sub-btn" onclick="openWifi()">🔒 WiFi 設定（パスワードが必要）</button>
 <button class="sub-btn" onclick="location.href='/diag'">🩺 診断（本体の状態を見る・パスワードが必要）</button>
-<button id="update-open-btn" class="sub-btn" onclick="openUpdate()">⬆ ソフトウェア更新（パスワードが必要）</button>
-
-<div id="update-box" class="section-box hidden">
-  <h3>⬆ ソフトウェア更新</h3>
-  <p class="scanning">GitHub から最新版を取得して入れ替えます（SSH での <code>bash update.sh</code> と同じ）。
-  数分かかります。途中で天気画面とこの設定画面が一度再起動します（この画面は自動で再接続します）。</p>
-  <div id="update-login">
-    <input id="update-pw" type="password" placeholder="更新用パスワード" onkeydown="if(event.key==='Enter')startUpdate()">
-    <button id="update-btn" onclick="startUpdate()">更新を開始</button>
-  </div>
-  <p id="update-msg" class="msg"></p>
-  <pre id="update-log" class="hidden"></pre>
-</div>
 
 <div id="login-box" class="section-box hidden">
   <h3>🔒 管理パスワード</h3>
@@ -298,7 +228,7 @@ HTML = """<!DOCTYPE html>
     <p id="confirm-text" style="font-size:16px;line-height:1.6;white-space:pre-line"></p>
     <div class="row">
       <button class="sub-btn" onclick="closeConfirm(false)">キャンセル</button>
-      <button id="confirm-ok" onclick="closeConfirm(true)">OK</button>
+      <button id="confirm-ok" onclick="closeConfirm(true)">削除する</button>
     </div>
   </div>
 </div>
@@ -476,9 +406,8 @@ async function move(i, d) {
 }
 
 // ブラウザ標準の confirm() は QR 読取アプリ内ブラウザ等で表示されないことがあるため、画面内の確認表示を使う
-function askConfirm(text, okText) {
+function askConfirm(text) {
   document.getElementById('confirm-text').textContent = text;
-  document.getElementById('confirm-ok').textContent = okText || '削除する';
   document.getElementById('confirm-bg').classList.remove('hidden');
   return new Promise(resolve => { confirmResolve = resolve; });
 }
@@ -494,65 +423,6 @@ async function removeWifi(w) {
   setMsg('saved-msg', r.text, r.ok);
   loadSaved();
 }
-
-function openUpdate() {
-  document.getElementById('update-open-btn').classList.add('hidden');
-  document.getElementById('update-box').classList.remove('hidden');
-  document.getElementById('update-pw').focus();
-}
-
-let updateTimer = null;
-async function startUpdate() {
-  const pw = document.getElementById('update-pw').value;
-  if (!pw) { setMsg('update-msg', '更新用パスワードを入力してください', false); return; }
-  const ok = await askConfirm('最新版に更新します。\\n数分かかり、その間 天気画面が一度消えます。実行しますか？', '更新する');
-  if (!ok) { setMsg('update-msg', '更新を取り消しました', true); return; }
-  const btn = document.getElementById('update-btn');
-  btn.disabled = true;
-  const r = await post('/update/start', {password: pw});
-  if (!r.ok) { setMsg('update-msg', r.text, false); btn.disabled = false; return; }
-  document.getElementById('update-pw').value = '';
-  showUpdateProgress();
-}
-
-function showUpdateProgress() {
-  document.getElementById('update-open-btn').classList.add('hidden');
-  document.getElementById('update-box').classList.remove('hidden');
-  document.getElementById('update-login').classList.add('hidden');
-  document.getElementById('update-log').classList.remove('hidden');
-  setMsg('update-msg', '⏳ 更新中...', true);
-  if (!updateTimer) updateTimer = setInterval(pollUpdate, 2000);
-  pollUpdate();
-}
-
-async function pollUpdate() {
-  let st;
-  try {
-    const res = await fetch('/update/status', {credentials: 'same-origin'});
-    if (!res.ok) return;
-    st = await res.json();
-  } catch (e) {
-    setMsg('update-msg', '⏳ 設定画面が再起動中です（自動で再接続します）...', true);
-    return;
-  }
-  const log = document.getElementById('update-log');
-  const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 20;
-  log.textContent = st.log || '';
-  if (atBottom) log.scrollTop = log.scrollHeight;
-  if (st.running) { setMsg('update-msg', '⏳ 更新中...', true); return; }
-  if (st.done) {
-    clearInterval(updateTimer); updateTimer = null;
-    if (st.ok) { setMsg('update-msg', '✓ 更新が完了しました', true); }
-    else { setMsg('update-msg', '✗ 更新に失敗しました（終了コード ' + st.rc + '）。下のログを確認してください', false); }
-    document.getElementById('update-login').classList.remove('hidden');
-    document.getElementById('update-btn').disabled = false;
-  }
-}
-
-// 更新中に画面を開き直した場合は、進み具合の表示を続ける
-fetch('/update/status', {credentials: 'same-origin'}).then(r => r.ok ? r.json() : null).then(st => {
-  if (st && (st.running || (st.done && st.finished_ago < 600))) { showUpdateProgress(); }   // 終わって10分以内
-}).catch(() => {});
 
 init();
 </script>
@@ -714,95 +584,21 @@ def diag_data():
 
 @app.route("/login", methods=["POST"])
 def login():
+    now = time.time()
+    if now < _login_fail["until"]:
+        return f"失敗が続いたため {int(_login_fail['until'] - now)} 秒間ロック中です", 429
     pw = str((request.get_json(silent=True) or {}).get("password", ""))
-    ok, err, code = _check_password(pw, _admin_password(), _login_fail)
-    if not ok:
-        return err, code
-    session.permanent = True
-    session["admin"] = True
-    return "OK"
-
-
-# ==========================================
-# 更新ボタン（update.sh を実行）
-# ==========================================
-def _update_running() -> bool:
-    try:
-        st = subprocess.run(["systemctl", "is-active", UPDATE_UNIT], capture_output=True, text=True, timeout=5).stdout.strip()
-    except Exception:
-        return False
-    return st in ("active", "activating", "deactivating")
-
-
-def _version() -> str:
-    env = dict(os.environ, GIT_CONFIG_COUNT="1", GIT_CONFIG_KEY_0="safe.directory", GIT_CONFIG_VALUE_0=REPO_DIR)
-    try:
-        return subprocess.run(["git", "log", "-1", "--format=%h %cd", "--date=format:%m/%d %H:%M"],
-                              cwd=REPO_DIR, capture_output=True, text=True, timeout=5, env=env).stdout.strip()
-    except Exception:
-        return ""
-
-
-_ANSI = re.compile(r"\x1b\[[0-9;]*m")
-
-
-@app.route("/update/start", methods=["POST"])
-def update_start():
-    pw = str((request.get_json(silent=True) or {}).get("password", ""))
-    ok, err, code = _check_password(pw, _update_password(), _update_fail)
-    if not ok:
-        return err, code
-    session.permanent = True
-    session["updater"] = True
-    if _update_running():
-        return "更新中です。終わるまでお待ちください", 409
-    for p in (UPDATE_RC,):
-        try:
-            os.remove(p)
-        except OSError:
-            pass
-    os.makedirs(CACHE_DIR, exist_ok=True)
-    with open(UPDATE_LOG, "w", encoding="utf-8") as f:
-        f.write(f"更新前の版: {_version()}\n")
-    script = (f"cd {REPO_DIR} && bash update.sh >> {UPDATE_LOG} 2>&1 < /dev/null; "
-              f"rc=$?; echo \"更新後の版: $(runuser -u pi -- git -C {REPO_DIR} log -1 --format='%h %cd' --date=format:'%m/%d %H:%M')\" >> {UPDATE_LOG}; "
-              f"echo $rc > {UPDATE_RC}")
-    try:
-        r = subprocess.run(["systemd-run", f"--unit={UPDATE_UNIT}", "--collect", "--quiet",
-                            "--setenv=HOME=/root", "--setenv=TERM=dumb", "/bin/bash", "-c", script],
-                           capture_output=True, text=True, timeout=15)
-    except Exception as e:
-        return f"更新を開始できませんでした: {e}", 500
-    if r.returncode != 0:
-        return f"更新を開始できませんでした: {r.stderr.strip()[:200]}", 500
-    return "更新を開始しました"
-
-
-@app.route("/update/status")
-def update_status():
-    if not session.get("updater"):
-        return "パスワードを入力してください", 401
-    try:
-        with open(UPDATE_LOG, encoding="utf-8", errors="replace") as f:
-            log = _ANSI.sub("", f.read())
-    except OSError:
-        log = ""
-    rc, finished_ago = None, None
-    try:
-        with open(UPDATE_RC) as f:
-            rc = int(f.read().strip())
-        finished_ago = time.time() - os.path.getmtime(UPDATE_RC)
-    except (OSError, ValueError):
-        pass
-    running = _update_running()
-    return _no_cache(jsonify({
-        "running": running,
-        "done": rc is not None and not running,
-        "ok": rc == 0,
-        "rc": rc,
-        "finished_ago": finished_ago,
-        "log": "\n".join(log.splitlines()[-80:]),
-    }))
+    if hmac.compare_digest(pw.encode(), _admin_password().encode()):
+        _login_fail["count"] = 0
+        session.permanent = True
+        session["admin"] = True
+        return "OK"
+    _login_fail["count"] += 1
+    if _login_fail["count"] >= 5:   # 5 回失敗で 60 秒ロック（4 桁の総当たり対策）
+        _login_fail["count"] = 0
+        _login_fail["until"] = now + 60
+        return "パスワードが違います（5回失敗したため60秒ロックします）", 403
+    return "パスワードが違います", 403
 
 
 @app.route("/scan")
