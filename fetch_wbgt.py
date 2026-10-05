@@ -8,6 +8,8 @@ fetch_wbgt.py
 
 import datetime
 import logging
+import threading
+
 import requests
 
 from utils import JST
@@ -50,36 +52,36 @@ _HEADERS = {
 }
 
 
-def _fetch_wbgt_csv(csv_code: str) -> float | None:
-    """当日の WBGT 最高予測値を返す。取得失敗時は None。"""
+def _fetch_wbgt_csv(csv_code: str, today: str = None):
+    """当日の WBGT 最高予測値を返す。戻り値 (値 or None, 状態)。
+    状態: "ok"（今日の値あり）/ "nodata"（ファイルが無い・今日の行が無い＝提供期間外の可能性）/ "error"（通信エラー等）"""
     url = f"https://www.wbgt.env.go.jp/prev15WG/dl/yohou_{csv_code}.csv"
     try:
         r = requests.get(url, headers=_HEADERS, timeout=10)
+        if r.status_code == 404:
+            return None, "nodata"
         r.raise_for_status()
         text = r.content.decode("shift_jis", errors="replace")
-    except Exception:
-        try:
-            r = requests.get(url, headers=_HEADERS, timeout=10)
-            r.raise_for_status()
-            text = r.text
-        except Exception as e:
-            logging.warning(f"WBGT CSV 取得失敗 ({csv_code}): {e}")
-            return None
+    except Exception as e:
+        logging.warning(f"WBGT CSV 取得失敗 ({csv_code}): {e}")
+        return None, "error"
+    return parse_wbgt_csv(text, today or datetime.datetime.now(JST).strftime("%Y/%m/%d"))
 
-    today = datetime.datetime.now(JST).strftime("%Y/%m/%d")
+
+def parse_wbgt_csv(text: str, today: str):
+    """CSV から today（YYYY/MM/DD）の行の最高値を取り出す。戻り値 (値 or None, "ok" / "nodata")"""
     max_val: float | None = None
     for line in text.splitlines():
         if not line.startswith(today):
             continue
-        parts = line.split(",")
-        for p in parts[1:]:
+        for p in line.split(",")[1:]:
             try:
                 v = float(p.strip())
                 if max_val is None or v > max_val:
                     max_val = v
             except ValueError:
                 pass
-    return max_val
+    return max_val, ("ok" if max_val is not None else "nodata")
 
 
 def _fetch_alert(alert_code: str) -> bool:
@@ -97,9 +99,19 @@ def _fetch_alert(alert_code: str) -> bool:
         return False
 
 
+def level_for(wbgt):
+    """WBGT 値からバッジの表示（注意〜危険）を決める。25 未満は None（バッジなし）"""
+    if wbgt is None:
+        return None
+    for threshold, label, bg, fg in WBGT_LEVELS:
+        if wbgt >= threshold:
+            return {"label": label, "bg": bg, "fg": fg, "value": wbgt}
+    return None
+
+
 def fetch_wbgt(airport: str) -> tuple:
     """
-    (wbgt_max: float|None, alert: bool, level_info: dict|None) を返す。
+    (wbgt_max: float|None, alert: bool, level_info: dict|None, status: str) を返す。
 
     level_info = {
         "label": str,       # "危険" / "厳重警戒" / "警戒" / "注意"
@@ -107,23 +119,29 @@ def fetch_wbgt(airport: str) -> tuple:
         "fg":    (r,g,b),   # バッジ文字色
         "value": float,     # WBGT 値
     }
+    status = "ok" / "nodata"（提供期間外の可能性）/ "error"（通信エラー等）
     """
     csv_code   = _PREF_CSV.get(airport)
     alert_code = _PREF_ALERT.get(airport)
     if not csv_code:
-        return None, False, None
+        return None, False, None, "nodata"
 
-    wbgt  = _fetch_wbgt_csv(csv_code)
+    wbgt, status = _fetch_wbgt_csv(csv_code)
     alert = _fetch_alert(alert_code) if alert_code and wbgt is not None and wbgt >= 33 else False
-
-    level_info = None
-    if wbgt is not None:
-        for threshold, label, bg, fg in WBGT_LEVELS:
-            if wbgt >= threshold:
-                level_info = {"label": label, "bg": bg, "fg": fg, "value": wbgt}
-                break
+    level_info = level_for(wbgt)
 
     if wbgt is not None:
         logging.info(f"WBGT: airport={airport} value={wbgt} alert={alert} level={level_info and level_info['label']}")
+    return wbgt, alert, level_info, status
 
-    return wbgt, alert, level_info
+
+def start_fetch_in_background(airport: str, holder: dict) -> None:
+    """裏で取得して holder["result"] に (wbgt, alert, level_info, status) を入れる（取得中も時計を止めない）"""
+    def run():
+        try:
+            holder["result"] = fetch_wbgt(airport)
+        except Exception as e:
+            logging.error(f"WBGT更新失敗: {e}")
+            holder["result"] = (None, False, None, "error")
+    holder.pop("result", None)
+    threading.Thread(target=run, daemon=True).start()

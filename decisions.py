@@ -117,3 +117,36 @@ def aviation_fetch_due(now: datetime.datetime, latest_obs, last_attempt):
 def aviation_band_visible(now: datetime.datetime) -> bool:
     """帯を出す時間帯か（0:00 ちょうどに消し、6 時台の取得で再表示）"""
     return now.hour >= AVIATION_START_HOUR
+
+
+WBGT_START_HOUR = 6              # WBGT は 6 時〜23 時台だけ取得（0:00〜5:59 は取得しない）
+WBGT_INTERVAL_MIN = 60           # 通常は 1 時間ごと
+WBGT_OFF_SEASON_INTERVAL_MIN = 360   # 提供期間外（データなし）は 6 時間ごと（6・12・18 時ごろ）に確認するだけ
+WBGT_RECENT_DATA_DAYS = 2        # 直近 2 日以内に値が取れていれば、データなしは一時的とみなして 1 時間後に再確認
+
+
+def wbgt_off_season(now: datetime.datetime, last_status, last_data_at) -> bool:
+    """提供期間外とみなすか。「データなし」が返り、かつ直近 2 日以上値が取れていないとき。
+    期間（例 4/22〜10/21）は年ごとに変わるので日付では決めず、データの有無で判断する"""
+    if last_status != "nodata":
+        return False
+    return last_data_at is None or now - last_data_at > datetime.timedelta(days=WBGT_RECENT_DATA_DAYS)
+
+
+def wbgt_fetch_due(now: datetime.datetime, last_attempt, last_status, last_data_at) -> bool:
+    """WBGT を今取得するか。
+    - 0:00〜5:59 は取得しない
+    - 通常（値あり・通信エラー）は前回の取得から 1 時間ごと
+    - 提供期間外（wbgt_off_season）は 6 時間ごと。翌年の開始も自動で見つける
+    """
+    if now.hour < WBGT_START_HOUR:
+        return False
+    if last_attempt is None:
+        return True
+    interval = WBGT_OFF_SEASON_INTERVAL_MIN if wbgt_off_season(now, last_status, last_data_at) else WBGT_INTERVAL_MIN
+    return now - last_attempt >= datetime.timedelta(minutes=interval)
+
+
+def wbgt_badge_visible(now: datetime.datetime, data_at) -> bool:
+    """バッジ・熱中症アラートを出すか。値は「その日の最高予測」なので、取得した日のうちだけ（0:00 に消す）"""
+    return data_at is not None and data_at.date() == now.date()

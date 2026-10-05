@@ -35,13 +35,14 @@ import fb_display
 from fb_display import init_display, present
 from header import draw_header
 from weather_draw import draw_weather
-from fetch_wbgt import fetch_wbgt, WBGT_LEVELS
+from fetch_wbgt import level_for, start_fetch_in_background as start_wbgt_fetch
 from startup import boot_log, wait_time_sync, save_snapshot, load_snapshot
 from splash import run_splash
 import aviation
 from decisions import (decide_snapshot, should_fetch_2350, should_fetch_0600,
                        periodic_fetch_action, retry_base_after_failure,
-                       aviation_fetch_due, aviation_band_visible)
+                       aviation_fetch_due, aviation_band_visible,
+                       wbgt_fetch_due, wbgt_off_season, wbgt_badge_visible)
 from screens import show_ap_screen, show_hotspot_announce, draw_conn_label, show_no_dongle_screen
 from netstate import (
     get_connection_kind,
@@ -378,22 +379,28 @@ def main():
     _sunrise_date = None
     sunrise_str, sunset_str = "", ""
 
-    # WBGT 初期化（新しければ前回値。無ければ起動 20 秒後に取得）
-    wbgt_alert = args.wbgt_alert or bool(snap_or("wbgt_alert", False) and wbgt_fresh)
-    wbgt_level_info = snap_or("wbgt_level_info", None) if wbgt_fresh else None
-    wbgt_at = snap_or("wbgt_at", 0.0)
+    # WBGT 初期化。時刻が正しければ前回の値・取得状況を引き継ぐ（その日の値ならバッジを出す。
+    # 提供期間外と分かっていれば再起動しても 6 時間ごとの確認のまま）。前回が無ければ起動 20 秒後に取得
+    def _ts_to_dt(ts):
+        return datetime.datetime.fromtimestamp(ts, JST) if ts else None
+    _wbgt_snap = snap if (synced and snap) else {}
+    wbgt_alert = bool(_wbgt_snap.get("wbgt_alert", False))
+    wbgt_level_info = _wbgt_snap.get("wbgt_level_info")
+    wbgt_at = _wbgt_snap.get("wbgt_at", 0.0)                 # 最後に取得を試みた時刻
+    wbgt_status = _wbgt_snap.get("wbgt_status")              # "ok" / "nodata" / "error"
+    wbgt_data_at = _wbgt_snap.get("wbgt_data_at", 0.0)       # 最後に値が取れた時刻
+    if wbgt_status is None and wbgt_level_info:              # 旧版のスナップショット
+        wbgt_status, wbgt_data_at = "ok", wbgt_at
+    last_wbgt_attempt = _ts_to_dt(wbgt_at)
+    wbgt_not_before = time.time() + (0 if last_wbgt_attempt else DEFER_INITIAL_FETCH_S)
+    wbgt_holder = {}
     if args.wbgt_test is not None:
         v = args.wbgt_test
-        for threshold, label, bg, fg in WBGT_LEVELS:
-            if v >= threshold:
-                wbgt_level_info = {"label": label, "bg": bg, "fg": fg, "value": v}
-                break
-        wbgt_alert = wbgt_alert or (v >= 33)
+        wbgt_level_info = level_for(v)
+        wbgt_alert = v >= 33
+        wbgt_data_at = time.time()
         logging.info(f"WBGT テストモード: value={v} level={wbgt_level_info and wbgt_level_info['label']}")
-    if args.wbgt_test is not None:
-        last_wbgt_update = time.time()
-    else:
-        last_wbgt_update = wbgt_at if wbgt_fresh else time.time() - 3600 + DEFER_INITIAL_FETCH_S
+    wbgt_alert = wbgt_alert or args.wbgt_alert
 
     # 航空気象（METAR）：前回の生電文があれば起動直後から帯を出す（古すぎれば is_stale で出さない）
     aviation_state = {}
@@ -412,6 +419,7 @@ def main():
             "warning_text": warning_text, "headline_text": headline_text,
             "updated_text": updated_text, "overview_text": overview_text,
             "wbgt_alert": wbgt_alert, "wbgt_level_info": wbgt_level_info,
+            "wbgt_status": wbgt_status, "wbgt_data_at": wbgt_data_at,
             "metar_raw": aviation_state.get("raw"),
         })
 
@@ -522,17 +530,26 @@ def main():
             needs_redraw = True
             _save_state()
 
-        # WBGT 更新（1時間ごと、テスト時はスキップ）
-        if args.wbgt_test is None and time.time() - last_wbgt_update > 3600:
-            try:
-                _, wbgt_alert, wbgt_level_info = fetch_wbgt(airport)
-                if args.wbgt_alert:
-                    wbgt_alert = True
-                last_wbgt_update = wbgt_at = time.time()
-                needs_redraw = True
-                _save_state()
-            except Exception as e:
-                logging.error(f"WBGT更新失敗: {e}")
+        # WBGT 更新（6〜23 時台に 1 時間ごと。提供期間外は 6 時間ごと。裏で取得。テスト時はスキップ）
+        if (args.wbgt_test is None and "pending" not in wbgt_holder and time.time() >= wbgt_not_before
+                and wbgt_fetch_due(now, last_wbgt_attempt, wbgt_status, _ts_to_dt(wbgt_data_at))):
+            last_wbgt_attempt = now
+            wbgt_holder["pending"] = True
+            start_wbgt_fetch(airport, wbgt_holder)
+        if "result" in wbgt_holder:
+            _, _alert, _level, _status = wbgt_holder.pop("result")
+            wbgt_holder.pop("pending", None)
+            wbgt_at = time.time()
+            _was_off = wbgt_off_season(now, wbgt_status, _ts_to_dt(wbgt_data_at))
+            if _status == "ok":
+                wbgt_level_info, wbgt_alert, wbgt_data_at = _level, _alert or args.wbgt_alert, wbgt_at
+            wbgt_status = _status
+            _is_off = wbgt_off_season(now, wbgt_status, _ts_to_dt(wbgt_data_at))
+            if _is_off != _was_off:
+                logging.info("WBGT 提供期間外（データなし）→ 6 時間ごとの確認に切替" if _is_off
+                             else "WBGT データあり → 1 時間ごとの取得に戻す")
+            needs_redraw = True
+            _save_state()
 
         if time.time() - last_jma_update > 3600:
             try:
@@ -601,6 +618,8 @@ def main():
             _wait_ms(_ms_until_next_check())
             continue
 
+        # WBGT は「その日の最高予測」なので、取得した日のうちだけ出す（0:00 に消え、6 時台の取得で再表示）
+        _wbgt_today = args.wbgt_test is not None or wbgt_badge_visible(now, _ts_to_dt(wbgt_data_at))
         draw_weather(
             screen, width, height,
             hourly, daily, icon_cache, BASE_FONT,
@@ -608,8 +627,8 @@ def main():
             weather_updated_text, airport_label,
             sunrise_str, sunset_str, work_summary, cpu_text,
             fetch_ok=fetch_ok, qr_surf=qr_surf,
-            wbgt_level_info=wbgt_level_info,
-            wbgt_alert=wbgt_alert,
+            wbgt_level_info=(wbgt_level_info if _wbgt_today else None),
+            wbgt_alert=(wbgt_alert if _wbgt_today else False),
             latitude=cfg["latitude"], longitude=cfg["longitude"],
             overview_text=overview_text,
         )
@@ -618,7 +637,7 @@ def main():
         draw_header(
             screen, width, height, BASE_FONT,
             airport_label, sunrise_str, sunset_str, "", "",
-            wbgt_level_info=wbgt_level_info,
+            wbgt_level_info=(wbgt_level_info if _wbgt_today else None),
             aviation_metar=(_metar if aviation_band_visible(now)
                             and not aviation.is_stale(_metar, datetime.datetime.now(datetime.timezone.utc)) else None),
             fetch_error=not fetch_ok,
