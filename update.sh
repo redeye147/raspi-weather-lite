@@ -7,6 +7,12 @@ NC='\033[0m'
 
 REPO_DIR="/home/pi/raspi-weather-lite"
 
+# 設定画面の「更新」ボタンからは root で動く。リポジトリは pi のものなので、git は pi として実行する
+# （root で git を触ると .git に root のファイルができ、あとで pi の手動更新が失敗する）
+if [ "$(id -u)" -eq 0 ]; then
+    git() { runuser -u pi -- env HOME=/home/pi git "$@"; }
+fi
+
 echo -e "${GREEN}=== raspi-weather-lite 更新 ===${NC}"
 
 # ── [1/5] 依存パッケージ確認 ──────────────────────────────
@@ -159,7 +165,10 @@ fi
 # ── [5/5] 完了 ──────────────────────────────────────────
 echo -e "\n${GREEN}✓ 更新完了！${NC}"
 echo ""
-read -p "今すぐ再起動しますか？ [y/N]: " do_reboot
-if [[ "$do_reboot" =~ ^[Yy]$ ]]; then
-    sudo reboot
+# 設定画面の「更新」ボタンから（端末なし）で動いたときは聞かない
+if [ -t 0 ]; then
+    read -p "今すぐ再起動しますか？ [y/N]: " do_reboot
+    if [[ "$do_reboot" =~ ^[Yy]$ ]]; then
+        sudo reboot
+    fi
 fi
