@@ -192,6 +192,7 @@ HTML = """<!DOCTYPE html>
 </div>
 
 <button id="wifi-open-btn" class="sub-btn" onclick="openWifi()">🔒 WiFi 設定（パスワードが必要）</button>
+<button class="sub-btn" onclick="location.href='/diag'">🩺 診断（本体の状態を見る・パスワードが必要）</button>
 
 <div id="login-box" class="section-box hidden">
   <h3>🔒 管理パスワード</h3>
@@ -428,6 +429,97 @@ init();
 </body></html>"""
 
 
+DIAG_HTML = """<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>天気サイネージ 診断</title>
+<style>
+  body { font-family: sans-serif; padding: 16px; background: #1a1a2e; color: white; margin: 0; }
+  h2 { color: #FFD700; margin: 4px 0 2px; }
+  .sub { font-size: 13px; color: #aaa; }
+  input { width: 100%; padding: 10px; margin: 8px 0; border-radius: 8px; border: none;
+          background: #2a3048; color: white; font-size: 16px; box-sizing: border-box; }
+  button { width: 100%; padding: 12px; background: #3b82f6; color: white; border: none;
+           border-radius: 8px; font-size: 16px; margin-top: 8px; cursor: pointer; }
+  button.sub-btn { background: #374151; }
+  .box { background: #1e2233; border-radius: 10px; padding: 12px; margin-top: 12px; }
+  .hidden { display: none !important; }
+  .overall { font-size: 20px; font-weight: bold; padding: 12px; border-radius: 10px; margin-top: 12px; }
+  .ov-ok { background: #065f46; } .ov-warn { background: #854d0e; } .ov-bad { background: #991b1b; }
+  .row { display: flex; gap: 8px; padding: 9px 0; border-bottom: 1px solid #2c3350; align-items: flex-start; }
+  .row:last-child { border-bottom: none; }
+  .dot { flex: none; width: 14px; height: 14px; border-radius: 50%; margin-top: 3px; }
+  .ok .dot { background: #10b981; } .info .dot { background: #64748b; }
+  .warn .dot { background: #f59e0b; } .bad .dot { background: #ef4444; }
+  .nm { flex: none; width: 7.5em; font-size: 14px; color: #cbd5e1; }
+  .val { flex: 1; min-width: 0; font-size: 14px; overflow-wrap: anywhere; }
+  .det { font-size: 12px; color: #fbbf24; margin-top: 2px; }
+  .bad .det { color: #fca5a5; }
+  .code { font-size: 11px; color: #94a3b8; }
+  .log { font-family: monospace; font-size: 11px; color: #cbd5e1; white-space: pre-wrap;
+         overflow-wrap: anywhere; border-bottom: 1px solid #2c3350; padding: 4px 0; }
+  .msg { color: #ef4444; font-weight: bold; }
+</style>
+</head><body>
+<h2>🩺 天気サイネージ 診断</h2>
+<div class="sub" id="head">見るだけのページです（設定は変わりません）</div>
+
+<div id="login-box" class="box hidden">
+  <div>🔒 管理パスワード</div>
+  <input id="admin-pw" type="password" inputmode="numeric" placeholder="パスワード" onkeydown="if(event.key==='Enter')login()">
+  <button onclick="login()">開く</button>
+  <p id="login-msg" class="msg"></p>
+</div>
+
+<div id="area" class="hidden">
+  <div id="overall" class="overall"></div>
+  <div class="box" id="items"></div>
+  <div class="box"><div class="sub">直近の警告・エラー（新しい順・最大10件）</div><div id="problems"></div></div>
+  <div class="sub" id="foot" style="margin-top:10px"></div>
+  <button onclick="load()">🔄 再診断</button>
+</div>
+<button class="sub-btn" onclick="location.href='/'">← 設定画面に戻る</button>
+
+<script>
+function esc(t) {
+  return String(t).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+async function login() {
+  const res = await fetch('/login', {method: 'POST', headers: {'Content-Type': 'application/json'},
+              credentials: 'same-origin', body: JSON.stringify({password: document.getElementById('admin-pw').value})});
+  if (res.ok) { load(); } else { document.getElementById('login-msg').textContent = await res.text(); }
+}
+async function load() {
+  const res = await fetch('/diag/data', {credentials: 'same-origin'});
+  if (res.status === 401) {
+    document.getElementById('login-box').classList.remove('hidden');
+    document.getElementById('area').classList.add('hidden');
+    return;
+  }
+  document.getElementById('login-box').classList.add('hidden');
+  document.getElementById('area').classList.remove('hidden');
+  document.getElementById('overall').textContent = '診断中...';
+  const d = await res.json();
+  const ov = document.getElementById('overall');
+  const label = {ok: '🟢 正常', warn: '🟡 注意あり', bad: '🔴 異常あり'}[d.overall];
+  ov.className = 'overall ov-' + d.overall;
+  ov.textContent = label + (d.codes.length ? '　' + d.codes.join(' / ') : '');
+  document.getElementById('head').textContent = d.airport + ' / ' + d.ip;
+  document.getElementById('items').innerHTML = d.items.map(i =>
+    '<div class="row ' + i.level + '"><div class="dot"></div><div class="nm">' + esc(i.name) +
+    '<div class="code">' + esc(i.code) + '</div></div><div class="val">' + esc(i.value) +
+    (i.detail ? '<div class="det">' + esc(i.detail) + '</div>' : '') + '</div></div>').join('');
+  document.getElementById('problems').innerHTML = d.problems.length
+    ? d.problems.map(l => '<div class="log">' + esc(l) + '</div>').join('')
+    : '<div class="sub">なし</div>';
+  document.getElementById('foot').textContent = '版: ' + d.version + '　診断: ' + d.checked_at;
+}
+load();
+</script>
+</body></html>"""
+
+
 # ==========================================
 # キャプティブポータル自動検出（Android / iOS / Windows）
 # ==========================================
@@ -474,6 +566,19 @@ def status():
         "admin": bool(session.get("admin")),
         "airport": cfg.get("airport", "centrair")
     }))
+
+
+@app.route("/diag")
+def diag_page():
+    return _no_cache(make_response(DIAG_HTML))
+
+
+@app.route("/diag/data")
+@admin_required
+def diag_data():
+    """診断結果（見るだけ）。ログの中身・IP などが含まれるのでパスワード入力済みのときだけ返す"""
+    import diagnostics
+    return _no_cache(jsonify(diagnostics.diagnose()))
 
 
 @app.route("/login", methods=["POST"])
