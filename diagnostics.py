@@ -259,7 +259,7 @@ def _wbgt_item(now, snap):
     data_dt = datetime.datetime.fromtimestamp(data_ts, JST) if data_ts else None
     if wbgt_off_season(now, status, data_dt):
         return _item("WBGT", "WBGT（熱中症）", INFO, "提供期間外（データなし）",
-                     f"6時間ごとに確認中（最後の確認 {_hm(attempt)}）")
+                     f"1日1回（朝6時）確認中（最後の確認 {_hm(attempt)}）")
     if not attempt:
         return _item("WBGT", "WBGT（熱中症）", WARN, "データなし", "まだ取得していません")
     age = now.timestamp() - attempt

@@ -142,20 +142,20 @@ def test_in_season_day_is_18_fetches():
     assert tried[0] == "06:00" and tried[-1] == "23:00" and len(tried) == 18    # 以前は夜も含めて 24 回
 
 
-def test_off_season_day_is_3_checks():
-    """期間外：6・12・18 時の 3 回だけ（以前は 1 日 24 回、失敗時は 48 回）"""
+def test_off_season_day_is_1_check():
+    """期間外：朝 6 時の 1 回だけ（以前は 1 日 24 回、失敗時は 48 回）"""
     tried, _ = _day_attempts((12, 1), "nodata", at(10, 21, 18), last=at(11, 30, 18))
-    assert tried == ["06:00", "12:00", "18:00"]
+    assert tried == ["06:00"]
 
 
 def test_season_end_and_start():
-    """10/21 で終わり → 10/22・10/23 は 1 時間ごとに再確認 → 10/24 から 6 時間ごと。
+    """10/21 で終わり → 10/22・10/23 は 1 時間ごとに再確認 → 10/24 から朝 6 時の 1 日 1 回。
     翌年 4/22 の朝 6 時の確認で値が取れたら 1 時間ごとに戻る"""
     last_data = at(10, 21, 23)
     t22, last = _day_attempts((10, 22), "nodata", last_data, last=last_data)
     assert len(t22) == 18
     t24, _ = _day_attempts((10, 24), "nodata", last_data, last=at(10, 23, 23))
-    assert t24 == ["06:00", "12:00", "18:00"]
+    assert t24 == ["06:00"]
     next_year_last = at(4, 21, 18)
     assert wbgt_fetch_due(at(4, 22, 6), next_year_last, "nodata", None) is True
     assert wbgt_fetch_due(at(4, 22, 7), at(4, 22, 6), "ok", at(4, 22, 6)) is True

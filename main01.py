@@ -390,7 +390,7 @@ def main():
     wbgt_data_at = _wbgt_snap.get("wbgt_data_at", 0.0)       # 最後に値が取れた時刻
     if wbgt_status is None and wbgt_level_info:              # 旧版のスナップショット
         wbgt_status, wbgt_data_at = "ok", wbgt_at
-    # 起動のたびに 1 回は取り直す（20 秒後。夜間は 6 時まで待つ）。以降は 1 時間ごと／期間外は 6 時間ごと
+    # 起動のたびに 1 回は取り直す（20 秒後。夜間は 6 時まで待つ）。以降は 1 時間ごと／期間外は 1 日 1 回（朝 6 時）
     last_wbgt_attempt = None
     wbgt_not_before = time.time() + DEFER_INITIAL_FETCH_S
     wbgt_holder = {}
@@ -530,7 +530,7 @@ def main():
             needs_redraw = True
             _save_state()
 
-        # WBGT 更新（6〜23 時台に 1 時間ごと。提供期間外は 6 時間ごと。裏で取得。テスト時はスキップ）
+        # WBGT 更新（6〜23 時台に 1 時間ごと。提供期間外は 1 日 1 回（朝 6 時）。裏で取得。テスト時はスキップ）
         if (args.wbgt_test is None and "pending" not in wbgt_holder and time.time() >= wbgt_not_before
                 and wbgt_fetch_due(now, last_wbgt_attempt, wbgt_status, _ts_to_dt(wbgt_data_at))):
             last_wbgt_attempt = now
@@ -546,7 +546,7 @@ def main():
             wbgt_status = _status
             _is_off = wbgt_off_season(now, wbgt_status, _ts_to_dt(wbgt_data_at))
             if _is_off != _was_off:
-                logging.info("WBGT 提供期間外（データなし）→ 6 時間ごとの確認に切替" if _is_off
+                logging.info("WBGT 提供期間外（データなし）→ 1日1回（朝6時）の確認に切替" if _is_off
                              else "WBGT データあり → 1 時間ごとの取得に戻す")
             needs_redraw = True
             _save_state()

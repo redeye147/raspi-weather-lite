@@ -121,7 +121,6 @@ def aviation_band_visible(now: datetime.datetime) -> bool:
 
 WBGT_START_HOUR = 6              # WBGT は 6 時〜23 時台だけ取得（0:00〜5:59 は取得しない）
 WBGT_INTERVAL_MIN = 60           # 通常は 1 時間ごと
-WBGT_OFF_SEASON_INTERVAL_MIN = 360   # 提供期間外（データなし）は 6 時間ごと（6・12・18 時ごろ）に確認するだけ
 WBGT_RECENT_DATA_DAYS = 2        # 直近 2 日以内に値が取れていれば、データなしは一時的とみなして 1 時間後に再確認
 
 
@@ -137,14 +136,15 @@ def wbgt_fetch_due(now: datetime.datetime, last_attempt, last_status, last_data_
     """WBGT を今取得するか。
     - 0:00〜5:59 は取得しない
     - 通常（値あり・通信エラー）は前回の取得から 1 時間ごと
-    - 提供期間外（wbgt_off_season）は 6 時間ごと。翌年の開始も自動で見つける
+    - 提供期間外（wbgt_off_season）は 1 日 1 回（朝 6 時、その日まだ確認していなければ）。翌年の開始も自動で見つける
     """
     if now.hour < WBGT_START_HOUR:
         return False
     if last_attempt is None:
         return True
-    interval = WBGT_OFF_SEASON_INTERVAL_MIN if wbgt_off_season(now, last_status, last_data_at) else WBGT_INTERVAL_MIN
-    return now - last_attempt >= datetime.timedelta(minutes=interval)
+    if wbgt_off_season(now, last_status, last_data_at):
+        return last_attempt.date() != now.date()
+    return now - last_attempt >= datetime.timedelta(minutes=WBGT_INTERVAL_MIN)
 
 
 def wbgt_badge_visible(now: datetime.datetime, data_at) -> bool:
