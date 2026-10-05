@@ -25,6 +25,18 @@ _PREF_CSV = {
     "naha":     "okinawa",   # 沖縄
 }
 
+# WBGT 予測の地点（気象庁アメダスの地点番号と同じ）。CSV には県内の複数地点が並ぶので、空港に最も近い地点の行を使う
+# （2026-10-05 に気象庁のアメダス地点表と各 CSV から距離を計算して選定）
+_WBGT_POINT = {
+    "centrair": "51311",     # 南知多 17.9km
+    "haneda":   "44136",     # 江戸川臨海 12.4km
+    "narita":   "45081",     # 香取 14.7km
+    "kanku":    "62131",     # 熊取 11.2km
+    "chitose":  "21111",     # 厚真 16.8km
+    "fukuoka":  "82182",     # 福岡 7.1km
+    "naha":     "91197",     # 那覇 4.2km
+}
+
 # 警戒アラートHTML検索用（2桁数字都道府県コード）
 _PREF_ALERT = {
     "centrair": "23",
@@ -52,9 +64,9 @@ _HEADERS = {
 }
 
 
-def _fetch_wbgt_csv(csv_code: str, today: str = None):
+def _fetch_wbgt_csv(csv_code: str, point: str, today: str = None):
     """当日の WBGT 最高予測値を返す。戻り値 (値 or None, 状態)。
-    状態: "ok"（今日の値あり）/ "nodata"（ファイルが無い・今日の行が無い＝提供期間外の可能性）/ "error"（通信エラー等）"""
+    状態: "ok"（今日の値あり）/ "nodata"（ファイルが無い・地点や今日の列が無い＝提供期間外の可能性）/ "error"（通信エラー等）"""
     url = f"https://www.wbgt.env.go.jp/prev15WG/dl/yohou_{csv_code}.csv"
     try:
         r = requests.get(url, headers=_HEADERS, timeout=10)
@@ -65,23 +77,31 @@ def _fetch_wbgt_csv(csv_code: str, today: str = None):
     except Exception as e:
         logging.warning(f"WBGT CSV 取得失敗 ({csv_code}): {e}")
         return None, "error"
-    return parse_wbgt_csv(text, today or datetime.datetime.now(JST).strftime("%Y/%m/%d"))
+    return parse_wbgt_csv(text, point, today or datetime.datetime.now(JST).strftime("%Y%m%d"))
 
 
-def parse_wbgt_csv(text: str, today: str):
-    """CSV から today（YYYY/MM/DD）の行の最高値を取り出す。戻り値 (値 or None, "ok" / "nodata")"""
-    max_val: float | None = None
-    for line in text.splitlines():
-        if not line.startswith(today):
+def parse_wbgt_csv(text: str, point: str, today: str):
+    """環境省の予測 CSV から、地点 point の今日（today = YYYYMMDD）の最高値を取り出す。
+    1行目: ,,2026100521,2026100524,2026100603,…（年月日時。24 は当日の 24 時）
+    2行目〜: 地点番号,更新時刻, 190, 190, …（WBGT の 10 倍）
+    今日の列は「これから先の 3 時間ごと」なので、今日の残りの最高予測になる。戻り値 (値 or None, "ok" / "nodata")"""
+    lines = [l for l in text.splitlines() if l.strip()]
+    if not lines:
+        return None, "nodata"
+    times = [t.strip() for t in lines[0].split(",")[2:]]
+    for line in lines[1:]:
+        cols = [c.strip() for c in line.split(",")]
+        if cols[0] != point:
             continue
-        for p in line.split(",")[1:]:
-            try:
-                v = float(p.strip())
-                if max_val is None or v > max_val:
-                    max_val = v
-            except ValueError:
-                pass
-    return max_val, ("ok" if max_val is not None else "nodata")
+        vals = []
+        for t, v in zip(times, cols[2:]):
+            if t.startswith(today):
+                try:
+                    vals.append(int(v) / 10)
+                except ValueError:
+                    pass
+        return (max(vals), "ok") if vals else (None, "nodata")
+    return None, "nodata"
 
 
 def _fetch_alert(alert_code: str) -> bool:
@@ -122,16 +142,17 @@ def fetch_wbgt(airport: str) -> tuple:
     status = "ok" / "nodata"（提供期間外の可能性）/ "error"（通信エラー等）
     """
     csv_code   = _PREF_CSV.get(airport)
+    point      = _WBGT_POINT.get(airport)
     alert_code = _PREF_ALERT.get(airport)
-    if not csv_code:
+    if not csv_code or not point:
         return None, False, None, "nodata"
 
-    wbgt, status = _fetch_wbgt_csv(csv_code)
+    wbgt, status = _fetch_wbgt_csv(csv_code, point)
     alert = _fetch_alert(alert_code) if alert_code and wbgt is not None and wbgt >= 33 else False
     level_info = level_for(wbgt)
 
     if wbgt is not None:
-        logging.info(f"WBGT: airport={airport} value={wbgt} alert={alert} level={level_info and level_info['label']}")
+        logging.info(f"WBGT: airport={airport} point={point} value={wbgt} alert={alert} level={level_info and level_info['label']}")
     return wbgt, alert, level_info, status
 
 

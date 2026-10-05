@@ -456,6 +456,7 @@ DIAG_HTML = """<!DOCTYPE html>
   .val { flex: 1; min-width: 0; font-size: 14px; overflow-wrap: anywhere; }
   .det { font-size: 12px; color: #fbbf24; margin-top: 2px; }
   .bad .det { color: #fca5a5; }
+  .ok .det, .info .det { color: #94a3b8; }
   .code { font-size: 11px; color: #94a3b8; }
   .log { font-family: monospace; font-size: 11px; color: #cbd5e1; white-space: pre-wrap;
          overflow-wrap: anywhere; border-bottom: 1px solid #2c3350; padding: 4px 0; }

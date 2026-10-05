@@ -13,17 +13,38 @@ def at(m, d, hh, mm=0):
     return datetime.datetime(2026, m, d, hh, mm, tzinfo=JST)
 
 
-# ---------------------------------------------------------------- CSV の読み取り
-CSV = "Date,Time,0,3,6\n2026/10/04,x,24.0,26.5,25.0\n2026/10/05,x,22.0,27.3,,\n"
+# ---------------------------------------------------------------- CSV の読み取り（2026-10-05 19:25 に 132 で取得した千葉県の実データ）
+CSV = """,,2026100521,2026100524,2026100603,2026100606,2026100609,2026100612,2026100615,2026100618,2026100621,2026100624,2026100703
+45061,2026/10/05 19:25, 190, 190, 190, 190, 220, 230, 250, 190, 180, 170, 160
+45081,2026/10/05 19:25, 200, 200, 190, 190, 210, 220, 210, 200, 180, 160, 150
+45106,2026/10/05 19:25, 190, 190, 190, 200, 220, 240, 250, 210, 190, 170, 160
+"""
 
 
-def test_parse_today_max():
-    assert fw.parse_wbgt_csv(CSV, "2026/10/05") == (27.3, "ok")
+def test_parse_point_today_max():
+    """地点 45081（香取）の 10/5 の列（21・24 時）だけの最高値。値は 10 倍で書かれている"""
+    assert fw.parse_wbgt_csv(CSV, "45081", "20261005") == (20.0, "ok")
 
 
-def test_parse_no_row_for_today_is_nodata():
-    """ファイルはあるが今日の行が無い（提供期間外の可能性）"""
-    assert fw.parse_wbgt_csv(CSV, "2026/10/22") == (None, "nodata")
+def test_parse_tomorrow():
+    """翌日として読むと 03〜24 時の最高（香取 10/6 は 12 時の 22.0℃）"""
+    assert fw.parse_wbgt_csv(CSV, "45081", "20261006") == (22.0, "ok")
+
+
+def test_parse_other_point_is_not_mixed():
+    """以前は県内の全地点が混ざる（しかも日付の行を探していて一度も読めていなかった）"""
+    assert fw.parse_wbgt_csv(CSV, "45106", "20261006") == (25.0, "ok")
+    assert fw.parse_wbgt_csv(CSV, "45081", "20261006")[0] == 22.0
+
+
+def test_parse_no_point_or_no_today_is_nodata():
+    assert fw.parse_wbgt_csv(CSV, "99999", "20261005") == (None, "nodata")
+    assert fw.parse_wbgt_csv(CSV, "45081", "20261022") == (None, "nodata")    # 今日の列が無い（提供期間外の可能性）
+    assert fw.parse_wbgt_csv("", "45081", "20261005") == (None, "nodata")
+
+
+def test_every_airport_has_a_point():
+    assert set(fw._WBGT_POINT) == set(fw._PREF_CSV)
 
 
 class _Resp:
@@ -37,7 +58,7 @@ class _Resp:
 
 def test_csv_404_is_nodata(monkeypatch):
     monkeypatch.setattr(fw.requests, "get", lambda *a, **k: _Resp(404))
-    assert fw._fetch_wbgt_csv("chiba") == (None, "nodata")
+    assert fw._fetch_wbgt_csv("chiba", "45081") == (None, "nodata")
 
 
 def test_network_error_is_error_and_requested_once(monkeypatch):
@@ -46,12 +67,12 @@ def test_network_error_is_error_and_requested_once(monkeypatch):
     def boom(*a, **k):
         calls.append(1); raise OSError("timeout")
     monkeypatch.setattr(fw.requests, "get", boom)
-    assert fw._fetch_wbgt_csv("chiba") == (None, "error")
+    assert fw._fetch_wbgt_csv("chiba", "45081") == (None, "error")
     assert len(calls) == 1                     # 以前は失敗すると同じ URL をもう1回取りに行っていた
 
 
 def test_fetch_wbgt_returns_status(monkeypatch):
-    monkeypatch.setattr(fw, "_fetch_wbgt_csv", lambda code: (29.0, "ok"))
+    monkeypatch.setattr(fw, "_fetch_wbgt_csv", lambda code, point: (29.0, "ok"))
     wbgt, alert, level, status = fw.fetch_wbgt("narita")
     assert (wbgt, alert, level["label"], status) == (29.0, False, "警戒", "ok")
 
@@ -60,6 +81,23 @@ def test_fetch_wbgt_returns_status(monkeypatch):
 def test_level_for(v, label):
     lv = fw.level_for(v)
     assert (lv and lv["label"]) == label
+
+
+def test_fetch_uses_airport_point(monkeypatch):
+    class R:
+        status_code = 200
+        content = CSV.encode("shift_jis")
+        def raise_for_status(self): pass
+    monkeypatch.setattr(fw.requests, "get", lambda *a, **k: R())
+    monkeypatch.setattr(fw, "_fetch_alert", lambda code: False)
+    import datetime as _d
+    class FakeDT(_d.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return _d.datetime(2026, 10, 6, 6, 0, tzinfo=tz)
+    monkeypatch.setattr(fw.datetime, "datetime", FakeDT)
+    wbgt, alert, level, status = fw.fetch_wbgt("narita")
+    assert (wbgt, level, status) == (22.0, None, "ok")        # 25℃未満はバッジなし
 
 
 # ---------------------------------------------------------------- 提供期間外の判断

@@ -122,7 +122,22 @@ def test_disk_and_memory():
 def test_recent_problems_newest_first(tmp_path):
     log = tmp_path / "log.txt"
     log.write_text("a | INFO | x\nb | WARNING | first\nc | ERROR | second\n", encoding="utf-8")
-    assert dg.recent_problems(str(log)) == ["c | ERROR | second", "b | WARNING | first"]
+    assert dg.recent_problems(str(log)) == ["c ERROR second", "b WARNING first"]
+
+
+@pytest.mark.parametrize("line, short", [
+    ("2026-10-05 15:40:10,078 | WARNING | METAR 取得失敗 (RJAA): HTTPSConnectionPool(host='aviationweather.gov', port=443): "
+     "Max retries exceeded (Caused by NameResolutionError(\"Failed to resolve 'aviationweather.gov'\"))",
+     "10/05 15:40 WARNING METAR 取得失敗 (RJAA): 名前解決エラー（DNS）"),
+    ("2026-10-05 11:12:31,346 | WARNING | WBGT CSV 取得失敗 (chiba): HTTPSConnectionPool(host='www.wbgt.env.go.jp', port=443): Read timed out.",
+     "10/05 11:12 WARNING WBGT CSV 取得失敗 (chiba): タイムアウト"),
+    ("2026-10-04 18:39:21,377 | WARNING | Retrying (Retry(total=2)) after connection broken by "
+     "'ConnectionResetError(104, 'Connection reset by peer')': /bosai/forecast/data/overview_forecast/120000.json",
+     "10/04 18:39 WARNING 再試行（/bosai/forecast/data/overview_forecast/120000.json）: 接続が切れた"),
+    ("2026-10-05 06:00:01,000 | ERROR | JMA更新失敗: KeyError 'x'", "10/05 06:00 ERROR JMA更新失敗: KeyError 'x'"),
+])
+def test_summarize_problem(line, short):
+    assert dg.summarize_problem(line) == short
 
 
 def test_collect_does_not_crash_off_pi():

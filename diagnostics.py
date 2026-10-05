@@ -107,6 +107,36 @@ def _git_version():
         return ""
 
 
+# よくある通信エラーは要点だけにする（長い例外文はスマホで読みにくい）
+_ERROR_HINTS = [
+    ("Failed to resolve", "名前解決エラー（DNS）"), ("NameResolutionError", "名前解決エラー（DNS）"),
+    ("timed out", "タイムアウト"), ("Connection reset", "接続が切れた"),
+    ("Connection refused", "接続を拒否された"), ("Network is unreachable", "ネットワークに届かない"),
+]
+
+
+def summarize_problem(line: str) -> str:
+    """ログ1行を「10/05 15:40 WARNING METAR 取得失敗 (RJAA): 名前解決エラー（DNS）」のように短くする"""
+    parts = [p.strip() for p in line.split("|", 2)]
+    if len(parts) < 3:
+        return line[:200]
+    when, level, msg = parts
+    try:
+        when = datetime.datetime.strptime(when[:16], "%Y-%m-%d %H:%M").strftime("%m/%d %H:%M")
+    except ValueError:
+        pass
+    for key, hint in _ERROR_HINTS:
+        if key in msg:
+            if msg.startswith("Retrying"):            # requests の自動再試行（どの URL かを残す）
+                msg = f"再試行（{msg.rsplit(': ', 1)[-1].strip()}）: {hint}"
+            else:
+                msg = f"{msg.split(':', 1)[0]}: {hint}"
+            break
+    else:
+        msg = msg if len(msg) <= 160 else msg[:160] + "…"
+    return f"{when} {level} {msg}"
+
+
 def recent_problems(log_path=LOG_FILE, limit=10):
     """ログの WARNING / ERROR の行を新しい順に最大 limit 件（今日のファイル → 前日のファイル）"""
     paths = [log_path]
@@ -119,7 +149,7 @@ def recent_problems(log_path=LOG_FILE, limit=10):
                 lines = [l.rstrip("\n") for l in f if "| WARNING |" in l or "| ERROR |" in l]
         except OSError:
             continue
-        found.extend(reversed(lines))
+        found.extend(summarize_problem(l) for l in reversed(lines))
         if len(found) >= limit:
             break
     return found[:limit]

@@ -379,8 +379,7 @@ def main():
     _sunrise_date = None
     sunrise_str, sunset_str = "", ""
 
-    # WBGT 初期化。時刻が正しければ前回の値・取得状況を引き継ぐ（その日の値ならバッジを出す。
-    # 提供期間外と分かっていれば再起動しても 6 時間ごとの確認のまま）。前回が無ければ起動 20 秒後に取得
+    # WBGT 初期化。時刻が正しければ前回の値・取得状況を引き継ぐ（その日の値ならバッジを出す）
     def _ts_to_dt(ts):
         return datetime.datetime.fromtimestamp(ts, JST) if ts else None
     _wbgt_snap = snap if (synced and snap) else {}
@@ -391,8 +390,9 @@ def main():
     wbgt_data_at = _wbgt_snap.get("wbgt_data_at", 0.0)       # 最後に値が取れた時刻
     if wbgt_status is None and wbgt_level_info:              # 旧版のスナップショット
         wbgt_status, wbgt_data_at = "ok", wbgt_at
-    last_wbgt_attempt = _ts_to_dt(wbgt_at)
-    wbgt_not_before = time.time() + (0 if last_wbgt_attempt else DEFER_INITIAL_FETCH_S)
+    # 起動のたびに 1 回は取り直す（20 秒後。夜間は 6 時まで待つ）。以降は 1 時間ごと／期間外は 6 時間ごと
+    last_wbgt_attempt = None
+    wbgt_not_before = time.time() + DEFER_INITIAL_FETCH_S
     wbgt_holder = {}
     if args.wbgt_test is not None:
         v = args.wbgt_test
