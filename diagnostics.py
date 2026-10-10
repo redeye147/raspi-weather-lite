@@ -5,6 +5,7 @@ diagnostics.py
 """
 
 import datetime
+import glob
 import json
 import os
 import shutil
@@ -88,6 +89,38 @@ def _wifi_signal():
             except (ValueError, IndexError):
                 return parts[0][2:], None
     return None, None
+
+
+def _display_info():
+    """画面出力の装置。fb0 の大きさ（無ければ None）と、HDMI 端子ごとの接続状態"""
+    fb0 = None
+    try:
+        with open("/sys/class/graphics/fb0/virtual_size") as f:
+            fb0 = f.read().strip().replace(",", "×")
+    except OSError:
+        pass
+    hdmi = {}
+    for path in sorted(glob.glob("/sys/class/drm/card*-HDMI-A-*/status")):
+        try:
+            with open(path) as f:
+                hdmi[path.split("/")[-2].split("-", 1)[1]] = f.read().strip()
+        except OSError:
+            pass
+    return {"fb0": fb0, "hdmi": hdmi}
+
+
+def recent_starts(log_path=LOG_FILE, minutes=10, now=None):
+    """直近 minutes 分にログへ「main01 開始」が何回出たか（起動の失敗を繰り返していないかの目安）"""
+    now = now or datetime.datetime.now()
+    since = (now - datetime.timedelta(minutes=minutes)).strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        with open(log_path, "rb") as f:
+            f.seek(0, os.SEEK_END)
+            f.seek(max(0, f.tell() - 200_000))
+            tail = f.read().decode("utf-8", errors="replace").splitlines()
+    except OSError:
+        return 0
+    return sum(1 for l in tail if "main01 開始" in l and l[:19] >= since)
 
 
 def _local_ip():
@@ -189,6 +222,8 @@ def collect() -> dict:
         "icao": AIRPORT_CONFIG.get(airport, {}).get("icao"),
         "interval_hours": float(cfg.get("interval_hours", 2.0)),
         "service": _service_info(),
+        "display": _display_info(),
+        "recent_starts": recent_starts(),
         "conn_kind": get_connection_kind(),
         "ssid": ssid, "signal": signal, "ip": _local_ip(),
         "ntp_synced": _run(["timedatectl", "show", "-p", "NTPSynchronized", "--value"]),
@@ -300,11 +335,28 @@ def evaluate(info: dict, now: datetime.datetime) -> dict:
     elif svc["active"] != "active":
         items.append(_item("SVC", "表示プログラム", BAD, f"停止中（{svc['active']}/{svc['sub']}）",
                            "天気画面が止まっています。sudo systemctl restart main01"))
+    elif (info.get("recent_starts") or 0) >= 3:
+        # プロセスは動いているが、中で起動に失敗してやり直しを繰り返している（例：HDMI 未検出で描画先がない）
+        items.append(_item("SVC", "表示プログラム", BAD,
+                           f"起動に失敗し続けています（直近10分で {info['recent_starts']} 回起動）",
+                           "天気画面が出ていません。下の「直近の警告・エラー」と「画面出力」を確認"))
     else:
         restarts = svc.get("restarts", 0)
         items.append(_item("SVC", "表示プログラム", WARN if restarts else OK,
                            f"稼働中 {_uptime(svc.get('uptime_s'))}",
                            f"異常終了からの自動再起動 {restarts} 回（ログを確認）" if restarts else ""))
+
+    disp = info.get("display")
+    if disp is not None:
+        connected = [k for k, v in disp.get("hdmi", {}).items() if v == "connected"]
+        if disp.get("fb0"):
+            items.append(_item("DSP", "画面出力", OK, f"fb0 {disp['fb0']}" + (f"・{'/'.join(connected)} 接続" if connected else "")))
+        elif connected:
+            items.append(_item("DSP", "画面出力", OK, f"{'/'.join(connected)} 接続"))
+        else:
+            items.append(_item("DSP", "画面出力", BAD, "画面出力なし（HDMI 未検出）",
+                               "テレビの電源・入力切替・HDMI ケーブルを確認して再起動（sudo reboot）。"
+                               "テレビが消えていても起動できる設定は README「トラブルシューティング」"))
 
     kind, sig = info.get("conn_kind"), info.get("signal")
     if kind == "wifi":

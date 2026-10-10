@@ -670,21 +670,32 @@ def main():
 
 
 def run_forever():
-    backoff = 5
+    """main() が例外で止まったら作り直す。続けて失敗するときは間隔を 5→10→20→40→60 秒と延ばし、
+    ログファイルにも残す（診断ページの「直近の警告・エラー」に出るように。journal だけだと見えない）"""
+    fails, last_err = 0, None
     while True:
+        started = time.monotonic()
+        err = None
         try:
             main()
             print("main() exited unexpectedly. restarting...", flush=True)
+            err = "main() が終了"
         except KeyboardInterrupt:
             print("KeyboardInterrupt: exiting.", flush=True)
             raise
-        except Exception:
+        except Exception as e:
             print("FATAL ERROR", flush=True)
             traceback.print_exc()
+            err = f"{type(e).__name__}: {e}"
         try:
             pygame.quit()
         except Exception:
             pass
+        fails = 0 if time.monotonic() - started > 600 else fails + 1   # 10 分以上動いていたら数え直す
+        backoff = min(5 * 2 ** max(fails - 1, 0), 60)
+        if err != last_err or fails % 10 == 1:                         # 同じエラーは 10 回に 1 回だけ記録
+            logging.error(f"表示プログラムが停止（{fails}回目）→ {backoff}秒後に再起動: {err}")
+        last_err = err
         time.sleep(backoff)
 
 

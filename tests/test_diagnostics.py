@@ -24,6 +24,7 @@ def healthy(**over):
                  "wbgt_status": "ok", "wbgt_data_at": ts(11, 40),
                  "wbgt_level_info": {"label": "注意", "value": 26.1},
                  "metar_raw": "RJAA 050300Z 02005KT 9999 FEW020 22/15 Q1018"},
+        "display": {"fb0": "1920×1080", "hdmi": {"HDMI-A-1": "connected"}}, "recent_starts": 1,
         "version": "main 9ce2603", "problems": [],
     }
     info.update(over)
@@ -37,7 +38,7 @@ def item(result, code):
 def test_all_ok():
     r = dg.evaluate(healthy(), NOW)
     assert r["overall"] == "ok" and r["codes"] == []
-    assert [i["code"] for i in r["items"]] == ["SVC", "NET", "NTP", "WX", "JMA", "WBGT", "AVI", "TMP", "PWR", "SYS"]
+    assert [i["code"] for i in r["items"]] == ["SVC", "DSP", "NET", "NTP", "WX", "JMA", "WBGT", "AVI", "TMP", "PWR", "SYS"]
     assert item(r, "AVI")["value"].startswith("RJAA 12:00 観測")
     assert "注意 26.1℃" in item(r, "WBGT")["value"]
 
@@ -144,3 +145,27 @@ def test_collect_does_not_crash_off_pi():
     """Pi 以外（vcgencmd・nmcli が無い）でも落ちずに判定まで通る"""
     r = dg.evaluate(dg.collect(), NOW)
     assert r["overall"] in ("ok", "warn", "bad")
+
+
+def test_restart_loop_is_bad_even_if_process_is_active():
+    """2026-10-11 の 132：HDMI 未検出で描画先がなく、プロセスは active のまま 5 秒おきに起動をやり直していた"""
+    r = dg.evaluate(healthy(recent_starts=40, display={"fb0": None, "hdmi": {"HDMI-A-1": "disconnected"}}), NOW)
+    assert item(r, "SVC")["level"] == "bad" and "起動に失敗し続けて" in item(r, "SVC")["value"]
+    assert item(r, "DSP")["level"] == "bad" and "HDMI 未検出" in item(r, "DSP")["value"]
+    assert {"SVC", "DSP"} <= set(r["codes"])
+
+
+def test_display_ok_with_fb0_or_connected_hdmi():
+    assert item(dg.evaluate(healthy(display={"fb0": None, "hdmi": {"HDMI-A-1": "connected"}}), NOW), "DSP")["level"] == "ok"
+    assert item(dg.evaluate(healthy(display={"fb0": "1920×1080", "hdmi": {}}), NOW), "DSP")["level"] == "ok"
+
+
+def test_recent_starts_counts_only_last_10_minutes(tmp_path):
+    log = tmp_path / "log.txt"
+    log.write_text("\n".join([
+        "2026-10-11 07:30:00,000 | INFO | [boot] 起動後 1.0s main01 開始",
+        "2026-10-11 07:50:00,000 | INFO | [boot] 起動後 2.0s main01 開始",
+        "2026-10-11 07:54:00,000 | INFO | [boot] 起動後 3.0s main01 開始",
+        "2026-10-11 07:55:00,000 | INFO | 起動: airport=narita",
+    ]), encoding="utf-8")
+    assert dg.recent_starts(str(log), now=datetime.datetime(2026, 10, 11, 7, 56)) == 2
