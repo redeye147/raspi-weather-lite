@@ -200,6 +200,24 @@ def test_aviation_without_any_data_keeps_trying_every_2_min():
     assert _tries(10, None, range(7, 42)) == [7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31, 33, 35, 37, 39, 40]
 
 
+def test_aviation_restart_after_window_with_old_data():
+    """2026-10-11 の 132：10:24 に起動、手元は前日 16:00 の観測。10:00 の観測の取得時間（:07〜:17）を過ぎていても、
+    次の 10:40 まで待たずにすぐ取りに行く"""
+    old = at(2, 16, 0)
+    assert _tries(10, old, range(24, 40)) == [24, 27, 37]      # 起動直後にすぐ1回、その後は 10 分ごと
+    assert aviation_fetch_due(at(3, 10, 24), old, None) is not None
+
+
+def test_aviation_stale_retries_every_10_min_after_6_tries():
+    """古いままなら、2 分おき 6 回のあとは 10 分ごと（1 時間に最大 6 回 + 6 回）"""
+    assert _tries(10, at(3, 9, 0), range(7, 40)) == [7, 9, 11, 13, 15, 17, 27, 37]
+
+
+def test_aviation_previous_obs_is_not_stale():
+    """1 つ前の観測（9:30）が取れていれば古いとはみなさない（従来どおり 6 回で終わり）"""
+    assert _tries(10, at(3, 9, 30), range(7, 40)) == [7, 9, 11, 13, 15, 17]
+
+
 # 2026-10-04 に成田で実測した「観測から NOAA に届くまでの分」（00 分の観測 / 30 分の観測）
 MEASURED_00 = [9, 7, 7, 10, 7, 7, 7, 8, 9, 8, 7, 7, 8, 8]
 MEASURED_30 = [10, 11, 12, 10, 11, 9, 9, 11, 11, 11, 12, 10, 12, 10]

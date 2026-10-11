@@ -80,6 +80,7 @@ AVIATION_START_HOUR = 6          # 航空気象は 6 時台から取得・表示
 AVIATION_FIRST_WAIT_MIN = {0: 7, 30: 10}
 AVIATION_RETRY_STEP_MIN = 2      # 新しい観測がまだ届いていなければ 2 分おきに取り直す
 AVIATION_MAX_ATTEMPTS = 6        # 1回の観測につき最大 6 回（例 00 分 → :07〜:17、30 分 → :40〜:50）
+AVIATION_STALE_EVERY_STEPS = 5   # 手元の観測が古いときは、6 回のあとも 5 区切り（10 分）ごとに取りに行く
 
 
 def aviation_expected_obs(now: datetime.datetime):
@@ -99,6 +100,8 @@ def aviation_fetch_due(now: datetime.datetime, latest_obs, last_attempt):
     - 期待する観測（直近の 00/30 分）がまだ無ければ、2 分ごとの区切りで1回ずつ、最大6回取得する
     - 期待する観測（またはそれより新しい観測）が取れていれば取得しない
     - まだ何も取れていない（起動直後・通信障害）ときは、6 時台以降なら 2 分ごとに取得を試みる
+    - 手元の観測が 1 つ前の観測より古い（停止・通信障害のあとの起動など）ときも、最大 6 回で諦めず
+      まず 6 回は 2 分ごと、その後は 10 分ごとに取りに行く（次の観測の取得時刻まで待たない）
     """
     mark = aviation_expected_obs(now)
     if mark is None:
@@ -109,9 +112,13 @@ def aviation_fetch_due(now: datetime.datetime, latest_obs, last_attempt):
         return None
     if latest_obs is None:
         return attempt
-    if latest_obs >= mark or attempt[1] >= AVIATION_MAX_ATTEMPTS:
+    if latest_obs >= mark:
         return None
-    return attempt
+    if attempt[1] < AVIATION_MAX_ATTEMPTS:
+        return attempt
+    stale = latest_obs < mark - datetime.timedelta(minutes=30)
+    first_for_mark = last_attempt is None or last_attempt[0] != mark   # 起動直後など、この観測ではまだ1回も取りに行っていない
+    return attempt if stale and (first_for_mark or attempt[1] % AVIATION_STALE_EVERY_STEPS == 0) else None
 
 
 def aviation_band_visible(now: datetime.datetime) -> bool:
