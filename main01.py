@@ -57,7 +57,8 @@ from netstate import (
 )
 from utils import get_sunrise_sunset_str, build_work_summary, JST, get_local_ip, make_qr_surface, get_target_datetimes
 from utils import wait_ms as _wait_ms
-from utils import get_cpu_temp, format_cpu_status
+from utils import get_cpu_temp, format_cpu_status, clear_font_cache
+from header import _plane_cache
 from jma_alerts import get_overview_and_warning, active_warning_names
 
 from config import AIRPORT_CONFIG, LOG_FILE, ICON_DIR, BASE_FONT
@@ -142,6 +143,10 @@ def main():
     print("=== MAIN START ===", flush=True)
     boot_log("main01 開始")
     setup_logging()
+    # run_forever は失敗後に pygame.quit() してから main() をやり直す。前回のフォント・描画の
+    # キャッシュを使うと Segmentation fault で落ちるので、毎回捨ててから始める
+    clear_font_cache()
+    _plane_cache.clear()
 
     import json as _json
     _cfg_path = os.path.join(os.path.dirname(__file__), "config.json")

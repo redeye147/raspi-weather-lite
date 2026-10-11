@@ -40,6 +40,11 @@ def get_font(path: str, size: int, bold: bool = False) -> pygame.font.Font:
     return _font_cache[key]
 
 
+def clear_font_cache() -> None:
+    """pygame.quit() のあとに古いフォントを使うと落ちる（Segmentation fault）ので、作り直す前に捨てる"""
+    _font_cache.clear()
+
+
 # =========================
 # セッション（リトライ付き）
 # =========================

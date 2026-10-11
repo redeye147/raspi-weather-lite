@@ -7,3 +7,5 @@ requests
 psutil
 qrcode
 pillow
+flask
+numpy

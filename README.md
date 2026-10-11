@@ -896,12 +896,17 @@ Pi Zero W で CPU が常時 50〜80% になっていた事例の調査結果で�
 プログラムの部品に決まった入力を与え、期待どおりの答えが返るかを自動で確かめます。**Pi では実行しません**（PC や CI で実行）。
 
 ```bash
-pip install -r tests/requirements.txt
-python3 -m pytest          # 例: 107 passed in 0.4s
+pip install -r tests/requirements.txt   # 画面の描画テストには日本語フォント（fonts-ipafont-gothic）も必要
+python3 -m pytest          # 例: 255 passed in 6s
 ```
+
+**GitHub で自動実行（GitHub Actions）**：push・プルリクエストのたびに、GitHub のサーバーで Python 3.11（Bookworm）と 3.13（Trixie）の両方でテストとシェルスクリプトの構文チェック（`bash -n`）を実行します（`.github/workflows/tests.yml`）。結果はリポジトリの「Actions」タブで確認でき、失敗するとコミットに ✗ が付きます。公開リポジトリなので無料です。
 
 | ファイル | 対象 | 主な確認内容 |
 |------|------|------|
+| `tests/test_main_smoke.py` | 表示プログラム全体（`main01.main`） | 画面・通信を偽物にして、前回データなしの起動→取得→保存、前回データでの即表示、取得失敗でも落ちない、`pygame.quit()` 後のやり直しで落ちない（古いフォントのキャッシュで Segmentation fault していたのをこのテストで発見・修正） |
+| `tests/test_render.py` | 画面の描画（`draw_weather`・`draw_header`） | 1920×1080・1366×768・1280×720 で、普段の画面と「いちばん詰まる」画面（熱中症アラート・危険バッジ・長い警報と概況・通信エラー・航空気象の帯）が下端・右端からはみ出さない、赤帯が描かれている、警報の文字が枠の外に出ない、週間の気温が列に収まる（このテストで 1280×720 の警報のはみ出し・1366/1280 の気温のはみ出しを発見・修正） |
+| `tests/test_portal.py` | 設定画面（`wifi_portal`） | 画面の JavaScript の構文（node）、パスワード・config での変更・5回でロック、保護された読み書きはログイン必須、登録済み WiFi の読み取り（SSID に `:`、優先度順、テザリングは最後）、接続中の WiFi は削除しない |
 | `tests/test_connection.py` | 接続の判定（`netstate.parse_connection_kind` / `ipv4_devices`） | WiFi 優先・有線のみ・IPv6 だけは未接続・DHCP 待ち・テザリング・SSID に `:` |
 | `tests/test_night.py` | 昼夜の計算（`utils.is_night`）・月アイコンの列・マーク位置（`weather_draw._time_to_col`） | 空港・季節ごとの昼夜、日の出 6:00 ちょうど・日の入りちょうどの境界、月アイコンは 18・21・00・03時の列、表の範囲外 |
 | `tests/test_warnings.py` | 警報の解析（`jma_alerts.active_warning_names`） | 気象庁コード→名称（過去のずれの再発防止）、解除の除外、特別警報→警報→注意報の順、未知コード |

@@ -129,6 +129,17 @@ ROW_LABELS = ["日付", "時刻", "天気", "降水量", "気温", "風速"]
 WEEK_ROW_LABELS = ["日付", "天気", "降水確率", "気温：最高／最低"]
 
 
+def week_temp_font_size(base_font_path, max_t, min_t, bold, avail_w) -> int:
+    """週間の気温「35℃／-10℃」が列（avail_w）に収まる文字の大きさ。22 から順に小さくし、最小 14"""
+    for size in (22, 20, 18, 16, 14):
+        w = (get_font(base_font_path, size, bold=bold).size(f"{max_t}℃")[0]
+             + get_font(base_font_path, size).size("／")[0]
+             + get_font(base_font_path, size).size(f"{min_t}℃")[0])
+        if w <= avail_w:
+            return size
+    return 14
+
+
 def draw_today_title_bar(
     screen,
     x, y, w, h,
@@ -480,9 +491,10 @@ def draw_weather(
                         else:
                             max_color, max_bold = (0, 0, 0), False
 
-                        max_surf   = get_font(base_font_path, 22, bold=max_bold).render(f"{max_t}℃", True, max_color)
-                        slash_surf = get_font(base_font_path, 22).render("／", True, (0, 0, 0))
-                        min_surf   = get_font(base_font_path, 22).render(f"{min_t}℃", True, (0, 0, 0))
+                        tsize = week_temp_font_size(base_font_path, max_t, min_t, max_bold, col_w - 10)
+                        max_surf   = get_font(base_font_path, tsize, bold=max_bold).render(f"{max_t}℃", True, max_color)
+                        slash_surf = get_font(base_font_path, tsize).render("／", True, (0, 0, 0))
+                        min_surf   = get_font(base_font_path, tsize).render(f"{min_t}℃", True, (0, 0, 0))
 
                         sx = x + 5
                         screen.blit(max_surf,   (sx, y + 5))
@@ -537,27 +549,41 @@ def draw_weather(
 
         max_width = box_w - 20
 
-        # 1) 警報・注意報（最優先。長ければ折り返して全部出す）
-        warn_font = get_font(base_font_path, 24)
-        for line in _wrap_text(display_warning, warn_font, max_width):
-            warn_surf = warn_font.render(line, True, wcolor)
-            screen.blit(warn_surf, (box_x + 10, y_line))
-            y_line += warn_surf.get_height() + 2
-        y_line += 6
-
-        # 2) 警報発令中のときのみ見出し文（解除後は古い見出しを残さない）
+        # 枠の下端に「警報更新：…」。ほかの文字はこれより上に収める（枠や画面の下にはみ出さない）
         small_font = get_font(base_font_path, 20)
-        if headline_text and has_active_warning:
-            for line in _wrap_text(headline_text, small_font, max_width)[:2]:
-                head_surf = small_font.render(line, True, (0, 0, 0))
-                screen.blit(head_surf, (box_x + 10, y_line))
-                y_line += head_surf.get_height() + 4
-
         bottom = box_y + box_h - 5
         if updated_text:
             upd_surf = small_font.render(f"警報更新：{updated_text}", True, (0, 0, 0))
             bottom -= upd_surf.get_height()
             screen.blit(upd_surf, (box_x + 10, bottom))
+
+        # 1) 警報・注意報（最優先。長ければ折り返して全部出す。入りきらなければ文字を小さくし、それでも無理なら末尾を…）
+        for wsize in (24, 22, 20, 18):
+            warn_font = get_font(base_font_path, wsize)
+            wlines = _wrap_text(display_warning, warn_font, max_width)
+            if len(wlines) * (warn_font.get_height() + 2) <= bottom - 4 - y_line:
+                break
+        fit = max(1, (bottom - 4 - y_line) // (warn_font.get_height() + 2))
+        if len(wlines) > fit:
+            wlines = wlines[:fit]
+            last = wlines[-1]
+            while last and warn_font.size(last + "…")[0] > max_width:
+                last = last[:-1]
+            wlines[-1] = last + "…"
+        for line in wlines:
+            warn_surf = warn_font.render(line, True, wcolor)
+            screen.blit(warn_surf, (box_x + 10, y_line))
+            y_line += warn_surf.get_height() + 2
+        y_line += 6
+
+        # 2) 警報発令中のときのみ見出し文（解除後は古い見出しを残さない。入る行数だけ）
+        if headline_text and has_active_warning:
+            for line in _wrap_text(headline_text, small_font, max_width)[:2]:
+                head_surf = small_font.render(line, True, (0, 0, 0))
+                if y_line + head_surf.get_height() > bottom - 4:
+                    break
+                screen.blit(head_surf, (box_x + 10, y_line))
+                y_line += head_surf.get_height() + 4
 
         # 3) 天気概況（最大 OVERVIEW_MAX_LINES 行・残りスペース内。溢れたら末尾を…で切る）
         ov = _overview_outlook(overview_text)

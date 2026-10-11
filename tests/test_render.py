@@ -1,0 +1,135 @@
+"""画面の描画テスト（weather_draw.draw_weather・header.draw_header）
+
+3 つの解像度で、普段の画面と「いちばん詰まる」画面（熱中症アラート・危険バッジ・長い警報と概況・
+通信エラー・航空気象の帯）を描き、例外が出ないことと、下端・右端からはみ出さないことを確かめる。
+"""
+import datetime
+import os
+
+import numpy as np
+import pygame
+import pytest
+
+import aviation
+from config import BASE_FONT
+from fetch_wbgt import level_for
+from header import draw_header
+from utils import JST, make_qr_surface
+from weather_draw import draw_weather
+
+pytestmark = pytest.mark.skipif(not os.path.exists(BASE_FONT), reason=f"フォントが無い: {BASE_FONT}")
+
+RESOLUTIONS = [(1920, 1080), (1366, 768), (1280, 720)]
+
+
+@pytest.fixture(scope="module", autouse=True)
+def display():
+    pygame.display.init()
+    pygame.font.init()
+    yield
+
+
+def _hourly():
+    base = datetime.datetime(2026, 10, 11, 6, tzinfo=JST)
+    codes = ["100", "101", "200", "300", "313", "400", "100", "101", "302", "200"]
+    out = []
+    for i in range(10):
+        dt = base + datetime.timedelta(hours=3 * i)
+        out.append(dict(datetime=dt, date=dt.strftime("%-m/%-d"), hour=dt.strftime("%H"), code=codes[i],
+                        pop="12.5mm", temp_val=-12.3, temp="-12.3℃", wind_val=24.6, wind="24.6 m/s"))
+    return out
+
+
+def _daily():
+    # 実データの形式は「最高/最低」（fetch_weather.py）。描くときに「35℃／-10℃」になる。いちばん長くなる値で
+    return [dict(day=f"10/{11 + i}({'日月火水木金土'[i]})", code="313", pop="100%", temp="-10/-15", date="")
+            for i in range(7)]
+
+
+SCENARIOS = {
+    "普段": dict(warning_text="警報・注意報なし", headline_text="", overview_text="　晴れ。",
+                 wbgt=None, alert=False, fetch_ok=True, metar=None),
+    "いちばん詰まる": dict(
+        warning_text="大雨特別警報 / 暴風警報 / 波浪警報 / 高潮警報 / 洪水警報 / 雷注意報 / 濃霧注意報 / 乾燥注意報",
+        headline_text="千葉県では、１２日夜遅くまで土砂災害や低い土地の浸水、河川の増水や氾濫に厳重に警戒してください。" * 2,
+        overview_text="　台風第１９号が関東地方に接近しています。" * 6,
+        wbgt=33.5, alert=True, fetch_ok=False,
+        metar="RJAA 110300Z 18035G55KT 0800 +TSRA BR FEW005CB BKN010 OVC020 18/17 Q0985"),
+}
+
+
+def _render(w, h, sc):
+    screen = pygame.Surface((w, h))
+    wbgt = level_for(sc["wbgt"])
+    draw_weather(screen, w, h, _hourly(), _daily(), {}, BASE_FONT,
+                 sc["warning_text"], sc["headline_text"], "2026-10-11 05:00", "天気更新 10:24",
+                 "成田空港", "05:44", "17:09", "", "3% / 53℃",
+                 fetch_ok=sc["fetch_ok"], qr_surf=make_qr_surface("http://192.168.11.13:8080", max_size=54),
+                 wbgt_level_info=wbgt, wbgt_alert=sc["alert"], latitude=35.76, longitude=140.38,
+                 overview_text=sc["overview_text"])
+    metar = aviation.parse_metar(sc["metar"], datetime.datetime(2026, 10, 11, 3, 10, tzinfo=datetime.timezone.utc)) \
+        if sc["metar"] else None
+    draw_header(screen, w, h, BASE_FONT, "成田空港", "05:44", "17:09", "", "",
+                wbgt_level_info=wbgt, aviation_metar=metar, fetch_error=not sc["fetch_ok"])
+    return screen
+
+
+def _content_box(screen):
+    """白以外の画素がある範囲 (最下行, 最右列)。横いっぱいの赤帯（通信エラー・熱中症アラート）は右端まで
+    描くのが正しいので、右端は帯の行を除いて調べる"""
+    arr = pygame.surfarray.array3d(screen)            # (幅, 高さ, 3)
+    nonwhite = np.any(arr != 255, axis=2)
+    rows = np.where(nonwhite.any(axis=0))[0]
+    full_width = nonwhite.sum(axis=0) > screen.get_width() * 0.8
+    cols = np.where(nonwhite[:, ~full_width].any(axis=1))[0]
+    return int(rows.max()), int(cols.max())
+
+
+@pytest.mark.parametrize("w, h", RESOLUTIONS)
+@pytest.mark.parametrize("name", list(SCENARIOS))
+def test_screen_fits(w, h, name):
+    screen = _render(w, h, SCENARIOS[name])
+    bottom, right = _content_box(screen)
+    assert bottom < h - 1, f"{w}×{h}「{name}」: 下端まで描いている（はみ出しの可能性）bottom={bottom}"
+    assert right < w - 1, f"{w}×{h}「{name}」: 右端まで描いている right={right}"
+
+
+@pytest.mark.parametrize("w, h", RESOLUTIONS)
+def test_alert_and_fetch_error_are_drawn(w, h):
+    """熱中症アラートの赤帯と通信エラーの赤帯が実際に描かれている（白で上書きされていない）"""
+    arr = pygame.surfarray.array3d(_render(w, h, SCENARIOS["いちばん詰まる"]))
+    red = (arr[:, :, 0] > 150) & (arr[:, :, 1] < 60) & (arr[:, :, 2] < 60)
+    red_rows = np.where(red.sum(axis=0) > w * 0.8)[0]                # 横いっぱいの赤い行
+    assert len(red_rows) > 0
+    assert red_rows.min() < h * 0.05                                  # 最上部の通信エラーの帯
+    assert red_rows.max() > h * 0.25                                  # ヘッダーの下の熱中症アラートの帯
+
+
+@pytest.mark.parametrize("w, h", RESOLUTIONS)
+def test_warning_box_text_stays_inside_box(w, h):
+    """警報の一覧が長くても、枠の下（＝画面の下）に文字がはみ出さない（1280×720 で見出しが画面外に出ていた）"""
+    screen = _render(w, h, SCENARIOS["いちばん詰まる"])
+    arr = pygame.surfarray.array3d(screen)
+    gray_border = np.all(arr == (120, 120, 120), axis=2)                 # 警報の枠線の色
+    box_rows = np.where(gray_border.sum(axis=0) > 100)[0]                 # 枠の上辺・下辺（横線）
+    assert len(box_rows) >= 2
+    box_bottom = box_rows.max()
+    box_cols = np.where(gray_border.any(axis=1))[0]
+    below = np.any(arr[box_cols.min():box_cols.max() + 1, box_bottom + 1:] != 255, axis=2)
+    assert not below.any(), f"{w}×{h}: 警報の枠の下に文字がある"
+
+
+@pytest.mark.parametrize("w, h", RESOLUTIONS)
+@pytest.mark.parametrize("hi, lo", [(25, 17), (35, -10), (-10, -15)])
+def test_weekly_temperature_fits_column(w, h, hi, lo):
+    """週間の気温「-10℃／-15℃」が隣の列にはみ出さない（列に入るまで文字を小さくする）。普段の値は 22 のまま"""
+    from utils import get_font
+    from weather_draw import week_temp_font_size
+    margin_x = int(w * 0.05)
+    col_w = int((w - margin_x * 2) // (1 + 10))             # 時間別 10 列 + 見出し列（draw_weather と同じ）
+    size = week_temp_font_size(BASE_FONT, hi, lo, True, col_w - 10)
+    width = (get_font(BASE_FONT, size, bold=True).size(f"{hi}℃")[0] + get_font(BASE_FONT, size).size("／")[0]
+             + get_font(BASE_FONT, size).size(f"{lo}℃")[0])
+    assert width <= col_w - 10
+    if (hi, lo) == (25, 17) and w == 1920:
+        assert size == 22                                     # 1920×1080 の普段の値は今までどおり

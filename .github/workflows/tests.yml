@@ -1,0 +1,36 @@
+# push・プルリクエストのたびに自動テストを実行する（Pi では実行しない。GitHub のサーバーで動く）
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Raspberry Pi OS Bookworm は 3.11、Trixie は 3.13
+        python-version: ["3.11", "3.13"]
+    env:
+      SDL_VIDEODRIVER: dummy
+      SDL_AUDIODRIVER: dummy
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: 日本語フォント（Pi と同じ IPA ゴシック）
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq fonts-ipafont-gothic
+
+      - name: Python パッケージ
+        run: pip install -r tests/requirements.txt
+
+      - name: シェルスクリプトの構文チェック
+        run: for f in *.sh wifi_setup/*.sh; do bash -n "$f" || exit 1; done
+
+      - name: 自動テスト
+        run: python -m pytest -v

@@ -5,3 +5,15 @@ import sys
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _fresh_pygame_fonts():
+    """pygame.quit() のあとに前のテストのフォント（キャッシュ）を使うと Segmentation fault で落ちるので、
+    テストごとにキャッシュを空にして始める（本番の main() 開始時と同じ）"""
+    import utils
+    utils.clear_font_cache()
+    yield

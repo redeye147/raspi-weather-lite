@@ -89,7 +89,7 @@ SETUP_HOTSPOT_CON = "setup-hotspot"
 
 
 def _split_terse(line: str) -> list:
-    """nmcli -t の1行を ':' で分割（値の中の '\:' はエスケープされた ':'）"""
+    r"""nmcli -t の1行を ':' で分割（値の中の '\:' はエスケープされた ':'）"""
     out, cur, i = [], "", 0
     while i < len(line):
         c = line[i]
