@@ -56,6 +56,7 @@ from netstate import (
 )
 from utils import get_sunrise_sunset_str, build_work_summary, JST, get_local_ip, make_qr_surface, get_target_datetimes
 from utils import wait_ms as _wait_ms
+from utils import get_cpu_temp, format_cpu_status
 from jma_alerts import get_overview_and_warning, active_warning_names
 
 from config import AIRPORT_CONFIG, LOG_FILE, ICON_DIR, BASE_FONT
@@ -483,7 +484,7 @@ def main():
 
         if time.time() - last_cpu_update >= 10:
             cpu = psutil.cpu_percent(interval=None)
-            cpu_text = f"{cpu:.0f}%"
+            cpu_text = format_cpu_status(cpu, get_cpu_temp())   # CPU 使用率と本体温度
             last_cpu_update = time.time()
             # CPU 表示のためだけに再描画しない（全面再描画は Pi Zero W で重い）。次の分替わりで反映
 

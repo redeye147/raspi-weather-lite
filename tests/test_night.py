@@ -86,3 +86,10 @@ def test_time_to_col(hh, mm, day_offset, expected):
         assert pos is None
     else:
         assert pos == pytest.approx(expected)
+
+
+# ---------------------------------------------------------------- 画面右上の CPU 使用率・本体温度
+def test_cpu_status_with_temperature():
+    from utils import format_cpu_status
+    assert format_cpu_status(3.4, 52.6) == "3% / 53℃"
+    assert format_cpu_status(12, None) == "12%"            # 温度が読めない環境では使用率だけ

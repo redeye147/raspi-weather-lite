@@ -66,6 +66,20 @@ def session_with_retry():
 # =========================
 # IP取得
 # =========================
+def get_cpu_temp():
+    """本体（CPU）温度 ℃。読めなければ None（Pi 以外など）"""
+    try:
+        with open("/sys/class/thermal/thermal_zone0/temp") as f:
+            return int(f.read().strip()) / 1000
+    except (OSError, ValueError):
+        return None
+
+
+def format_cpu_status(cpu, temp):
+    """画面右上の CPU 使用率と本体温度（例「3% / 52℃」）。温度が読めなければ使用率だけ"""
+    return f"{cpu:.0f}%" + (f" / {temp:.0f}℃" if temp is not None else "")
+
+
 def get_last_ip_octet():
 
     try:
