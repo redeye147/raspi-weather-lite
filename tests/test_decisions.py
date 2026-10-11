@@ -4,6 +4,7 @@ import datetime
 import pytest
 
 from decisions import (decide_snapshot, periodic_fetch_action, retry_base_after_failure,
+                       startup_refresh_action, STARTUP_REFRESH_DELAY_S,
                        should_fetch_0600, should_fetch_2350,
                        aviation_expected_obs, aviation_fetch_due, aviation_band_visible)
 
@@ -116,6 +117,25 @@ def test_retry_30_minutes_after_failure():
     base = retry_base_after_failure(now, 2.0)
     assert periodic_fetch_action(now + datetime.timedelta(minutes=29), base, False, 2.0) is None
     assert periodic_fetch_action(now + datetime.timedelta(minutes=30), base, False, 2.0) == "fetch"
+
+
+# ---------------------------------------------------------------- 前回データで起動したあとの取り直し
+def test_startup_refresh_5_minutes_after_boot():
+    """2026-10-11：11:16 に再起動、前回データは 10:24 取得（2 時間以内なので即表示）。
+    以前は次の定期取得 12:24 まで古いまま → 起動 5 分後の 11:21 に取り直す"""
+    boot = at(11, 11, 16).timestamp()
+    refresh_at = boot + STARTUP_REFRESH_DELAY_S
+    assert startup_refresh_action(at(11, 11, 20), boot + 240, refresh_at, False, False) is None
+    assert startup_refresh_action(at(11, 11, 21), boot + 300, refresh_at, False, False) == "fetch"
+    assert startup_refresh_action(at(11, 11, 21), boot + 300, refresh_at, True, False) is None    # 取得中なら待つ
+
+
+def test_startup_refresh_cancelled_when_not_needed():
+    boot = at(11, 11, 16).timestamp()
+    refresh_at = boot + STARTUP_REFRESH_DELAY_S
+    assert startup_refresh_action(at(11, 11, 21), boot + 300, None, False, False) is None          # 取り直し不要の起動
+    assert startup_refresh_action(at(11, 11, 19), boot + 180, refresh_at, False, True) == "cancel"  # 先に定期取得で最新に
+    assert startup_refresh_action(at(11, 1, 5), boot + 300, refresh_at, False, False) == "cancel"   # 夜間は取得しない
 
 
 # ---------------------------------------------------------------- 一晩の流れ（main() のループと同じ順で判断）

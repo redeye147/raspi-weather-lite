@@ -69,6 +69,23 @@ def periodic_fetch_action(now: datetime.datetime, last_weather_update: datetime.
     return None
 
 
+STARTUP_REFRESH_DELAY_S = 300   # 前回データで起動したときは、起動が落ち着いた 5 分後に最新を取り直す
+
+
+def startup_refresh_action(now: datetime.datetime, now_ts: float, refresh_at, fetch_pending: bool,
+                           fetched_since_boot: bool):
+    """前回データ（2 時間以内）で即表示して起動したあとの取り直し。'fetch' / 'cancel'（不要になった）/ None（まだ）
+    - 起動 5 分後に 1 回だけ。それより前に別の取得（定期・6:00 など）で最新になっていれば取り消す
+    - 夜間（0:00〜5:59）は取得しない方針なので取り消す（6:00 の定時取得で最新になる）"""
+    if refresh_at is None:
+        return None
+    if fetched_since_boot or not (WEATHER_REFRESH_START_HOUR < now.hour <= 23):
+        return "cancel"
+    if now_ts >= refresh_at and not fetch_pending:
+        return "fetch"
+    return None
+
+
 def retry_base_after_failure(now: datetime.datetime, interval_hours: float) -> datetime.datetime:
     """取得失敗時の last_weather_update。定期取得の判断で 30 分後に再試行になるように戻す"""
     return now - datetime.timedelta(hours=interval_hours) + datetime.timedelta(minutes=30)

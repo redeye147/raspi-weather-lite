@@ -41,6 +41,7 @@ from splash import run_splash
 import aviation
 from decisions import (decide_snapshot, should_fetch_2350, should_fetch_0600,
                        periodic_fetch_action, retry_base_after_failure,
+                       STARTUP_REFRESH_DELAY_S, startup_refresh_action,
                        aviation_fetch_due, aviation_band_visible,
                        wbgt_fetch_due, wbgt_off_season, wbgt_badge_visible)
 from screens import show_ap_screen, show_hotspot_announce, draw_conn_label, show_no_dongle_screen
@@ -342,7 +343,8 @@ def main():
     updated_text  = snap_or("updated_text", "")
     overview_text = snap_or("overview_text", "")
     jma_at = snap_or("jma_at", 0.0)
-    last_jma_update = jma_at if jma_fresh else now_ts - 3600 + DEFER_INITIAL_FETCH_S
+    # 前回値が新しくても、起動 5 分後には取り直す（次の定期取得まで最大 1 時間待たない）
+    last_jma_update = (now_ts - 3600 + STARTUP_REFRESH_DELAY_S) if jma_fresh else now_ts - 3600 + DEFER_INITIAL_FETCH_S
 
     fetcher = WeatherFetcher(cfg, args)
     if weather_fresh:
@@ -434,6 +436,9 @@ def main():
         fetcher.start()
         _fetch_pending = True
         logging.info("時刻未同期のため前回データを表示しつつ天気を即取得")
+    # 前回データ（2 時間以内）で即表示したときは、起動が落ち着いた 5 分後に最新を取り直す（次の定期取得まで最大 2 時間待たない）
+    boot_ts = time.time()
+    startup_refresh_at = boot_ts + STARTUP_REFRESH_DELAY_S if (weather_fresh and not kick_fetch) else None
 
     work_summary = build_work_summary(hourly)
 
@@ -570,6 +575,14 @@ def main():
                 logging.info(f"JMA更新完了: {warning_text}")
             except Exception as e:
                 logging.error(f"JMA更新失敗: {e}")
+
+        _r = startup_refresh_action(now, time.time(), startup_refresh_at, _fetch_pending, weather_at > boot_ts)
+        if _r == "fetch":
+            fetcher.start()
+            _fetch_pending = True
+            logging.info("起動5分後の天気取得開始（前回データで表示中）")
+        if _r:
+            startup_refresh_at = None
 
         _action = periodic_fetch_action(now, last_weather_update, _fetch_pending, args.interval_hours)
         if _action == "fetch":
