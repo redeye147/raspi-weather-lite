@@ -111,6 +111,7 @@ sudo iw dev wlan0 set power_save off 2>/dev/null || true
 sudo mkdir -p /var/log/journal /etc/systemd/journald.conf.d
 sudo cp "$REPO_DIR/wifi_setup/journald-persistent.conf" /etc/systemd/journald.conf.d/99-persistent.conf
 sudo systemctl restart systemd-journald || true
+sudo journalctl --flush 2>/dev/null || true   # メモリにある今の起動のログも SD に書き出す（設定した起動の分も残す）
 sudo systemctl daemon-reload
 sudo systemctl enable main01
 sudo systemctl enable wifi-portal

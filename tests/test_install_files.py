@@ -44,3 +44,4 @@ def test_scripts_prepare_journal_dir(script):
     s = _read(script)
     assert "mkdir -p /var/log/journal /etc/systemd/journald.conf.d" in s
     assert "systemctl restart systemd-journald" in s
+    assert "journalctl --flush" in s          # 設定した起動のログも SD に書き出す（無いと次の再起動で消える）
