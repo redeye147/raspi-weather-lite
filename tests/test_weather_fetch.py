@@ -95,3 +95,47 @@ def test_fetcher_merges_jma_with_openmeteo(monkeypatch, today_1013):
     _, daily = f._result
     assert len(daily) == 5 and daily[-1]["date"] == "2026-10-18"
     assert daily[-1]["pop"] == "18%" and daily[-1]["temp"] == "20/10"
+
+
+# ---------------------------------------------------------------- 今日の天気：Open-Meteo の気象庁モデル
+def _om(days=7, pop=None):
+    return {"hourly": {"time": ["2026-10-13T06:00"], "weathercode": [1], "precipitation": [0.0],
+                       "temperature_2m": [18.4], "windspeed_10m": [7.2]},
+            "daily": {"time": [f"2026-10-{d}" for d in range(13, 13 + days)], "weathercode": [1] * days,
+                      "precipitation_probability_max": pop or [None] * days,
+                      "temperature_2m_max": [25.2] * days, "temperature_2m_min": [15.6] * days}}
+
+
+def test_openmeteo_uses_jma_model(monkeypatch):
+    urls = []
+    monkeypatch.setattr(fw.SESS, "get", lambda url, timeout=10: (urls.append(url), _Resp(_om()))[1])
+    monkeypatch.setattr(fw, "CACHE_FILE", "/nonexistent-dir/x/cache.json")
+    fw.fetch_weather_openmeteo(35.7651, 140.3854)
+    assert len(urls) == 1 and "&models=jma_seamless" in urls[0]
+
+
+def test_openmeteo_jma_model_has_no_pop(monkeypatch):
+    """気象庁モデルは降水確率を出さない（null）→「None%」ではなく「-%」。その日も捨てない"""
+    monkeypatch.setattr(fw.SESS, "get", lambda url, timeout=10: _Resp(_om()))
+    monkeypatch.setattr(fw, "CACHE_FILE", "/nonexistent-dir/x/cache.json")
+    _, daily = fw.fetch_weather_openmeteo(35.7651, 140.3854)
+    assert len(daily) == 7 and daily[0]["pop"] == "-%" and daily[0]["temp"] == "25/16"
+
+
+def test_openmeteo_falls_back_when_jma_model_fails(monkeypatch, caplog):
+    """気象庁モデルで取れなければ、指定なし（Open-Meteo の自動選択）で取り直す"""
+    urls = []
+
+    def get(url, timeout=10):
+        urls.append(url)
+        if "models=" in url:
+            raise RuntimeError("400 Bad Request")
+        return _Resp(_om(pop=[30] * 7))
+    monkeypatch.setattr(fw.SESS, "get", get)
+    monkeypatch.setattr(fw, "CACHE_FILE", "/nonexistent-dir/x/cache.json")
+    import logging
+    with caplog.at_level(logging.WARNING):
+        _, daily = fw.fetch_weather_openmeteo(35.7651, 140.3854)
+    assert len(urls) == 2 and "models=" not in urls[1]
+    assert daily[0]["pop"] == "30%"
+    assert "標準のモデルで取り直し" in caplog.text

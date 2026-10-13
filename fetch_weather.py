@@ -35,6 +35,7 @@ SESS = session_with_retry()
 # =====================================================
 # Open-Meteo取得（E61cそのまま）
 # =====================================================
+OPENMETEO_MODEL = "jma_seamless"   # 今日の天気（3 時間ごと）は気象庁の数値予報モデルを使う
 def fetch_weather_openmeteo(latitude=LATITUDE, longitude=LONGITUDE):
 
     # 既存キャッシュを読む（あれば）
@@ -60,10 +61,19 @@ def fetch_weather_openmeteo(latitude=LATITUDE, longitude=LONGITUDE):
         "&timezone=Asia/Tokyo"
     )
 
-    r = SESS.get(url, timeout=10)
-    r.raise_for_status()
-
-    data = r.json()
+    # 気象庁の数値予報モデル（日本付近は約 5km・1 時間ごとの MSM、その先は GSM）を指定して取得。
+    # 使えなかったとき（Open-Meteo 側の障害・仕様変更）は、指定なし（Open-Meteo の自動選択）で取り直す
+    try:
+        r = SESS.get(url + f"&models={OPENMETEO_MODEL}", timeout=10)
+        r.raise_for_status()
+        data = r.json()
+        if not (data.get("hourly") or {}).get("time"):
+            raise ValueError("時間ごとのデータが空")
+    except Exception as e:
+        logging.warning(f"Open-Meteo: {OPENMETEO_MODEL} で取得できず → 標準のモデルで取り直し: {e}")
+        r = SESS.get(url, timeout=10)
+        r.raise_for_status()
+        data = r.json()
 
     # -------- hourly ----------
     ht = data.get("hourly", {}) or {}
@@ -145,13 +155,13 @@ def fetch_weather_openmeteo(latitude=LATITUDE, longitude=LONGITUDE):
 
     for i, t in enumerate(d_times):
 
-        try:
-            wc   = dd["weathercode"][i]
-            pop  = dd["precipitation_probability_max"][i]
-            tmax = dd["temperature_2m_max"][i]
-            tmin = dd["temperature_2m_min"][i]
-        except:
-            continue
+        def val(key):
+            v = dd.get(key) or []
+            return v[i] if i < len(v) else None
+
+        # 気象庁モデルは降水確率を出さない（null）。値が無い項目は「-」にして、その日は捨てない
+        wc, pop = val("weathercode"), val("precipitation_probability_max")
+        tmax, tmin = val("temperature_2m_max"), val("temperature_2m_min")
 
         d = datetime.datetime.strptime(t, "%Y-%m-%d").date()
 
@@ -161,8 +171,8 @@ def fetch_weather_openmeteo(latitude=LATITUDE, longitude=LONGITUDE):
             "date": d.isoformat(),
             "day": f"{d.day}（{weekday}）",
             "code": CODE_MAPPING.get(wc, "999"),
-            "pop": f"{pop}%",
-            "temp": f"{round(tmax)}/{round(tmin)}",
+            "pop": f"{pop}%" if pop is not None else "-%",
+            "temp": f"{round(tmax)}/{round(tmin)}" if tmax is not None and tmin is not None else "-/-",
         })
 
         if len(daily) >= 7:      # 今日から 7 日分。JMA（明日から 5 日分）の補完に 6 日目まで要る。表示は 5 日（呼び出し側）
