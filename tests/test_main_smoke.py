@@ -147,3 +147,29 @@ def test_screenshot_request_saves_weather_screen(signage, tmp_path, monkeypatch)
     assert dest.exists() and not req.exists()
     assert pygame.image.load(str(dest)).get_size() == (1920, 1080)
     assert "スクリーンショットを保存" in log
+
+
+def test_network_wait_logs_details_and_retries(signage, monkeypatch):
+    """起動時にネットワークが無いと「ネットワークに接続できません」の画面で待つ。その間の状態を詳しく残し、
+    WiFi の再接続も試す。つながったら天気画面へ（2026-10-14 の 110：約 30 分つながらず、原因を調べるログが無かった）"""
+    run, _, _ = signage
+    calls = {"n": 0, "reconnect": 0}
+
+    def kind():
+        calls["n"] += 1
+        return "" if calls["n"] <= 6 else "wifi"
+    for mod in (main01, netstate):
+        monkeypatch.setattr(mod, "get_connection_kind", kind)
+    monkeypatch.setattr(main01, "network_snapshot", lambda: ["WiFi 部品(wlan0): あり down", "見えている WiFi（SSID:電波%:ch）: なし"])
+    monkeypatch.setattr(main01, "try_reconnect_wifi",
+                        lambda: (calls.__setitem__("reconnect", calls["reconnect"] + 1), "Error: No network with SSID")[1])
+    monkeypatch.setattr(main01, "NETWAIT_SNAPSHOT_EVERY_S", 0)
+    monkeypatch.setattr(main01, "NETWAIT_RECONNECT_AFTER_S", 0)
+    monkeypatch.setattr(main01, "NETWAIT_RECONNECT_EVERY_S", 0)
+    log = run(loops=20)
+    assert "起動時にネットワーク未接続" in log
+    assert "[netwait] 待機開始: WiFi 部品(wlan0): あり down" in log
+    assert "見えている WiFi（SSID:電波%:ch）: なし" in log
+    assert calls["reconnect"] >= 1 and "WiFi を探し直して再接続: Error: No network with SSID" in log
+    assert "[netwait] 待機終了（つながった状態）" in log
+    assert "天気画面を表示" in log

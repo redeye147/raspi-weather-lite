@@ -128,3 +128,53 @@ def get_setup_hotspot_ssid() -> str:
 def is_on_setup_hotspot() -> bool:
     """いま設定用テザリング（setup-hotspot）で接続しているか"""
     return get_connection_kind() == "hotspot"
+
+
+# ==========================================================
+# つながらないときの詳しい記録と再接続（2026-10-14 の 110：5:55 の再起動後に約 30 分 WiFi につながらず、
+# 原因を調べるログが無かった）
+# ==========================================================
+def _cmd(args, timeout=8) -> str:
+    try:
+        r = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+        return (r.stdout or r.stderr).strip()
+    except Exception as e:
+        return f"({type(e).__name__}: {e})"
+
+
+def network_snapshot() -> list:
+    """ネットワークの状態を、ログに 1 行ずつ残せる形で返す（パスワードは含まない）"""
+    lines = []
+    wlan0 = os.path.exists("/sys/class/net/wlan0")
+    state = ""
+    if wlan0:
+        try:
+            state = open("/sys/class/net/wlan0/operstate").read().strip()
+        except OSError:
+            state = "?"
+    lines.append(f"WiFi 部品(wlan0): {'あり ' + state if wlan0 else 'なし（WiFi が認識されていない）'}"
+                 f" / WiFi の電源: {_cmd(['nmcli', 'radio', 'wifi']) or '?'}"
+                 f" / LANケーブル: {'あり' if wired_cable_status() else 'なし'}")
+    for l in _cmd(["nmcli", "-t", "-f", "DEVICE,TYPE,STATE,CONNECTION", "device"]).splitlines():
+        lines.append(f"装置: {l}")
+    ip = _cmd(["ip", "-4", "-o", "addr", "show", "scope", "global"])
+    lines.append("IPv4: " + (" / ".join(" ".join(l.split()[1:4:2]) for l in ip.splitlines()) or "なし"))
+    saved = [l.split(":", 1)[1] for l in _cmd(["nmcli", "-t", "-f", "TYPE,NAME", "connection", "show"]).splitlines()
+             if l.startswith("802-11-wireless:")]
+    lines.append("登録済み WiFi: " + (", ".join(saved) or "なし"))
+    seen = _cmd(["nmcli", "-t", "-f", "SSID,SIGNAL,CHAN", "device", "wifi", "list", "--rescan", "no"]).splitlines()
+    seen = [l for l in seen if l and not l.startswith(":")][:8]
+    lines.append("見えている WiFi（SSID:電波%:ch）: " + (", ".join(seen) or "なし（電波が届いていない／WiFi 部品の不調）"))
+    for l in _cmd(["journalctl", "-u", "NetworkManager", "-n", "8", "--no-pager", "-o", "cat"]).splitlines():
+        lines.append(f"NetworkManager: {l[:200]}")
+    return lines
+
+
+def try_reconnect_wifi() -> str:
+    """WiFi を探し直して、登録済みの WiFi に接続し直すよう NetworkManager に頼む。結果の文字列を返す"""
+    if not os.path.exists("/sys/class/net/wlan0"):
+        return "WiFi 部品(wlan0) が無いので再接続できない（電源の入れ直しが必要な可能性）"
+    _cmd(["nmcli", "radio", "wifi", "on"])
+    _cmd(["nmcli", "device", "wifi", "rescan"], timeout=15)
+    out = _cmd(["nmcli", "--wait", "30", "device", "connect", "wlan0"], timeout=45)
+    return out.replace("\n", " ")[:200]

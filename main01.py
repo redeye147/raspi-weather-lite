@@ -54,6 +54,8 @@ from netstate import (
     has_wlan1,
     trigger_ap_mode,
     get_setup_hotspot_ssid,
+    network_snapshot,
+    try_reconnect_wifi,
 )
 from utils import get_sunrise_sunset_str, build_work_summary, JST, get_local_ip, make_qr_surface, get_target_datetimes
 from utils import wait_ms as _wait_ms
@@ -231,9 +233,22 @@ def main():
         connected_streak = 0
         wait_start = time.time()
         last_state = None
+        logging.warning("起動時にネットワーク未接続 → 接続を待機（画面は「ネットワークに接続できません」）")
+        log_network_snapshot("待機開始")
+        next_snapshot = time.time() + NETWAIT_SNAPSHOT_EVERY_S
+        next_reconnect = time.time() + NETWAIT_RECONNECT_AFTER_S
         while True:
             connected = is_network_connected()
             ap = is_ap_mode_active()
+            waited = time.time() - wait_start
+            if not connected and time.time() >= next_snapshot:
+                log_network_snapshot(f"待機 {waited / 60:.0f}分")
+                # 最初の 10 分は 1 分ごと、その後は 5 分ごと（ログが膨らみすぎないように）
+                next_snapshot = time.time() + (NETWAIT_SNAPSHOT_EVERY_S if waited < 600 else 300)
+            if not connected and not ap and not has_wlan1() and time.time() >= next_reconnect:
+                # NetworkManager が接続の失敗で再試行を止めていることがあるので、探し直して接続し直させる
+                logging.warning(f"[netwait] {waited / 60:.0f}分つながらない → WiFi を探し直して再接続: {try_reconnect_wifi()}")
+                next_reconnect = time.time() + NETWAIT_RECONNECT_EVERY_S
             # 待機中の状態が変わったときだけ記録（画面を見ていなくても後でログで確認できるように）
             state = (f"接続={'あり' if connected else 'なし'} LANケーブル={'あり' if wired_cable_status() else 'なし'} "
                      f"設定モード={'中' if ap else '-'} ドングル={'あり' if has_wlan1() else 'なし'}")
@@ -242,6 +257,9 @@ def main():
                 last_state = state
             if connected and not ap:
                 boot_log(f"ネットワーク待機終了（{time.time() - wait_start:.0f}秒待機）")
+                if time.time() - wait_start >= 60:      # 長く待ったときは診断ページの「直近の警告」に出す
+                    logging.warning(f"起動時のネットワーク待機が {(time.time() - wait_start) / 60:.0f}分 続いた後に接続")
+                log_network_snapshot("待機終了（つながった状態）")
                 break
             if is_ap_mode_active():
                 # 設定モード中でも有線/WiFi で IP が取れたら（2回連続＝約10秒）自動で設定モードを終える
@@ -484,6 +502,9 @@ def main():
             if _kind != conn_kind:
                 boot_log(f"接続の種類が変化: {conn_kind or '未接続'} → {_kind or '未接続'}"
                          f"{'（有線ケーブルあり・IP なし）' if not _kind and wired_cable_status() else ''}")
+                if not _kind:                                # 表示中に切れた：原因を調べられるよう状態を残す
+                    logging.warning("天気画面の表示中にネットワークが切れた")
+                    log_network_snapshot("切断")
                 conn_kind = _kind
                 needs_redraw = True
             _hs = _kind == "hotspot"
@@ -688,6 +709,20 @@ def main():
                 pygame.quit(); return
 
         _wait_ms(_ms_until_next_check())
+
+
+NETWAIT_SNAPSHOT_EVERY_S = 60     # 起動時のネットワーク待機中、状態をログに残す間隔（10 分以降は 5 分）
+NETWAIT_RECONNECT_AFTER_S = 120   # 待機がこれだけ続いたら WiFi の再接続を試す
+NETWAIT_RECONNECT_EVERY_S = 120   # その後も 2 分ごとに試す
+
+
+def log_network_snapshot(when: str) -> None:
+    """ネットワークの詳しい状態（WiFi 部品・見えている WiFi・IP・NetworkManager の直近ログ）をログに残す"""
+    try:
+        for line in network_snapshot():
+            logging.info(f"[netwait] {when}: {line}")
+    except Exception as e:
+        logging.warning(f"[netwait] {when}: 状態の取得に失敗 {e}")
 
 
 def save_requested_screenshot(screen, request_path=None) -> None:
