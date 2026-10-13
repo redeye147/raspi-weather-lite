@@ -90,6 +90,13 @@ sudo cp "$REPO_DIR/wifi_setup/nm-wired-lower-priority.conf" /etc/NetworkManager/
 # 有線＋WiFi 同時接続時の「IP 重複」誤検知を防ぐ ARP 設定
 sudo cp "$REPO_DIR/wifi_setup/sysctl-arp.conf" /etc/sysctl.d/98-raspi-weather-arp.conf
 sudo sysctl -q -p /etc/sysctl.d/98-raspi-weather-arp.conf || true
+# WiFi の省電力を切る（Pi の内蔵 WiFi は省電力で不安定になることがある）。今の接続にもすぐ反映
+sudo cp "$REPO_DIR/wifi_setup/nm-wifi-powersave-off.conf" /etc/NetworkManager/conf.d/98-wifi-powersave-off.conf
+sudo iw dev wlan0 set power_save off 2>/dev/null || true
+# ログ（journal）を SD カードにも保存し、前回の起動の記録を後から見られるようにする（上限 50MB）
+sudo mkdir -p /var/log/journal /etc/systemd/journald.conf.d
+sudo cp "$REPO_DIR/wifi_setup/journald-persistent.conf" /etc/systemd/journald.conf.d/99-persistent.conf
+sudo systemctl restart systemd-journald || true
 
 # ── [5/6] WiFiポータル systemd ────────────────────
 echo -e "\n${YELLOW}[5/6] WiFiポータルをsystemdに登録中...${NC}"

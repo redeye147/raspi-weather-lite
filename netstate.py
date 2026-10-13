@@ -154,7 +154,8 @@ def network_snapshot() -> list:
             state = "?"
     lines.append(f"WiFi 部品(wlan0): {'あり ' + state if wlan0 else 'なし（WiFi が認識されていない）'}"
                  f" / WiFi の電源: {_cmd(['nmcli', 'radio', 'wifi']) or '?'}"
-                 f" / LANケーブル: {'あり' if wired_cable_status() else 'なし'}")
+                 f" / LANケーブル: {'あり' if wired_cable_status() else 'なし'}"
+                 f" / 省電力: {_cmd(['iw', 'dev', 'wlan0', 'get', 'power_save']).replace('Power save:', '').strip() or '?'}")
     for l in _cmd(["nmcli", "-t", "-f", "DEVICE,TYPE,STATE,CONNECTION", "device"]).splitlines():
         lines.append(f"装置: {l}")
     ip = _cmd(["ip", "-4", "-o", "addr", "show", "scope", "global"])

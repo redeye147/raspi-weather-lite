@@ -5,6 +5,7 @@ import netstate
 def test_snapshot_lines(monkeypatch):
     outputs = {
         ("nmcli", "radio", "wifi"): "enabled",
+        ("iw", "dev", "wlan0", "get", "power_save"): "Power save: off",
         ("nmcli", "-t", "-f", "DEVICE,TYPE,STATE,CONNECTION", "device"): "wlan0:wifi:disconnected:\neth0:ethernet:unavailable:",
         ("ip", "-4", "-o", "addr", "show", "scope", "global"): "",
         ("nmcli", "-t", "-f", "TYPE,NAME", "connection", "show"):
@@ -20,7 +21,7 @@ def test_snapshot_lines(monkeypatch):
     monkeypatch.setattr("builtins.open", lambda *a, **k: __import__("io").StringIO("down\n"))
     lines = netstate.network_snapshot()
     text = "\n".join(lines)
-    assert "WiFi 部品(wlan0): あり down / WiFi の電源: enabled / LANケーブル: なし" in text
+    assert "WiFi 部品(wlan0): あり down / WiFi の電源: enabled / LANケーブル: なし / 省電力: off" in text
     assert "装置: wlan0:wifi:disconnected:" in text
     assert "IPv4: なし" in text
     assert "登録済み WiFi: aterm-658250-g, setup-hotspot" in text

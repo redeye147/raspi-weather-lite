@@ -93,6 +93,8 @@ bash ~/raspi-weather-lite/update.sh
 | root の python3 で astral・pytz を確認 | `main01.service`（root）が起動失敗を繰り返さないように |
 | 旧方式の起動（`~/.profile` の main01.py・`startx`、旧 `raspi-weather.service`）を無効化 | 二重起動・X11 モード・CPU 過負荷の防止 |
 | 有線 LAN の経路優先度設定・ARP 設定を配置 | WiFi 優先、WiFi＋有線同時接続時の IP 重複誤検知の防止 |
+| WiFi の省電力を切る設定を配置（`98-wifi-powersave-off.conf`）＋今の接続も `iw` で切る | Pi の内蔵 WiFi は省電力で不安定になる・DNS がときどき失敗することがある（2026-10-14 の 110 の件の対策） |
+| ログ（journal）を SD にも保存する設定を配置（`99-persistent.conf`、上限 50MB） | 再起動・強制再起動の前の起動の記録を `journalctl -b -1` で後から見られる（2026-10-14 の 110 で原因を確定できなかった対策） |
 | `systemctl reset-failed main01` → `restart` | テスト・更新で短時間に何度も再起動しても、起動回数上限（10分で5回）で止まらないように |
 | watchdog の確認・設定 | 固まったときの自動復旧 |
 
@@ -990,7 +992,9 @@ journalctl -u main01 -b | grep -E "\[display\] mode|KD_GRAPHICS"
 
 ### 再起動前のログを見たい（`journalctl -b -1` が使えない）
 
-Raspberry Pi OS は SD カードの書き込みを減らすため、ログをメモリにだけ保存する設定（`Storage=volatile`）になっていることがあります。この場合 `journalctl -b -1` で `no persistent journal was found` と出て、前回起動時やシャットダウン時のログを見られません。調査時は次で SD カードへの保存を有効にします。
+Raspberry Pi OS は SD カードの書き込みを減らすため、ログをメモリにだけ保存する設定（`Storage=volatile`）になっていることがあります。この場合 `journalctl -b -1` で `no persistent journal was found` と出て、前回起動時やシャットダウン時のログを見られません。
+
+> **2026-10 以降の `update.sh` / `setup.sh` は自動で SD への保存（上限 50MB）を設定します**（`wifi_setup/journald-persistent.conf` → `/etc/systemd/journald.conf.d/99-persistent.conf`）。以下は手で設定する場合・古い版の場合の手順です。
 
 ```bash
 sudo mkdir -p /var/log/journal /etc/systemd/journald.conf.d
@@ -1148,12 +1152,15 @@ arp -a | grep -i -E "b8:27:eb|dc:a6:32|e4:5f:01|d8:3a:dd|2c:cf:67|28:cd:c1"   # 
 
 ### 起動後「ネットワークに接続できません」のまま（いつもの WiFi があるのに）
 
-起動時に WiFi・有線・テザリングのどれにもつながらず、USB ドングルも無いと、この画面で5秒ごとに接続を確認して待ちます（IP が無いので QR コードは出ない）。つながれば自動で天気画面になります。2026-10-14 に 110（毎朝 5:55 に再起動）で約30分この画面のままになりました。
+起動時に WiFi・有線・テザリングのどれにもつながらず、USB ドングルも無いと、この画面で5秒ごとに接続を確認して待ちます（IP が無いので QR コードは出ない）。つながれば自動で天気画面になります。2026-10-14 に 110（raspberrypi2w、毎朝 6:06 に cron で再起動）で、再起動後15分この画面のまま → 6:21 に watchdog と思われる強制再起動ですぐ回復、ということがありました。
+
+**対策**：WiFi の省電力を切る・ログを SD にも保存する（どちらも `update.sh` で自動）。定期再起動は始業前に余裕を持って（例 5:30。失敗しても watchdog の回復が始業前に終わる）。
 
 **待機中に自動で行うこと**
 
 | 内容 | タイミング |
 |---|---|
+| （参考）WiFi の省電力は `update.sh` で切ってある。状態は `[netwait]` の「省電力: off」で確認できる | — |
 | ログに「起動時にネットワーク未接続 → 接続を待機」（WARNING。診断ページの「直近の警告」に出る） | 待機開始時 |
 | 詳しい状態を `[netwait]` 付きでログに残す：WiFi 部品（wlan0）の有無と状態・WiFi の電源・LAN ケーブル・各装置の状態・IPv4・登録済み WiFi・**見えている WiFi と電波**・NetworkManager の直近8行 | 開始時、最初の10分は1分ごと、その後5分ごと、つながったとき |
 | WiFi を探し直して接続し直す（`nmcli device wifi rescan` → `nmcli device connect wlan0`）。結果をログに | 2分たったら、以後2分ごと（ドングル・設定モードのときは除く） |
@@ -1170,6 +1177,7 @@ grep "\[netwait\]" ~/raspi-weather-lite/displayraspi_log.txt | head -40
 | ログの様子 | 考えられる原因 |
 |---|---|
 | `WiFi 部品(wlan0): なし` | Pi の WiFi 部品が起動時に認識されなかった（再起動ではなく電源の入れ直しで直ることが多い。電源の弱さも疑う） |
+| 長く待ったあと、次の起動の kernel ログに `orphan cleanup` | 正常でない停止＝watchdog が固まったと判断して強制再起動した（2026-10-14 の 110：6:06 の再起動後 15 分 WiFi につながらず、6:21 に強制再起動ですぐ回復）。前回の起動の記録は `sudo journalctl -b -1 -u NetworkManager` と `sudo journalctl -b -1 -k \| grep -iE "brcm\|wlan"` |
 | `見えている WiFi …: なし` | 電波が届いていない、またはルーターが止まっていた（ルーターの夜間の自動更新・再起動など） |
 | 見えているのに `Activation: failed`・`no-secrets` | パスワード違い・ルーター側の接続制限 |
 | 見えていて再接続で直った | NetworkManager が失敗続きで再試行を止めていた（再接続の自動化で回復） |
