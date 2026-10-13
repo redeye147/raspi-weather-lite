@@ -135,3 +135,15 @@ def test_main_again_after_pygame_quit(signage):
     pygame.quit()
     log = run()
     assert log.count("天気画面を表示") == 2
+
+
+def test_screenshot_request_saves_weather_screen(signage, tmp_path, monkeypatch):
+    """tools/screenshot.py の依頼で、表示プログラムが天気画面を PNG に保存する"""
+    run, _, _ = signage
+    req, dest = tmp_path / "screenshot_request", tmp_path / "shots" / "screen.png"
+    monkeypatch.setattr(main01, "SCREENSHOT_REQUEST", str(req))
+    req.write_text(str(dest), encoding="utf-8")
+    log = run()
+    assert dest.exists() and not req.exists()
+    assert pygame.image.load(str(dest)).get_size() == (1920, 1080)
+    assert "スクリーンショットを保存" in log

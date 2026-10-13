@@ -61,7 +61,7 @@ from utils import get_cpu_temp, format_cpu_status, clear_font_cache
 from header import _plane_cache
 from jma_alerts import get_overview_and_warning, active_warning_names
 
-from config import AIRPORT_CONFIG, LOG_FILE, ICON_DIR, BASE_FONT
+from config import AIRPORT_CONFIG, LOG_FILE, ICON_DIR, BASE_FONT, SCREENSHOT_REQUEST
 
 from fetch_weather import (
     load_cached_weather,
@@ -453,6 +453,8 @@ def main():
     while True:
         now = datetime.datetime.now(JST)
         needs_redraw = False
+        if _first_draw_logged:                 # 天気画面を 1 回描いてから（起動画面を撮らないように）
+            save_requested_screenshot(screen)
 
         if is_ap_mode_active():
             logging.warning("APモード検出: 設定画面を表示")
@@ -686,6 +688,24 @@ def main():
                 pygame.quit(); return
 
         _wait_ms(_ms_until_next_check())
+
+
+def save_requested_screenshot(screen, request_path=None) -> None:
+    """tools/screenshot.py からの依頼があれば、今の画面（最後に描いたもの）を PNG で保存する。
+    依頼ファイルの中身が保存先のパス。保存したら依頼ファイルを消す（失敗してもメインループは止めない）"""
+    request_path = request_path or SCREENSHOT_REQUEST
+    if not os.path.exists(request_path):
+        return
+    try:
+        with open(request_path, encoding="utf-8") as f:
+            dest = f.read().strip()
+        os.remove(request_path)
+        if dest:
+            os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)
+            pygame.image.save(screen, dest)
+            logging.info(f"スクリーンショットを保存: {dest}")
+    except Exception as e:
+        logging.warning(f"スクリーンショット保存失敗: {e}")
 
 
 def run_forever():

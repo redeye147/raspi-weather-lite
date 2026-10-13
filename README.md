@@ -604,6 +604,30 @@ SSH でコマンドを打たなくても、スマホから中の状態を確認�
 - 情報源：表示データ（`cache/snapshot.json` の取得時刻）・`systemctl`・`nmcli`・`timedatectl`・`vcgencmd`・ログファイル。表示プログラム（main01）には手を入れていないので、天気表示の負荷は増えない
 - ポータルの更新は `update.sh`（`wifi-portal` を再起動）で反映
 
+### スクリーンショット
+
+今の天気画面を PNG で保存します（SSH で実行）。
+
+```bash
+sudo python3 ~/raspi-weather-lite/tools/screenshot.py            # ~/raspi-weather-lite/screenshots/ に保存
+sudo python3 ~/raspi-weather-lite/tools/screenshot.py ~/写真     # 保存先のフォルダを指定（無ければ作る）
+```
+
+ファイル名は `screen_20261013_093012.png` のような日時。保存したファイルは pi のものになるので、そのまま削除・コピーできます。
+
+| 方式 | いつ使う | 撮れるもの |
+|---|---|---|
+| 表示プログラムに依頼 | 普段（最大10秒ほどで保存） | 画面に出しているものとまったく同じ画像（fb0・KMS どちらでも） |
+| `/dev/fb0` を直接読む | 表示プログラムが20秒応答しないとき（止まっている等） | fb0 方式の端末のみ（KMS 方式では撮れない） |
+
+**Mac・PC に取り出す**（Mac のターミナルで）：
+
+```bash
+scp pi@192.168.11.13:~/raspi-weather-lite/screenshots/*.png ~/Desktop/
+```
+
+> 仕組み：`tools/screenshot.py` が保存先を `cache/screenshot_request` に書き、表示プログラムがメインループ（最大10秒ごと）で見つけて今の画面を保存し、依頼ファイルを消す（`main01.save_requested_screenshot`）。応答がなければ依頼は取り消す。`screenshots/` は git の管理外。
+
 ### WiFi 設定モード（オフライン時の AP 起動）
 
 WiFi 未設定の Pi に **USB WiFi ドングル** を挿しておくと、起動時に WiFi 接続できなかった場合のみ
@@ -801,6 +825,7 @@ raspi-weather-lite/
 ├── config.json          # 実行時設定（空港・更新間隔）※Pi ごとに書き換わる。変更をコミットしない
 ├── wifi_portal.py       # WiFi設定ポータル（Flask）
 ├── wifi-portal.service  # systemdユニットファイル
+├── tools/screenshot.py  # 今の画面を PNG で保存（sudo で実行）
 ├── tests/               # 自動テスト（PC・CI で実行。Pi では不要）
 ├── pytest.ini           # テスト設定
 ├── .github/workflows/tests.yml  # GitHub Actions：push のたびに自動テスト（Python 3.11 / 3.13）
@@ -917,6 +942,7 @@ python3 -m pytest          # 例: 255 passed in 6s
 | `tests/test_fb_console.py` | fb0 モードのコンソール切替（`fb_display._set_console_mode`） | 開けない TTY を飛ばして次を試す・カーソル非表示・すべて失敗したときのエラー |
 | `tests/test_diagnostics.py` | 診断ページの判定（`diagnostics.evaluate`） | 全項目正常、停止・自動再起動・起動失敗の繰り返し、画面出力（HDMI 未検出）、電源（今／過去）、温度、ネットワークの種類と電波、天気の遅れ（夜間は 23:50 まで正常）、WBGT 期間外は異常にしない、航空気象の古さ・夜間、空き容量、ログの新しい順、Pi 以外でも落ちない |
 | `tests/test_run_forever.py` | 表示プログラムの再起動（`main01.run_forever`） | 起動失敗が続くと 5→10→20→40→60 秒に延ばす、同じエラーはログファイルに 10 回に 1 回だけ記録 |
+| `tests/test_screenshot.py` | スクリーンショット（`tools/screenshot.py`・`main01.save_requested_screenshot`） | 依頼で今の画面を保存して依頼を消す、応答待ち、応答がなければ依頼を取り消す、fb0 の中身（RGB565・32bit、行の余り）を正しい色の画像に。`test_main_smoke` でも表示プログラム経由で天気画面が撮れることを確認 |
 | `tests/test_wbgt.py` | WBGT（`fetch_wbgt.py`・`decisions.wbgt_*`） | CSV から今日の最高値、ファイルなし・今日の行なし＝データなし、通信エラーは1回だけ、レベル判定、期間外の判断（2日）、夜間は取得しない、期間中1日18回・期間外は朝6時の1日1回、期間の終わりと翌年の開始、0時の非表示 |
 | `tests/test_decisions.py` | メインループの判断（`decisions.py`） | 前回データの利用（空港・2時間・朝6時・時刻未同期）、23:50/6:00 の定時取得、夜間の先送り、失敗時30分後の再試行、一晩の取得の流れ、前回データで起動したら5分後に取り直す（定期取得で最新になれば取り消し・夜間は取り直さない）、航空気象の取得（00 分は7分後・30 分は10分後、届くまで2分おきに最大6回、実測した届くまでの時間での取得回数と表示の遅れ、古いデータで起動したらすぐ取得）と0時の非表示 |
 

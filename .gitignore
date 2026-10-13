@@ -13,3 +13,6 @@ wifi_setup/profiles/
 
 # テスト
 .pytest_cache/
+
+# スクリーンショット（tools/screenshot.py の保存先）
+screenshots/
