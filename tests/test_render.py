@@ -133,3 +133,33 @@ def test_weekly_temperature_fits_column(w, h, hi, lo):
     assert width <= col_w - 10
     if (hi, lo) == (25, 17) and w == 1920:
         assert size == 22                                     # 1920×1080 の普段の値は今までどおり
+
+
+# ---------------------------------------------------------------- 今の時間帯の強調
+@pytest.mark.parametrize("hh, mm, day, col", [
+    (6, 0, 11, 0), (10, 30, 11, 1), (11, 59, 11, 1), (12, 0, 11, 2), (23, 59, 11, 5),
+    (0, 0, 12, 6), (8, 59, 12, 8), (9, 0, 12, 9), (11, 59, 12, 9),     # 最後の列（09）は 12 時まで
+    (5, 59, 11, None), (12, 0, 12, None),                                # 表の範囲外
+])
+def test_current_slot_index(hh, mm, day, col):
+    from weather_draw import current_slot_index
+    assert current_slot_index(_hourly(), datetime.datetime(2026, 10, day, hh, mm, tzinfo=JST)) == col
+
+
+@pytest.mark.parametrize("w, h", RESOLUTIONS)
+def test_current_slot_frame_is_drawn(w, h):
+    """今の時間帯の列（10:30 → 09 の列）だけが、太い青い枠で囲まれる"""
+    import weather_draw
+    screen = pygame.Surface((w, h))
+    sc = SCENARIOS["普段"]
+    draw_weather(screen, w, h, _hourly(), _daily(), {}, BASE_FONT, sc["warning_text"], "", "", "天気更新 10:24",
+                 "成田空港", "05:44", "17:09", "", "3%", latitude=35.76, longitude=140.38,
+                 now=datetime.datetime(2026, 10, 11, 10, 30, tzinfo=JST))
+    arr = pygame.surfarray.array3d(screen)
+    blue = np.all(arr == weather_draw.NOW_FRAME_COLOR, axis=2)
+    cols = np.where(blue.sum(axis=1) > h * 0.1)[0]          # 縦に長く続く青い線（枠の左右）
+    margin_x = int(w * 0.05)
+    col_w = int((w - margin_x * 2) // 11)
+    left = margin_x + 2 * col_w                               # 見出し列 + 06 の列 の右
+    assert len(cols) >= 2 * weather_draw.NOW_FRAME_WIDTH
+    assert cols.min() == left and cols.max() <= left + col_w

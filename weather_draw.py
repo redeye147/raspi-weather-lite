@@ -75,6 +75,24 @@ def _time_to_col(times, t):
     return len(times) - 1 + (t - times[-1]) / last
 
 
+NOW_FRAME_COLOR = (0, 110, 220)   # 今の時間帯の列の枠の色（青）
+NOW_FRAME_WIDTH = 4               # 枠の太さ（px。普段の罫線は 1）
+
+
+def current_slot_index(hourly, now):
+    """now が入っている時間別の列の番号（例 10:30 → 09 時の列）。表の範囲外・時刻が無い列なら None"""
+    times = [item.get("datetime") for item in hourly]
+    if not times or not all(isinstance(t, datetime.datetime) for t in times):
+        return None
+    times = [_as_jst(t) for t in times]
+    now = _as_jst(now)
+    for i, t in enumerate(times):
+        end = times[i + 1] if i + 1 < len(times) else t + (t - times[i - 1] if i else datetime.timedelta(hours=3))
+        if t <= now < end:
+            return i
+    return None
+
+
 SUN_LABEL_GAP = 12   # 日の出・日の入りの時刻ラベルと、次の列の時刻の数字の間にあけるすき間（px）
 
 
@@ -258,6 +276,7 @@ def draw_weather(
     latitude=None,
     longitude=None,
     overview_text: str = "",
+    now=None,
 ):
     screen.fill((255, 255, 255))
 
@@ -424,6 +443,13 @@ def draw_weather(
     if latitude is not None and longitude is not None:
         _draw_sun_markers(screen, hourly, latitude, longitude, margin_x, col_w,
                           y_offset + row_heights[0], row_heights[1], base_font_path)
+
+    # 今の時間帯（3 時間ごと）の列を、時刻〜風速の 5 行まとめて太い枠で囲む（日付行は日ごとにまとめてあるので除く）
+    cur = current_slot_index(hourly, now or datetime.datetime.now(JST))
+    if cur is not None and cur < data_cols:
+        pygame.draw.rect(screen, NOW_FRAME_COLOR,
+                         (margin_x + (1 + cur) * col_w, y_offset + row_heights[0], col_w + 1, sum(row_heights[1:]) + 1),
+                         NOW_FRAME_WIDTH)
 
     y_offset += sum(row_heights) + 8
 
