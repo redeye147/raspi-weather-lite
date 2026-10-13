@@ -623,8 +623,10 @@ sudo python3 ~/raspi-weather-lite/tools/screenshot.py ~/写真     # 保存先�
 **Mac・PC に取り出す**（Mac のターミナルで）：
 
 ```bash
-scp pi@192.168.11.13:~/raspi-weather-lite/screenshots/*.png ~/Desktop/
+scp 'pi@192.168.11.13:~/raspi-weather-lite/screenshots/*.png' ~/Desktop/
 ```
+
+> Mac の標準（zsh）では `*` を Mac 側で探してしまい `no matches found` になるので、Pi 側のパスを `'…'` で囲む。
 
 > 仕組み：`tools/screenshot.py` が保存先を `cache/screenshot_request` に書き、表示プログラムがメインループ（最大10秒ごと）で見つけて今の画面を保存し、依頼ファイルを消す（`main01.save_requested_screenshot`）。応答がなければ依頼は取り消す。`screenshots/` は git の管理外。
 
