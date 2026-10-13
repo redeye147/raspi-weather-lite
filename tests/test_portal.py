@@ -17,7 +17,7 @@ def client(monkeypatch):
 
 
 # ---------------------------------------------------------------- 画面の JavaScript
-@pytest.mark.parametrize("page", ["HTML", "DIAG_HTML"])
+@pytest.mark.parametrize("page", ["HTML", "DIAG_HTML", "SHOTS_HTML"])
 def test_page_javascript_has_no_syntax_error(page, tmp_path):
     """画面の JavaScript は Python の文字列の中に書くので、\\n のエスケープ漏れ 1 つで全部動かなくなる
     （更新ボタンの開発中に実際に起きた）。node で構文だけ確かめる"""
@@ -35,15 +35,17 @@ def test_page_javascript_has_no_syntax_error(page, tmp_path):
 def test_pages_are_served_without_password(client):
     assert "天気サイネージ 設定" in client.get("/").get_data(as_text=True)
     assert "天気サイネージ 診断" in client.get("/diag").get_data(as_text=True)
+    assert "スクリーンショット" in client.get("/shots").get_data(as_text=True)
+    assert "/shots" in client.get("/").get_data(as_text=True)            # 設定画面のメニューから行ける
 
 
 # ---------------------------------------------------------------- パスワードと保護
-@pytest.mark.parametrize("url", ["/scan", "/wifi/list", "/diag/data"])
+@pytest.mark.parametrize("url", ["/scan", "/wifi/list", "/diag/data", "/shots/list", "/shots/file/screen_20261013_215945.png"])
 def test_protected_reads_need_login(client, url):
     assert client.get(url).status_code == 401
 
 
-@pytest.mark.parametrize("url", ["/wifi/delete", "/wifi/order", "/save"])
+@pytest.mark.parametrize("url", ["/wifi/delete", "/wifi/order", "/save", "/shots/take"])
 def test_protected_writes_need_login(client, url):
     assert client.post(url, json={}).status_code == 401
 
@@ -108,3 +110,44 @@ def test_cannot_delete_active_wifi(client, monkeypatch):
     monkeypatch.setattr(wp.subprocess, "run", lambda cmd, *a, **k: calls.append(cmd))
     r = client.post("/wifi/delete", json={"uuid": "u4"})
     assert r.status_code == 400 and not calls                 # 接続中は消さない（nmcli を呼ばない）
+
+
+
+# ---------------------------------------------------------------- スクリーンショット
+@pytest.fixture
+def shots_dir(tmp_path, monkeypatch):
+    import screenshots
+    monkeypatch.setattr(screenshots, "SCREENSHOT_DIR", str(tmp_path))
+    return tmp_path
+
+
+def test_shots_take_list_and_file(client, shots_dir, monkeypatch):
+    import screenshots
+
+    def fake_take():
+        p = shots_dir / "screen_20261013_215945.png"
+        p.write_bytes(b"\x89PNG fake")
+        return str(p), "表示プログラムの画面"
+    monkeypatch.setattr(screenshots, "take", fake_take)
+    client.post("/login", json={"password": "1048"})
+    r = client.post("/shots/take")
+    assert r.status_code == 200 and "screen_20261013_215945.png" in r.get_data(as_text=True)
+    d = client.get("/shots/list").get_json()
+    assert d["shots"] == ["screen_20261013_215945.png"] and d["max"] == 10
+    r = client.get("/shots/file/screen_20261013_215945.png")
+    assert r.status_code == 200 and r.mimetype == "image/png" and r.data.startswith(b"\x89PNG")
+
+
+@pytest.mark.parametrize("name", ["..%2Fconfig.json", "config.json", "screen_x.png", "screen_20261013_215945.png.bak"])
+def test_shots_file_only_screenshots(client, shots_dir, name):
+    """スクリーンショット以外のファイル（config.json など）は返さない"""
+    client.post("/login", json={"password": "1048"})
+    assert client.get(f"/shots/file/{name}").status_code == 404
+
+
+def test_shots_take_failure_message(client, shots_dir, monkeypatch):
+    import screenshots
+    monkeypatch.setattr(screenshots, "take", lambda: (_ for _ in ()).throw(FileNotFoundError("fb0 なし")))
+    client.post("/login", json={"password": "1048"})
+    r = client.post("/shots/take")
+    assert r.status_code == 500 and "撮れませんでした" in r.get_data(as_text=True)

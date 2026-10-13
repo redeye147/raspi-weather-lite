@@ -75,6 +75,9 @@ def _time_to_col(times, t):
     return len(times) - 1 + (t - times[-1]) / last
 
 
+SUN_LABEL_GAP = 12   # 日の出・日の入りの時刻ラベルと、次の列の時刻の数字の間にあけるすき間（px）
+
+
 def _draw_sun_markers(screen, hourly, latitude, longitude, margin_x, col_w,
                       row_y, row_h, base_font_path):
     """時刻行に 日の出▲ / 日の入り▼ を実時刻の位置で描く。"""
@@ -115,7 +118,8 @@ def _draw_sun_markers(screen, hourly, latitude, longitude, margin_x, col_w,
             next_text_x = cell_x + col_w + 5
             right_x = x + half + 2
             left_x = x - half - 2 - lw
-            if right_x + lw <= next_text_x - 2 and ci < n:
+            # 右に置くと次の列の時刻（例「18」）にくっついて「17:0518」と読めるので、十分すき間があるときだけ右
+            if right_x + lw <= next_text_x - SUN_LABEL_GAP and ci < n:
                 screen.blit(label, (right_x, cy - label.get_height() // 2))
             elif left_x >= text_right + 2:
                 screen.blit(label, (left_x, cy - label.get_height() // 2))

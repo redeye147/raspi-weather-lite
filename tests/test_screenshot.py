@@ -1,4 +1,4 @@
-"""スクリーンショット（tools/screenshot.py と main01.save_requested_screenshot）"""
+"""スクリーンショット（screenshots.py・tools/screenshot.py・main01.save_requested_screenshot）"""
 import os
 import sys
 import threading
@@ -8,9 +8,8 @@ import numpy as np
 import pygame
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools"))
-import screenshot  # noqa: E402
 import main01  # noqa: E402
+import screenshots as screenshot  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -71,3 +70,43 @@ def test_request_is_cancelled_when_signage_does_not_answer(tmp_path):
     req, dest = tmp_path / "req", tmp_path / "c.png"
     assert screenshot.request_from_signage(str(dest), str(req), wait_s=1) is False
     assert not req.exists() and not dest.exists()
+
+
+def _touch(folder, names):
+    folder.mkdir(parents=True, exist_ok=True)
+    for n in names:
+        (folder / n).write_bytes(b"x")
+
+
+def test_keep_only_newest_10(tmp_path):
+    """11 枚目を撮ったら一番古いものを消して、常に 10 枚以内（SD カードを圧迫しない）"""
+    names = [f"screen_202610{d:02d}_120000.png" for d in range(1, 12)]        # 11 枚
+    _touch(tmp_path, names + ["memo.txt", "other.png"])                       # 関係ないファイルは消さない
+    removed = screenshot.prune(str(tmp_path), keep=10)
+    assert removed == ["screen_20261001_120000.png"]
+    assert screenshot.list_shots(str(tmp_path)) == sorted(names[1:], reverse=True)
+    assert (tmp_path / "memo.txt").exists() and (tmp_path / "other.png").exists()
+
+
+def test_take_saves_and_prunes(tmp_path):
+    """take：表示プログラムに依頼して保存 → 10 枚を超えた古いものを消す"""
+    folder = tmp_path / "shots"
+    _touch(folder, [f"screen_202610{d:02d}_120000.png" for d in range(1, 11)])   # すでに 10 枚
+    req = tmp_path / "req"
+    screen = pygame.Surface((10, 10))
+
+    def signage():
+        time.sleep(0.6)
+        main01.save_requested_screenshot(screen, str(req))
+    threading.Thread(target=signage).start()
+    dest, how = screenshot.take(str(folder), request_path=str(req), wait_s=5)
+    assert how == "表示プログラムの画面" and os.path.exists(dest)
+    shots = screenshot.list_shots(str(folder))
+    assert len(shots) == 10 and os.path.basename(dest) == shots[0]
+    assert "screen_20261001_120000.png" not in shots
+
+
+def test_take_raises_when_nothing_works(tmp_path, monkeypatch):
+    monkeypatch.setattr(screenshot, "read_fb0", lambda dest: (_ for _ in ()).throw(FileNotFoundError("fb0 なし")))
+    with pytest.raises(FileNotFoundError):
+        screenshot.take(str(tmp_path / "s"), request_path=str(tmp_path / "req"), wait_s=1)

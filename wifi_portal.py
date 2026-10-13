@@ -4,7 +4,7 @@ wifi_portal.py
 ポート: 8080
 """
 
-from flask import Flask, request, jsonify, redirect, make_response, session
+from flask import Flask, request, jsonify, redirect, make_response, session, send_file
 import hmac
 import secrets
 import time
@@ -193,6 +193,7 @@ HTML = """<!DOCTYPE html>
 
 <button id="wifi-open-btn" class="sub-btn" onclick="openWifi()">🔒 WiFi 設定（パスワードが必要）</button>
 <button class="sub-btn" onclick="location.href='/diag'">🩺 診断（本体の状態を見る・パスワードが必要）</button>
+<button class="sub-btn" onclick="location.href='/shots'">📷 画面のスクリーンショット（パスワードが必要）</button>
 
 <div id="login-box" class="section-box hidden">
   <h3>🔒 管理パスワード</h3>
@@ -521,6 +522,94 @@ load();
 </body></html>"""
 
 
+SHOTS_HTML = """<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>天気サイネージ スクリーンショット</title>
+<style>
+  body { font-family: sans-serif; padding: 16px; background: #1a1a2e; color: white; margin: 0; }
+  h2 { color: #FFD700; margin: 4px 0 2px; }
+  .sub { font-size: 13px; color: #aaa; }
+  input { width: 100%; padding: 10px; margin: 8px 0; border-radius: 8px; border: none;
+          background: #2a3048; color: white; font-size: 16px; box-sizing: border-box; }
+  button { width: 100%; padding: 12px; background: #3b82f6; color: white; border: none;
+           border-radius: 8px; font-size: 16px; margin-top: 8px; cursor: pointer; }
+  button:disabled { background: #444; color: #999; }
+  button.sub-btn { background: #374151; }
+  .box { background: #1e2233; border-radius: 10px; padding: 12px; margin-top: 12px; }
+  .hidden { display: none !important; }
+  .msg { font-weight: bold; margin-top: 8px; }
+  img { width: 100%; border-radius: 6px; border: 1px solid #333; background: #fff; }
+  .shot { margin-top: 12px; }
+  .shot a { color: #93c5fd; font-size: 13px; }
+</style>
+</head><body>
+<h2>📷 スクリーンショット</h2>
+<div class="sub">天気画面の今の表示を撮って保存します（最新 10 枚まで。古いものから自動で消えます）</div>
+
+<div id="login-box" class="box hidden">
+  <div>🔒 管理パスワード</div>
+  <input id="admin-pw" type="password" inputmode="numeric" placeholder="パスワード" onkeydown="if(event.key==='Enter')login()">
+  <button onclick="login()">開く</button>
+  <p id="login-msg" class="msg" style="color:#ef4444"></p>
+</div>
+
+<div id="area" class="hidden">
+  <button id="take-btn" onclick="take()">📷 今の画面を撮る</button>
+  <p id="msg" class="msg"></p>
+  <div class="box"><div class="sub" id="where"></div><div id="list"></div></div>
+</div>
+<button class="sub-btn" onclick="location.href='/'">← 設定画面に戻る</button>
+
+<script>
+function esc(t) {
+  return String(t).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function setMsg(text, ok) {
+  const m = document.getElementById('msg');
+  m.textContent = text; m.style.color = ok ? '#10b981' : '#ef4444';
+}
+async function login() {
+  const res = await fetch('/login', {method: 'POST', headers: {'Content-Type': 'application/json'},
+              credentials: 'same-origin', body: JSON.stringify({password: document.getElementById('admin-pw').value})});
+  if (res.ok) { load(); } else { document.getElementById('login-msg').textContent = await res.text(); }
+}
+async function load() {
+  const res = await fetch('/shots/list', {credentials: 'same-origin'});
+  if (res.status === 401) {
+    document.getElementById('login-box').classList.remove('hidden');
+    document.getElementById('area').classList.add('hidden');
+    return;
+  }
+  document.getElementById('login-box').classList.add('hidden');
+  document.getElementById('area').classList.remove('hidden');
+  const d = await res.json();
+  document.getElementById('where').textContent = '保存先: ' + d.folder + '（' + d.shots.length + ' / ' + d.max + ' 枚）';
+  document.getElementById('list').innerHTML = d.shots.length ? d.shots.map(n =>
+    '<div class="shot"><a href="/shots/file/' + esc(n) + '" target="_blank">' + esc(n) + '</a>' +
+    '<a href="/shots/file/' + esc(n) + '" target="_blank"><img loading="lazy" src="/shots/file/' + esc(n) + '"></a></div>').join('')
+    : '<p class="sub">まだありません</p>';
+}
+async function take() {
+  const btn = document.getElementById('take-btn');
+  btn.disabled = true; btn.textContent = '撮影中…（最大20秒）';
+  setMsg('', true);
+  try {
+    const res = await fetch('/shots/take', {method: 'POST', credentials: 'same-origin'});
+    const text = await res.text();
+    if (res.ok) { setMsg('✓ ' + text, true); } else { setMsg(text, false); }
+  } catch (e) {
+    setMsg('エラー: ' + e, false);
+  }
+  btn.disabled = false; btn.textContent = '📷 今の画面を撮る';
+  load();
+}
+load();
+</script>
+</body></html>"""
+
+
 # ==========================================
 # キャプティブポータル自動検出（Android / iOS / Windows）
 # ==========================================
@@ -580,6 +669,43 @@ def diag_data():
     """診断結果（見るだけ）。ログの中身・IP などが含まれるのでパスワード入力済みのときだけ返す"""
     import diagnostics
     return _no_cache(jsonify(diagnostics.diagnose()))
+
+
+@app.route("/shots")
+def shots_page():
+    return _no_cache(make_response(SHOTS_HTML))
+
+
+@app.route("/shots/list")
+@admin_required
+def shots_list():
+    import screenshots
+    return _no_cache(jsonify({"folder": screenshots.SCREENSHOT_DIR, "max": screenshots.MAX_SCREENSHOTS,
+                              "shots": screenshots.list_shots()}))
+
+
+@app.route("/shots/take", methods=["POST"])
+@admin_required
+def shots_take():
+    """今の画面を撮る（表示プログラムに依頼。最大 20 秒待つ）。最新 10 枚を超えた古いものは消す"""
+    import screenshots
+    try:
+        dest, how = screenshots.take()
+    except Exception as e:
+        return f"撮れませんでした（表示プログラムが止まっている可能性）: {e}", 500
+    return f"保存しました: {os.path.basename(dest)}（{how}）"
+
+
+@app.route("/shots/file/<name>")
+@admin_required
+def shots_file(name):
+    import screenshots
+    if not screenshots.NAME_RE.match(name):            # フォルダの外のファイルは返さない
+        return "not found", 404
+    path = os.path.join(screenshots.SCREENSHOT_DIR, name)
+    if not os.path.exists(path):
+        return "not found", 404
+    return _no_cache(send_file(path, mimetype="image/png"))
 
 
 @app.route("/login", methods=["POST"])

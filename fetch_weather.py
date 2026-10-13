@@ -165,7 +165,7 @@ def fetch_weather_openmeteo(latitude=LATITUDE, longitude=LONGITUDE):
             "temp": f"{round(tmax)}/{round(tmin)}",
         })
 
-        if len(daily) >= 5:
+        if len(daily) >= 7:      # 今日から 7 日分。JMA（明日から 5 日分）の補完に 6 日目まで要る。表示は 5 日（呼び出し側）
             break
 
     # -------- キャッシュ保存 ----------
@@ -174,7 +174,7 @@ def fetch_weather_openmeteo(latitude=LATITUDE, longitude=LONGITUDE):
 
         with open(CACHE_FILE, "w") as f:
             json.dump(
-                {"hourly": hourly, "daily": daily},
+                {"hourly": hourly, "daily": daily[:5]},
                 f,
                 default=iso_dump_default,
                 ensure_ascii=False
@@ -208,49 +208,29 @@ def fetch_weather_jma(office_code, target_area_codes):
         return 0
 
     def _collect(block):
+        """1 つの予報（短期 or 週間）の timeSeries を、中身のキーで見分けて集める。
+        短期: [天気(weatherCodes)] [降水確率 6 時間ごと(pops)] [気温(temps)]
+        週間: [天気と降水確率(weatherCodes・pops)] [最高・最低気温(tempsMax・tempsMin)]
+        （以前は「2 番目は降水確率・3 番目は気温」と決め打ちしていて、週間の降水確率と気温を読めていなかった）"""
+        for ts in block.get("timeSeries", []):
+            areas = ts.get("areas", [])
+            if not areas:
+                continue
+            area = areas[_pick_area_index(areas)]
+            days = [iso_parse_datetime(t).astimezone(JST).date() for t in ts.get("timeDefines", [])]
 
-        ts_list = block.get("timeSeries", [])
+            def values(key):
+                for d, v in zip(days, area.get(key, [])):
+                    if v not in (None, "", "-"):
+                        yield d, v
 
-        # weatherCodes
-        if len(ts_list) >= 1:
-            areas = ts_list[0].get("areas", [])
-            if areas:
-                ai = _pick_area_index(areas)
-                time_def = ts_list[0].get("timeDefines", [])
-                wcodes = areas[ai].get("weatherCodes", [])
-
-                for i, t in enumerate(time_def[:len(wcodes)]):
-                    d = iso_parse_datetime(t).astimezone(JST).date()
-                    daily_codes[d] = str(wcodes[i])
-
-        # pops
-        if len(ts_list) >= 2:
-            areas = ts_list[1].get("areas", [])
-            if areas and "pops" in areas[0]:
-                ai = _pick_area_index(areas)
-                time_def = ts_list[1].get("timeDefines", [])
-                pops = areas[ai].get("pops", [])
-
-                for i, t in enumerate(time_def[:len(pops)]):
-                    v = pops[i]
-                    if v in (None, "", "-"):
-                        continue
-                    d = iso_parse_datetime(t).astimezone(JST).date()
-                    daily_pops[d].append(int(v))
-
-        # temps
-        if len(ts_list) >= 3:
-            areas = ts_list[2].get("areas", [])
-            ai = _pick_area_index(areas)
-            time_def = ts_list[2].get("timeDefines", [])
-            temps = areas[ai].get("temps", [])
-
-            for i, t in enumerate(time_def[:len(temps)]):
-                v = temps[i]
-                if v in (None, "", "-"):
-                    continue
-                d = iso_parse_datetime(t).astimezone(JST).date()
-                daily_temps[d].append(int(v))
+            for d, v in values("weatherCodes"):
+                daily_codes.setdefault(d, str(v))          # 短期（先に来る）を優先
+            for d, v in values("pops"):
+                daily_pops[d].append(int(v))
+            for key in ("temps", "tempsMax", "tempsMin"):
+                for d, v in values(key):
+                    daily_temps[d].append(int(v))
 
     for block in arr:
         _collect(block)
@@ -366,6 +346,7 @@ class WeatherFetcher:
                     daily.append(d)
             else:
                 hourly, daily = fetch_weather_openmeteo(cfg["latitude"], cfg["longitude"])
+                daily = daily[:5]
             self._result = (hourly, daily)
             self._ok = True
         except Exception as e:
