@@ -139,3 +139,40 @@ def test_openmeteo_falls_back_when_jma_model_fails(monkeypatch, caplog):
     assert len(urls) == 2 and "models=" not in urls[1]
     assert daily[0]["pop"] == "30%"
     assert "標準のモデルで取り直し" in caplog.text
+
+
+# ---------------------------------------------------------------- 今日の天気：降水量・天気は列の真ん中の 1 時間
+def test_hourly_precip_and_icon_use_middle_hour(monkeypatch):
+    """「09」の列（09〜12 時）は 10〜11 時の 1 時間の値（Open-Meteo の 11:00）。以前は 08〜09 時（09:00 の値）だった"""
+    from utils import JST
+    times = [f"2026-10-14T{h:02d}:00" for h in range(24)]
+    prec = [0.0] * 24
+    wc = [0] * 24                      # 0 = 快晴
+    prec[9], wc[9] = 5.0, 63           # 08〜09 時：雨（列の始まる前。表示しない）
+    prec[11], wc[11] = 1.5, 61         # 10〜11 時：弱い雨（09 の列に出す）
+    om = {"hourly": {"time": times, "weathercode": wc, "precipitation": prec,
+                     "temperature_2m": [float(h) for h in range(24)], "windspeed_10m": [3.6] * 24},
+          "daily": {"time": []}}
+    monkeypatch.setattr(fw.SESS, "get", lambda url, timeout=10: _Resp(om))
+    monkeypatch.setattr(fw, "CACHE_FILE", "/nonexistent-dir/x/cache.json")
+    monkeypatch.setattr(fw, "get_target_datetimes",
+                        lambda: [datetime.datetime(2026, 10, 14, h, tzinfo=JST) for h in (6, 9, 12)])
+    hourly, _ = fw.fetch_weather_openmeteo(35.7651, 140.3854)
+    col09 = hourly[1]
+    assert col09["hour"] == "09"
+    assert col09["pop"] == "1.5mm"                                  # 真ん中の 1 時間の雨
+    assert col09["code"] == fw.CODE_MAPPING[61]                     # 天気も真ん中の 1 時間
+    assert col09["temp"] == "9℃"                                    # 気温は列の時刻のまま
+    assert hourly[0]["pop"] == "0.0mm" and hourly[0]["code"] == fw.CODE_MAPPING[0]   # 06 の列（07〜08 時）は晴れ
+
+
+def test_hourly_falls_back_to_slot_time_when_middle_missing(monkeypatch):
+    """真ん中の時刻のデータが無い（予報の最後など）ときは、列の時刻の値"""
+    from utils import JST
+    om = {"hourly": {"time": ["2026-10-14T09:00"], "weathercode": [61], "precipitation": [2.0],
+                     "temperature_2m": [20.0], "windspeed_10m": [7.2]}, "daily": {"time": []}}
+    monkeypatch.setattr(fw.SESS, "get", lambda url, timeout=10: _Resp(om))
+    monkeypatch.setattr(fw, "CACHE_FILE", "/nonexistent-dir/x/cache.json")
+    monkeypatch.setattr(fw, "get_target_datetimes", lambda: [datetime.datetime(2026, 10, 14, 9, tzinfo=JST)])
+    hourly, _ = fw.fetch_weather_openmeteo(35.7651, 140.3854)
+    assert hourly[0]["pop"] == "2.0mm" and hourly[0]["code"] == fw.CODE_MAPPING[61]

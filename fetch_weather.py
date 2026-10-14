@@ -35,6 +35,7 @@ SESS = session_with_retry()
 # =====================================================
 # Open-Meteo取得（E61cそのまま）
 # =====================================================
+MID_SLOT_OFFSET = datetime.timedelta(hours=2)   # 3 時間の列の真ん中の 1 時間（列の時刻 +1〜+2 時間）の値を指す時刻
 OPENMETEO_MODEL = "jma_seamless"   # 今日の天気（3 時間ごと）は気象庁の数値予報モデルを使う
 def fetch_weather_openmeteo(latitude=LATITUDE, longitude=LONGITUDE):
 
@@ -100,11 +101,15 @@ def fetch_weather_openmeteo(latitude=LATITUDE, longitude=LONGITUDE):
         ts = dt.astimezone(JST).strftime("%Y-%m-%dT%H:00")
 
         if ts in H_WC:
-            wcode = CODE_MAPPING.get(H_WC[ts], "999")
+            # 降水量と天気は、その列の 3 時間（例 09 → 09〜12 時）の真ん中の 1 時間（10〜11 時）の値。
+            # Open-Meteo の時間ごとの降水量・天気は「その時刻までの 1 時間」なので 2 時間後の時刻の値を使う
+            # （以前は列の時刻の値＝列の始まる前の 1 時間（08〜09 時）を表示していた）。無ければ列の時刻の値
+            mid = (dt + MID_SLOT_OFFSET).astimezone(JST).strftime("%Y-%m-%dT%H:00")
+            wcode = CODE_MAPPING.get(H_WC.get(mid, H_WC[ts]), "999")
 
             tempC = H_TMP.get(ts, 0)
             windkph = H_WND.get(ts, 0)
-            prec = H_PREC.get(ts ,0)   # ← これが必要
+            prec = H_PREC.get(mid, H_PREC.get(ts, 0))
 
             hourly.append({
                 "datetime": dt,
