@@ -101,15 +101,22 @@ def fetch_weather_openmeteo(latitude=LATITUDE, longitude=LONGITUDE):
         ts = dt.astimezone(JST).strftime("%Y-%m-%dT%H:00")
 
         if ts in H_WC:
-            # 降水量と天気は、その列の 3 時間（例 09 → 09〜12 時）の真ん中の 1 時間（10〜11 時）の値。
+            # 降水量・天気・気温・風速は、その列の 3 時間（例 09 → 09〜12 時）の真ん中の 1 時間（10〜11 時）の値。
             # Open-Meteo の時間ごとの降水量・天気は「その時刻までの 1 時間」なので 2 時間後の時刻の値を使う
             # （以前は列の時刻の値＝列の始まる前の 1 時間（08〜09 時）を表示していた）。無ければ列の時刻の値
             mid = (dt + MID_SLOT_OFFSET).astimezone(JST).strftime("%Y-%m-%dT%H:00")
             wcode = CODE_MAPPING.get(H_WC.get(mid, H_WC[ts]), "999")
-
-            tempC = H_TMP.get(ts, 0)
-            windkph = H_WND.get(ts, 0)
             prec = H_PREC.get(mid, H_PREC.get(ts, 0))
+
+            # 気温・風速（その時刻の値）は、真ん中の 1 時間の両端（10:00 と 11:00）の平均＝ 10:30 ごろの値
+            mid_start = (dt + MID_SLOT_OFFSET - datetime.timedelta(hours=1)).astimezone(JST).strftime("%Y-%m-%dT%H:00")
+
+            def mid_value(table):
+                vals = [table.get(k) for k in (mid_start, mid) if table.get(k) is not None]
+                return sum(vals) / len(vals) if vals else table.get(ts, 0)
+
+            tempC = mid_value(H_TMP)
+            windkph = mid_value(H_WND)
 
             hourly.append({
                 "datetime": dt,

@@ -143,7 +143,8 @@ def test_openmeteo_falls_back_when_jma_model_fails(monkeypatch, caplog):
 
 # ---------------------------------------------------------------- 今日の天気：降水量・天気は列の真ん中の 1 時間
 def test_hourly_precip_and_icon_use_middle_hour(monkeypatch):
-    """「09」の列（09〜12 時）は 10〜11 時の 1 時間の値（Open-Meteo の 11:00）。以前は 08〜09 時（09:00 の値）だった"""
+    """「09」の列（09〜12 時）は 10〜11 時の値。降水量・天気は Open-Meteo の 11:00（10〜11 時の 1 時間）、
+    気温・風速は 10:00 と 11:00 の平均。以前は 08〜09 時（09:00 の値）だった"""
     from utils import JST
     times = [f"2026-10-14T{h:02d}:00" for h in range(24)]
     prec = [0.0] * 24
@@ -162,7 +163,8 @@ def test_hourly_precip_and_icon_use_middle_hour(monkeypatch):
     assert col09["hour"] == "09"
     assert col09["pop"] == "1.5mm"                                  # 真ん中の 1 時間の雨
     assert col09["code"] == fw.CODE_MAPPING[61]                     # 天気も真ん中の 1 時間
-    assert col09["temp"] == "9℃"                                    # 気温は列の時刻のまま
+    assert col09["temp"] == "10℃"                                   # 気温は 10:00(10℃) と 11:00(11℃) の平均 10.5 → 10℃（偶数丸め）
+    assert col09["temp_val"] == round(10.5)
     assert hourly[0]["pop"] == "0.0mm" and hourly[0]["code"] == fw.CODE_MAPPING[0]   # 06 の列（07〜08 時）は晴れ
 
 
@@ -176,3 +178,17 @@ def test_hourly_falls_back_to_slot_time_when_middle_missing(monkeypatch):
     monkeypatch.setattr(fw, "get_target_datetimes", lambda: [datetime.datetime(2026, 10, 14, 9, tzinfo=JST)])
     hourly, _ = fw.fetch_weather_openmeteo(35.7651, 140.3854)
     assert hourly[0]["pop"] == "2.0mm" and hourly[0]["code"] == fw.CODE_MAPPING[61]
+    assert hourly[0]["temp"] == "20℃" and hourly[0]["wind"] == "2m"
+
+
+def test_hourly_temp_and_wind_average_middle_hour(monkeypatch):
+    from utils import JST
+    times = ["2026-10-14T09:00", "2026-10-14T10:00", "2026-10-14T11:00"]
+    om = {"hourly": {"time": times, "weathercode": [0, 0, 0], "precipitation": [0, 0, 0],
+                     "temperature_2m": [15.0, 18.0, 21.0], "windspeed_10m": [3.6, 14.4, 21.6]}, "daily": {"time": []}}
+    monkeypatch.setattr(fw.SESS, "get", lambda url, timeout=10: _Resp(om))
+    monkeypatch.setattr(fw, "CACHE_FILE", "/nonexistent-dir/x/cache.json")
+    monkeypatch.setattr(fw, "get_target_datetimes", lambda: [datetime.datetime(2026, 10, 14, 9, tzinfo=JST)])
+    hourly, _ = fw.fetch_weather_openmeteo(35.7651, 140.3854)
+    assert hourly[0]["temp"] == "20℃"          # (18 + 21) / 2 = 19.5 → 20（09:00 の 15℃ ではない）
+    assert hourly[0]["wind"] == "5m"           # (14.4 + 21.6) / 2 = 18 km/h = 5 m/s
