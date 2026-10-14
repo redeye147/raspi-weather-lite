@@ -136,6 +136,20 @@ def test_recent_problems_newest_first(tmp_path):
      "'ConnectionResetError(104, 'Connection reset by peer')': /bosai/forecast/data/overview_forecast/120000.json",
      "10/04 18:39 WARNING 再試行（/bosai/forecast/data/overview_forecast/120000.json）: 接続が切れた"),
     ("2026-10-05 06:00:01,000 | ERROR | JMA更新失敗: KeyError 'x'", "10/05 06:00 ERROR JMA更新失敗: KeyError 'x'"),
+    ("2026-10-14 12:08:00,000 | WARNING | 警報取得失敗: HTTPSConnectionPool(host='www.jma.go.jp', port=443): Max retries "
+     "exceeded with url: /bosai/warning/data/warning/120000.json (Caused by NewConnectionError('<urllib3.connection."
+     "HTTPSConnection object>: Failed to establish a new connection: [Errno 101] Network is unreachable'))",
+     "10/14 12:08 WARNING 警報取得失敗: ネットワークに届かない"),
+    ("2026-10-14 12:08:00,000 | WARNING | 警報取得失敗: HTTPSConnectionPool(host='www.jma.go.jp', port=443): Max retries "
+     "exceeded (Caused by NewConnectionError('<HTTPSConnection>: Failed to establish a new connection: [Errno -3] "
+     "Temporary failure in name resolution'))",
+     "10/14 12:08 WARNING 警報取得失敗: 名前解決エラー（DNS）"),
+    ("2026-10-14 12:08:00,000 | WARNING | 警報取得失敗: HTTPSConnectionPool(host='www.jma.go.jp', port=443): Max retries "
+     "exceeded (Caused by NewConnectionError('<HTTPSConnection>: Failed to establish a new connection'))",
+     "10/14 12:08 WARNING 警報取得失敗: 接続できない"),
+    ("2026-10-13 06:00:00,000 | WARNING | Retrying (Retry(total=2)) after connection broken by "
+     "'NameResolutionError(\"Failed to resolve 'api.open-meteo.com'\")': /v1/forecast?latitude=34.8583&longitude=136.8053&hourly=x",
+     "10/13 06:00 WARNING 再試行（/v1/forecast）: 名前解決エラー（DNS）"),
 ])
 def test_summarize_problem(line, short):
     assert dg.summarize_problem(line) == short

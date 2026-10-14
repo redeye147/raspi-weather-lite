@@ -141,10 +141,14 @@ def _git_version():
 
 
 # よくある通信エラーは要点だけにする（長い例外文はスマホで読みにくい）
-_ERROR_HINTS = [
+_ERROR_HINTS = [      # 上から順に調べる（名前解決の失敗は「接続できない」にも含まれるので先に）
     ("Failed to resolve", "名前解決エラー（DNS）"), ("NameResolutionError", "名前解決エラー（DNS）"),
+    ("Temporary failure in name resolution", "名前解決エラー（DNS）"),
+    ("Name or service not known", "名前解決エラー（DNS）"),
     ("timed out", "タイムアウト"), ("Connection reset", "接続が切れた"),
     ("Connection refused", "接続を拒否された"), ("Network is unreachable", "ネットワークに届かない"),
+    ("NewConnectionError", "接続できない"), ("Failed to establish a new connection", "接続できない"),
+    ("Max retries exceeded", "接続失敗"),
 ]
 
 
@@ -161,7 +165,8 @@ def summarize_problem(line: str) -> str:
     for key, hint in _ERROR_HINTS:
         if key in msg:
             if msg.startswith("Retrying"):            # requests の自動再試行（どの URL かを残す）
-                msg = f"再試行（{msg.rsplit(': ', 1)[-1].strip()}）: {hint}"
+                url = msg.rsplit(': ', 1)[-1].strip().split("?", 1)[0]     # 「?」より後（長い条件）は省く
+                msg = f"再試行（{url}）: {hint}"
             else:
                 msg = f"{msg.split(':', 1)[0]}: {hint}"
             break
