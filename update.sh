@@ -63,7 +63,26 @@ git diff HEAD --numstat | awk '$1=="0" && $2=="0" {print $3}' | while read -r f;
     git checkout HEAD -- "$f"
 done
 
-if ! git pull --ff-only; then
+# ネットの一時的な不調（DNS 引けない等）は 10 秒おきに 3 回まで試す
+PULL_OUT=""
+for i in 1 2 3; do
+    if PULL_OUT=$(git pull --ff-only 2>&1); then
+        echo "$PULL_OUT"
+        break
+    fi
+    echo "$PULL_OUT"
+    if echo "$PULL_OUT" | grep -qiE "could not resolve host|unable to access|failed to connect|timed out|connection reset"; then
+        [ "$i" -lt 3 ] && { echo "  ネット接続エラー。10 秒後に再試行します（${i}/3）"; sleep 10; continue; }
+        [ -f "$CFG_BAK" ] && cp "$CFG_BAK" "$CFG"
+        echo -e "\n\033[0;31m✗ GitHub に接続できませんでした（ネット・DNS の不調）。${NC}"
+        echo "  確認: ping -c 3 8.8.8.8 && getent hosts github.com"
+        echo "  少し待ってから、もう一度 bash update.sh を実行してください。"
+        exit 1
+    fi
+    PULL_OUT="__fail__"
+    break
+done
+if [ "$PULL_OUT" = "__fail__" ]; then
     [ -f "$CFG_BAK" ] && cp "$CFG_BAK" "$CFG"
     echo -e "\n\033[0;31m✗ git pull に失敗しました。Pi 上に GitHub に無い変更があります。${NC}"
     echo "  確認: git -C $REPO_DIR status && git -C $REPO_DIR log --oneline origin/main..HEAD"
