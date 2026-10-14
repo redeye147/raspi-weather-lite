@@ -141,54 +141,65 @@ def test_openmeteo_falls_back_when_jma_model_fails(monkeypatch, caplog):
     assert "標準のモデルで取り直し" in caplog.text
 
 
-# ---------------------------------------------------------------- 今日の天気：降水量・天気は列の真ん中の 1 時間
-def test_hourly_precip_and_icon_use_middle_hour(monkeypatch):
-    """「09」の列（09〜12 時）は 10〜11 時の値。降水量・天気は Open-Meteo の 11:00（10〜11 時の 1 時間）、
-    気温・風速は 10:00 と 11:00 の平均。以前は 08〜09 時（09:00 の値）だった"""
-    from utils import JST
+# ---------------------------------------------------------------- 今日の天気：3 時間のうち一番悪い天気・最大の雨と風・真ん中の気温
+def _om_hours(**cols):
     times = [f"2026-10-14T{h:02d}:00" for h in range(24)]
-    prec = [0.0] * 24
-    wc = [0] * 24                      # 0 = 快晴
-    prec[9], wc[9] = 5.0, 63           # 08〜09 時：雨（列の始まる前。表示しない）
-    prec[11], wc[11] = 1.5, 61         # 10〜11 時：弱い雨（09 の列に出す）
-    om = {"hourly": {"time": times, "weathercode": wc, "precipitation": prec,
-                     "temperature_2m": [float(h) for h in range(24)], "windspeed_10m": [3.6] * 24},
-          "daily": {"time": []}}
+    base = {"weathercode": [0] * 24, "precipitation": [0.0] * 24,
+            "temperature_2m": [float(h) for h in range(24)], "windspeed_10m": [3.6] * 24}
+    for k, changes in cols.items():
+        for h, v in changes.items():
+            base[k][h] = v
+    return {"hourly": {"time": times, **base}, "daily": {"time": []}}
+
+
+def _run(monkeypatch, om, hours=(6, 9, 12)):
+    from utils import JST
     monkeypatch.setattr(fw.SESS, "get", lambda url, timeout=10: _Resp(om))
     monkeypatch.setattr(fw, "CACHE_FILE", "/nonexistent-dir/x/cache.json")
     monkeypatch.setattr(fw, "get_target_datetimes",
-                        lambda: [datetime.datetime(2026, 10, 14, h, tzinfo=JST) for h in (6, 9, 12)])
+                        lambda: [datetime.datetime(2026, 10, 14, h, tzinfo=JST) for h in hours])
     hourly, _ = fw.fetch_weather_openmeteo(35.7651, 140.3854)
-    col09 = hourly[1]
-    assert col09["hour"] == "09"
-    assert col09["pop"] == "1.5mm"                                  # 真ん中の 1 時間の雨
-    assert col09["code"] == fw.CODE_MAPPING[61]                     # 天気も真ん中の 1 時間
-    assert col09["temp"] == "10℃"                                   # 気温は 10:00(10℃) と 11:00(11℃) の平均 10.5 → 10℃（偶数丸め）
-    assert col09["temp_val"] == round(10.5)
-    assert hourly[0]["pop"] == "0.0mm" and hourly[0]["code"] == fw.CODE_MAPPING[0]   # 06 の列（07〜08 時）は晴れ
+    return {h["hour"]: h for h in hourly}
 
 
-def test_hourly_falls_back_to_slot_time_when_middle_missing(monkeypatch):
-    """真ん中の時刻のデータが無い（予報の最後など）ときは、列の時刻の値"""
-    from utils import JST
+def test_rain_anywhere_in_3_hours_is_shown(monkeypatch):
+    """「09」の列（09〜12 時）：11〜12 時だけ雨でも雨のアイコンと、その 1 時間の量（合計しない）。
+    以前は 08〜09 時（列が始まる前）の値、その後は真ん中の 10〜11 時だけで、11〜12 時の雨を見落としていた"""
+    cols = _run(monkeypatch, _om_hours(weathercode={12: 63}, precipitation={11: 0.5, 12: 4.0}))
+    assert cols["09"]["code"] == fw.CODE_MAPPING[63]
+    assert cols["09"]["pop"] == "4.0mm"                       # いちばん多い 1 時間（合計 4.5 ではない）
+
+
+def test_rain_before_the_slot_is_not_shown(monkeypatch):
+    """08〜09 時の雨（Open-Meteo の 09:00）は「06」の列（06〜09 時）のもの。「09」の列には出さない"""
+    cols = _run(monkeypatch, _om_hours(weathercode={9: 61}, precipitation={9: 2.0}))
+    assert cols["09"]["pop"] == "0.0mm" and cols["09"]["code"] == fw.CODE_MAPPING[0]
+    assert cols["06"]["pop"] == "2.0mm" and cols["06"]["code"] == fw.CODE_MAPPING[61]
+
+
+def test_strongest_wind_and_middle_temperature(monkeypatch):
+    """風速は 09:00・10:00・11:00 のいちばん強い値、気温は 10:00 と 11:00 の平均"""
+    cols = _run(monkeypatch, _om_hours(windspeed_10m={9: 7.2, 10: 36.0, 11: 10.8},
+                                       temperature_2m={9: 15.0, 10: 18.0, 11: 21.0}))
+    assert cols["09"]["wind"] == "10m" and cols["09"]["wind_val"] == 10      # 36 km/h = 10 m/s
+    assert cols["09"]["temp"] == "20℃"                                     # (18 + 21) / 2 = 19.5 → 20
+
+
+@pytest.mark.parametrize("codes, worst", [
+    ([0, 61, 95], 95),        # 雷がいちばん悪い
+    ([71, 63, 3], 71),        # 雪 > 雨
+    ([63, 61, 80], 80),       # 同じ雨なら強い方（にわか雨 80 > 弱い雨 61、強い雨 63 よりコードが大きい）
+    ([45, 3, 51], 51),        # 霧雨 > 霧 > 曇り
+    ([1, 0, 2], 2),           # 晴れ〜曇り
+])
+def test_weather_severity(codes, worst):
+    assert max(codes, key=fw.weather_severity) == worst
+
+
+def test_falls_back_to_slot_time_when_hours_missing(monkeypatch):
+    """後ろの時刻のデータが無い（予報の最後など）ときは、列の時刻の値"""
     om = {"hourly": {"time": ["2026-10-14T09:00"], "weathercode": [61], "precipitation": [2.0],
                      "temperature_2m": [20.0], "windspeed_10m": [7.2]}, "daily": {"time": []}}
-    monkeypatch.setattr(fw.SESS, "get", lambda url, timeout=10: _Resp(om))
-    monkeypatch.setattr(fw, "CACHE_FILE", "/nonexistent-dir/x/cache.json")
-    monkeypatch.setattr(fw, "get_target_datetimes", lambda: [datetime.datetime(2026, 10, 14, 9, tzinfo=JST)])
-    hourly, _ = fw.fetch_weather_openmeteo(35.7651, 140.3854)
-    assert hourly[0]["pop"] == "2.0mm" and hourly[0]["code"] == fw.CODE_MAPPING[61]
-    assert hourly[0]["temp"] == "20℃" and hourly[0]["wind"] == "2m"
-
-
-def test_hourly_temp_and_wind_average_middle_hour(monkeypatch):
-    from utils import JST
-    times = ["2026-10-14T09:00", "2026-10-14T10:00", "2026-10-14T11:00"]
-    om = {"hourly": {"time": times, "weathercode": [0, 0, 0], "precipitation": [0, 0, 0],
-                     "temperature_2m": [15.0, 18.0, 21.0], "windspeed_10m": [3.6, 14.4, 21.6]}, "daily": {"time": []}}
-    monkeypatch.setattr(fw.SESS, "get", lambda url, timeout=10: _Resp(om))
-    monkeypatch.setattr(fw, "CACHE_FILE", "/nonexistent-dir/x/cache.json")
-    monkeypatch.setattr(fw, "get_target_datetimes", lambda: [datetime.datetime(2026, 10, 14, 9, tzinfo=JST)])
-    hourly, _ = fw.fetch_weather_openmeteo(35.7651, 140.3854)
-    assert hourly[0]["temp"] == "20℃"          # (18 + 21) / 2 = 19.5 → 20（09:00 の 15℃ ではない）
-    assert hourly[0]["wind"] == "5m"           # (14.4 + 21.6) / 2 = 18 km/h = 5 m/s
+    cols = _run(monkeypatch, om, hours=(9,))
+    assert cols["09"]["pop"] == "2.0mm" and cols["09"]["code"] == fw.CODE_MAPPING[61]
+    assert cols["09"]["temp"] == "20℃" and cols["09"]["wind"] == "2m"

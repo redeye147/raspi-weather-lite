@@ -35,7 +35,25 @@ SESS = session_with_retry()
 # =====================================================
 # Open-Meteo取得（E61cそのまま）
 # =====================================================
-MID_SLOT_OFFSET = datetime.timedelta(hours=2)   # 3 時間の列の真ん中の 1 時間（列の時刻 +1〜+2 時間）の値を指す時刻
+def weather_severity(code):
+    """WMO の天気コードの悪さ（大きいほど悪い）：雷 > 雪 > 雨 > 霧雨 > 霧 > 曇り > 晴れ。同じ種類ならコードの大きい方（強い）"""
+    if code is None:
+        return (-1, -1)
+    if code >= 95:
+        rank = 6                                   # 雷
+    elif 71 <= code <= 77 or code in (85, 86):
+        rank = 5                                   # 雪
+    elif 61 <= code <= 67 or 80 <= code <= 82:
+        rank = 4                                   # 雨・にわか雨
+    elif 51 <= code <= 57:
+        rank = 3                                   # 霧雨
+    elif code in (45, 48):
+        rank = 2                                   # 霧
+    else:
+        rank = 1 if code > 0 else 0                # 曇り〜晴れ（0 快晴・1〜3 晴れ時々曇り〜曇り）
+    return (rank, code)
+
+
 OPENMETEO_MODEL = "jma_seamless"   # 今日の天気（3 時間ごと）は気象庁の数値予報モデルを使う
 def fetch_weather_openmeteo(latitude=LATITUDE, longitude=LONGITUDE):
 
@@ -101,22 +119,25 @@ def fetch_weather_openmeteo(latitude=LATITUDE, longitude=LONGITUDE):
         ts = dt.astimezone(JST).strftime("%Y-%m-%dT%H:00")
 
         if ts in H_WC:
-            # 降水量・天気・気温・風速は、その列の 3 時間（例 09 → 09〜12 時）の真ん中の 1 時間（10〜11 時）の値。
-            # Open-Meteo の時間ごとの降水量・天気は「その時刻までの 1 時間」なので 2 時間後の時刻の値を使う
-            # （以前は列の時刻の値＝列の始まる前の 1 時間（08〜09 時）を表示していた）。無ければ列の時刻の値
-            mid = (dt + MID_SLOT_OFFSET).astimezone(JST).strftime("%Y-%m-%dT%H:00")
-            wcode = CODE_MAPPING.get(H_WC.get(mid, H_WC[ts]), "999")
-            prec = H_PREC.get(mid, H_PREC.get(ts, 0))
+            # 列は 3 時間（例 09 → 09〜12 時）。現場の安全のため、途中の雨・強風を見落とさないよう
+            # 天気は 3 時間のうちいちばん悪い天気、降水量はいちばん多い 1 時間の量（1 時間あたり。合計しない）、
+            # 風速はいちばん強い値。気温は真ん中（10:00 と 11:00 の平均＝ 10:30 ごろ）。
+            # Open-Meteo の降水量・天気は「その時刻までの 1 時間」なので 10:00・11:00・12:00 の値が 09〜12 時を表す。
+            # 気温・風速は「その時刻の値」なので 09:00・10:00・11:00。データが無い時刻は除き、全部無ければ列の時刻の値
+            def at(h):
+                return (dt + datetime.timedelta(hours=h)).astimezone(JST).strftime("%Y-%m-%dT%H:00")
 
-            # 気温・風速（その時刻の値）は、真ん中の 1 時間の両端（10:00 と 11:00）の平均＝ 10:30 ごろの値
-            mid_start = (dt + MID_SLOT_OFFSET - datetime.timedelta(hours=1)).astimezone(JST).strftime("%Y-%m-%dT%H:00")
+            def pick(table, hours):
+                return [table[k] for k in map(at, hours) if table.get(k) is not None]
 
-            def mid_value(table):
-                vals = [table.get(k) for k in (mid_start, mid) if table.get(k) is not None]
-                return sum(vals) / len(vals) if vals else table.get(ts, 0)
-
-            tempC = mid_value(H_TMP)
-            windkph = mid_value(H_WND)
+            wcs = pick(H_WC, (1, 2, 3)) or [H_WC[ts]]
+            wcode = CODE_MAPPING.get(max(wcs, key=weather_severity), "999")
+            precs = pick(H_PREC, (1, 2, 3))
+            prec = max(precs) if precs else H_PREC.get(ts, 0)
+            winds = pick(H_WND, (0, 1, 2))
+            windkph = max(winds) if winds else H_WND.get(ts, 0)
+            temps = pick(H_TMP, (1, 2))
+            tempC = sum(temps) / len(temps) if temps else H_TMP.get(ts, 0)
 
             hourly.append({
                 "datetime": dt,
