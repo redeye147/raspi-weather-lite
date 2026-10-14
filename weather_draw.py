@@ -93,6 +93,7 @@ def current_slot_index(hourly, now):
     return None
 
 
+SUN_MARK_EDGE_GAP = 3   # ▲▼と列の右端（次の列）の間にあけるすき間（px）
 SUN_LABEL_GAP = 12   # 日の出・日の入りの時刻ラベルと、次の列の時刻の数字の間にあけるすき間（px）
 
 
@@ -119,11 +120,14 @@ def _draw_sun_markers(screen, hourly, latitude, longitude, margin_x, col_w,
             x = margin_x + (1 + pos) * col_w
             cell_x = margin_x + (1 + ci) * col_w
             text_right = cell_x + 5 + hour_font.size(hourly[ci]["hour"])[0]
-            # 時刻の数字と重ならないよう右へ寄せる（最大でも数十分相当のずれ）
+            half = tri // 2
+            # 自分の列の時刻の数字（例「03」）と重ならないよう右へ寄せる（最大でも数十分相当のずれ）
             x = int(max(x, text_right + 2 + tri / 2))
+            # 次の列の時刻の数字（例「06」）とも重ならないよう、自分の列の中に収める
+            # （05:58 のように境目の直前だと、▲が「06」に食い込んでいた。位置は数分ずれるが時刻はラベルで読める）
+            x = min(x, cell_x + col_w - half - SUN_MARK_EDGE_GAP)
 
             color = SUNRISE_COLOR if is_rise else SUNSET_COLOR
-            half = tri // 2
             if is_rise:
                 pts = [(x, cy - half), (x - half, cy + half), (x + half, cy + half)]
             else:

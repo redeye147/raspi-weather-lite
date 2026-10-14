@@ -163,3 +163,28 @@ def test_current_slot_frame_is_drawn(w, h):
     left = margin_x + 2 * col_w                               # 見出し列 + 06 の列 の右
     assert len(cols) >= 2 * weather_draw.NOW_FRAME_WIDTH
     assert cols.min() == left and cols.max() <= left + col_w
+
+
+# ---------------------------------------------------------------- 日の出▲・日の入り▼が次の列の数字に食い込まない
+@pytest.mark.parametrize("w, h", RESOLUTIONS)
+def test_sun_marks_stay_inside_their_column(w, h, monkeypatch):
+    """日の出 05:58・日の入り 17:58（境目の直前）でも、▲▼とラベルは自分の列（03・15）の中に収まり、
+    次の列の「06」「18」に重ならない（2026-10-14 の 110 で ▲ が「06」に食い込んでいた）"""
+    import weather_draw
+    monkeypatch.setattr(weather_draw, "sun_times", lambda d, lat, lon: (
+        datetime.datetime(d.year, d.month, d.day, 5, 58, tzinfo=JST),
+        datetime.datetime(d.year, d.month, d.day, 17, 58, tzinfo=JST)))
+    screen = pygame.Surface((w, h))
+    draw_weather(screen, w, h, _hourly(), _daily(), {}, BASE_FONT, "警報・注意報なし", "", "", "天気更新 10:24",
+                 "中部国際空港", "05:58", "17:58", "", "3%", latitude=34.86, longitude=136.81,
+                 now=datetime.datetime(2026, 10, 11, 5, 0, tzinfo=JST))       # 枠は描かない時刻
+    arr = pygame.surfarray.array3d(screen).astype(int)
+    margin_x = int(w * 0.05)
+    col_w = int((w - margin_x * 2) // 11)
+    # 時刻の行（印とラベルがある行）だけを見る：天気アイコンの橙色と区別するため、▲▼の色そのものの画素
+    for color, col in ((weather_draw.SUNRISE_COLOR, 7), (weather_draw.SUNSET_COLOR, 3)):     # 03 の列・15 の列
+        near = np.all(arr == np.array(color), axis=2)
+        xs = np.where(near.any(axis=1))[0]
+        assert len(xs), f"{color} の印が無い"
+        next_col_left = margin_x + (1 + col) * col_w + col_w
+        assert xs.max() < next_col_left, f"{w}×{h}: 印が次の列（x={next_col_left}〜）に食い込んでいる（最大 x={xs.max()}）"
