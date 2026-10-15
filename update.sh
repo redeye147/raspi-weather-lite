@@ -183,6 +183,18 @@ else
     _setup_watchdog
 fi
 
+# ── 設定用テザリング（未登録の Pi だけ聞く）─────────────────
+# 未登録の WiFi 環境でもスマホのテザリングで設定できるよう、全台に setup-hotspot を登録しておく。
+# SSID・パスワードは公開リポジトリに置けないので、ここで入力してもらう（入力は画面に出ない）
+if command -v nmcli >/dev/null && ! nmcli -g NAME connection show 2>/dev/null | grep -Fxq "setup-hotspot"; then
+    echo ""
+    echo -e "${YELLOW}設定用テザリング（setup-hotspot）が未登録です。${NC}"
+    read -p "今ここで登録しますか？（スマホのテザリングの SSID・パスワードを入力）[y/N]: " do_hotspot
+    if [[ "$do_hotspot" =~ ^[Yy]$ ]]; then
+        bash "$REPO_DIR/wifi_setup/add_setup_hotspot.sh" || echo "  テザリングの登録に失敗しました（後で add_setup_hotspot.sh を実行してください）"
+    fi
+fi
+
 # ── [5/5] 完了 ──────────────────────────────────────────
 echo -e "\n${GREEN}✓ 更新完了！${NC}"
 echo ""

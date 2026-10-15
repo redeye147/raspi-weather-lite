@@ -12,6 +12,7 @@ import pygame
 import pytest
 
 import aviation
+import decisions
 import fb_display
 import fetch_wbgt
 import main01
@@ -107,7 +108,11 @@ def test_cold_start_without_snapshot(signage):
     with open(snap_file, encoding="utf-8") as f:
         snap = json.load(f)
     assert snap["hourly"] and snap["daily"] and snap["airport"]
-    assert calls["wbgt"]                                  # WBGT は起動直後に取りに行く
+    # WBGT は起動直後に取りに行く（0:00〜5:59 は取得しない決まりなので、その時間に試験すると呼ばれない）
+    if main01.datetime.datetime.now(main01.JST).hour >= decisions.WBGT_START_HOUR:
+        assert calls["wbgt"]
+    else:
+        assert not calls["wbgt"]
 
 
 def test_restart_with_fresh_snapshot(signage):

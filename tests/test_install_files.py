@@ -45,3 +45,18 @@ def test_scripts_prepare_journal_dir(script):
     assert "mkdir -p /var/log/journal /etc/systemd/journald.conf.d" in s
     assert "systemctl restart systemd-journald" in s
     assert "journalctl --flush" in s          # 設定した起動のログも SD に書き出す（無いと次の再起動で消える）
+
+
+@pytest.mark.parametrize("script", ["update.sh", "setup.sh"])
+def test_scripts_offer_setup_hotspot(script):
+    """未登録の Pi では設定用テザリング（setup-hotspot）の登録を聞く。再起動の質問より前に"""
+    s = _read(script)
+    assert 'grep -Fxq "setup-hotspot"' in s
+    assert '"$REPO_DIR/wifi_setup/add_setup_hotspot.sh"' in s
+    assert s.index("add_setup_hotspot.sh") < s.index("今すぐ再起動しますか")
+
+
+def test_add_setup_hotspot_keeps_secret_out_of_args():
+    """パスワードはコマンド引数ではなく、画面に出さない入力（read -s）で受け取る"""
+    s = _read("wifi_setup/add_setup_hotspot.sh")
+    assert "read -r -s -p" in s and "autoconnect-priority -10" in s
