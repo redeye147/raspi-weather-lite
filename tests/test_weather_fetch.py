@@ -219,3 +219,20 @@ def test_every_mapped_code_has_icon():
     from config import ICON_DIR
     for jma in set(fw.CODE_MAPPING.values()):
         assert os.path.exists(os.path.join(ICON_DIR, f"{jma}.png")), jma
+
+
+# Open-Meteo が返す天気コード（WMO）すべて
+WMO_CODES = [0, 1, 2, 3, 45, 48, 51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 71, 73, 75, 77,
+             80, 81, 82, 85, 86, 95, 96, 99]
+
+
+def test_every_wmo_code_is_mapped():
+    """抜けがあると「?（不明）」のアイコンになる（凍る雨・凍る霧雨が抜けていた）"""
+    assert [c for c in WMO_CODES if c not in fw.CODE_MAPPING] == []
+
+
+@pytest.mark.parametrize("wmo, jma", [(65, "306"), (82, "306"), (67, "306"), (75, "405"), (86, "405"),
+                                      (63, "302"), (73, "400")])
+def test_heavy_rain_and_snow_icons(wmo, jma):
+    """強い雨は「大雨」、強い雪は「大雪」。並の強さは今までどおり"""
+    assert fw.CODE_MAPPING[wmo] == jma
