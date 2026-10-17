@@ -465,7 +465,7 @@ WantedBy=multi-user.target
 
 ### 見出しの絵
 
-今日の天気の見出し「降水量」「気　温」「風　速」の右に、文字と同じ大きさ（22px）の絵を付ける（降水量は雨粒を青、気温は温度計の液を赤、風速は線を青。ほかは濃い灰色）。「気温」「風速」は真ん中に全角スペースを入れて「降水量」と同じ幅にし、絵を縦一列にそろえる（`weather_icons/labels/` の `precip.png`・`temp.png`・`wind.png`。`weather_draw.py` の `LABEL_ICONS`）。
+今日の天気の見出し「降水量」「気　温」「風　速」の右に、文字と同じ大きさ（22px）の絵を付ける（降水量は雨粒を青、気温は太陽を橙・温度計の液を赤、風速は線を青。ほかは濃い灰色）。「気温」「風速」は真ん中に全角スペースを入れて「降水量」と同じ幅にし、絵を縦一列にそろえる（`weather_icons/labels/` の `precip.png`・`temp.png`・`wind.png`。`weather_draw.py` の `LABEL_ICONS`）。
 
 ### 今日の天気のアイコン（Open-Meteo の天気 → 気象庁のアイコン）
 
