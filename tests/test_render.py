@@ -256,12 +256,14 @@ def test_wind_arrows_drawn_inside_wind_cells(w, h):
         assert red[x + 1:x + col_w - 1].sum() > 20, f"{w}×{h}: {i} 列目に矢印が無い"
 
 
-@pytest.mark.parametrize("speed", [0, 3, 6, 9, 15, 20])
+@pytest.mark.parametrize("speed", [0, 3, 4, 5, 6, 9, 15, 20])
 def test_wind_text_color_matches_arrow_band(speed):
-    """数字の色は矢印と同じ区切り。黄・灰だけ文字を濃く（白地で読めるように）"""
+    """数字の色：5 m/s 未満は黒。5 以上は矢印と同じ区切り（黄だけ文字を濃く。白地で読めるように）"""
     from weather_draw import wind_arrow_color, wind_text_color
     a, t = wind_arrow_color(speed), wind_text_color(speed)
-    if speed in (0, 9):
+    if speed < 5:
+        assert t == (0, 0, 0)
+    elif speed == 9:
         assert t != a and sum(t) < sum(a)
     else:
         assert t == a

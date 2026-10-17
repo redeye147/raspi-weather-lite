@@ -167,11 +167,13 @@ def wind_arrow_color(speed):
     return WIND_ARROW_COLORS[-1][1]
 
 
-# 風速の数字の色は矢印と同じ区切り・同じ色合い。黄と灰は白地で読めないので、文字だけ濃くする
-_WIND_TEXT_DARKER = {(240, 225, 0): (185, 150, 0), (205, 210, 205): (120, 120, 120)}
+# 風速の数字の色：5 m/s 未満はふつうの黒。5 以上は矢印と同じ区切り・色合い（黄は白地で読めないので文字だけ濃く）
+_WIND_TEXT_DARKER = {(240, 225, 0): (185, 150, 0)}
 
 
 def wind_text_color(speed):
+    if speed < 5:
+        return (0, 0, 0)
     c = wind_arrow_color(speed)
     return _WIND_TEXT_DARKER.get(c, c)
 
