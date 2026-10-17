@@ -115,23 +115,44 @@ bash ~/raspi-weather-lite/update.sh
 
 **家（開発環境）の WiFi では起動時に自動で最新にする**（コマンド不要）
 
-`auto_update_ssids.txt` に家の WiFi の SSID を書いた Pi は、その WiFi につながった状態で起動すると、天気画面を出す前に自動で `update.sh` を実行します（質問なし・パスワード入力なし・追加の再起動なし）。
+`auto_update_ssids.txt` に家の WiFi の SSID を書いた Pi は、その WiFi につながった状態で起動すると、天気画面を出す前に自動で `update.sh` を実行します（質問なし・パスワード入力なし・追加の再起動なし）。一度設定すれば、家で再起動するだけ（毎朝の定時再起動を含む）で最新になります。
 
-```bash
-echo 'aterm-658250-g' > ~/raspi-weather-lite/auto_update_ssids.txt    # Pi ごとに 1 回（複数なら 1 行に 1 つ）
-```
+設定手順（Pi ごとに 1 回）
+
+1. 自動更新の入った版か確かめる（`1` 以上なら OK。`0` なら先に一度だけ `cd ~/raspi-weather-lite && bash update.sh`）
+   ```bash
+   grep -c auto_update_ssids ~/raspi-weather-lite/start.sh
+   ```
+2. 家の WiFi の SSID を書く（複数なら 1 行に 1 つ。大文字・小文字も含めて SSID と完全一致）
+   ```bash
+   echo '<家の WiFi の SSID>' > ~/raspi-weather-lite/auto_update_ssids.txt
+   ```
+3. 家の WiFi につながった状態で再起動する（SSH は切れるので 2〜3 分待ってつなぎ直す）
+   ```bash
+   sudo reboot
+   ```
+4. 結果を確かめる。最後の行が「`[auto-update] 完了 <版> …`」なら成功（版は画面右下の版表示と同じ）
+   ```bash
+   cat ~/raspi-weather-lite/cache/auto_update.log
+   ```
+
+> 2 は再起動の**前**に行う。ファイルを作る前の起動では自動更新は動かない（ログファイルも無い）。
+> 複数の Pi に続けて設定するときは、SSH のプロンプト（`pi@raspi2w` など）で今どの Pi にいるかを確かめる。
 
 | 項目 | 内容 |
 |---|---|
 | いつ | 電源を入れた／再起動した直後の 1 回だけ（表示プログラムの異常終了からの再起動では行わない） |
 | どこで | 書いた SSID につながっているときだけ。空港など別の WiFi では何もしない（WiFi が無いときは最大 60 秒待ってから表示） |
 | 再起動 | 1 回で済む。更新が終わるとそのまま新しい版で表示を始める（`config.txt` の変更など再起動が要るものは次の再起動から） |
-| 時間 | 更新の分、天気画面が出るまで 1〜2 分ほど長くかかる（その間は黒い画面） |
-| 失敗したとき | ネット不調・10 分たっても終わらない等は、今の版のまま表示を始める |
-| 記録 | `~/raspi-weather-lite/cache/auto_update.log`（`journalctl -u main01 -b \| grep auto-update` でも見える） |
+| 時間 | 更新の分、天気画面が出るまで 1〜2 分ほど長くかかる（その間は黒い画面）。例：115（Pi Zero W）で約 45 秒 → 約 133 秒 |
+| 失敗したとき | ネット不調・10 分たっても終わらない等は、今の版のまま表示を始める。ログに「失敗（今の版で表示を続ける）」。次の再起動か手動の `bash update.sh` で最新に |
+| 更新されるブランチ | 今いるブランチ。作業用ブランチで試験中の Pi はそのブランチの最新になる（ふだんは `main` に戻しておく） |
+| 記録 | `~/raspi-weather-lite/cache/auto_update.log`（最新 1000 行。`journalctl -u main01 -b \| grep auto-update` でも見える） |
+| 新しい版が無いとき | ログに `Already up to date.` と出て、そのまま表示（正常） |
 | やめるとき | `rm ~/raspi-weather-lite/auto_update_ssids.txt` |
 
-> `auto_update_ssids.txt` は `.gitignore` 済み（公開リポジトリに SSID を載せない）。今いるブランチ（作業用ブランチで試験中ならそのブランチ）が最新になる。
+> `auto_update_ssids.txt` は `.gitignore` 済み。SSID を公開リポジトリ（README を含む）に書かない。
+> 更新は root で動くが、git は pi ユーザーとして実行するので、リポジトリのファイルが root の持ち物になることはない（確認：`find ~/raspi-weather-lite/.git -user root` で何も出なければ正常）。
 
 **main に戻して更新**（作業用ブランチで試験した Pi など。空港設定は保持）
 
