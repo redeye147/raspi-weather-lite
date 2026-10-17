@@ -626,8 +626,9 @@ def main():
         if _new != thunder_info:
             _kind = _new and _new["kind"]
             if _kind != shown_thunder_kind:
-                logging.warning(f"雷: {_kind} {_new['dir']} {_new['km']:.1f}km（{_new['at']:%H:%M} 解析）"
-                                if _new else "雷: 解除")
+                # テスト表示（--thunder-test）は診断ページの「直近の警告」に残さない
+                (logging.info if args.thunder_test else logging.warning)(
+                    f"雷: {_kind} {_new['dir']} {_new['km']:.1f}km（{_new['at']:%H:%M} 解析）" if _new else "雷: 解除")
                 shown_thunder_kind = _kind
             thunder_info = _new
             needs_redraw = True
