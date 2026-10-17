@@ -145,7 +145,8 @@ def test_openmeteo_falls_back_when_jma_model_fails(monkeypatch, caplog):
 def _om_hours(**cols):
     times = [f"2026-10-14T{h:02d}:00" for h in range(24)]
     base = {"weathercode": [0] * 24, "precipitation": [0.0] * 24,
-            "temperature_2m": [float(h) for h in range(24)], "windspeed_10m": [3.6] * 24}
+            "temperature_2m": [float(h) for h in range(24)], "windspeed_10m": [3.6] * 24,
+            "winddirection_10m": [0.0] * 24}
     for k, changes in cols.items():
         for h, v in changes.items():
             base[k][h] = v
@@ -239,3 +240,16 @@ def test_every_wmo_code_is_mapped():
 def test_heavy_rain_and_snow_icons(wmo, jma):
     """強い雨は「大雨」、強い雪は「大雪」。並の強さは今までどおり"""
     assert fw.CODE_MAPPING[wmo] == jma
+
+
+def test_wind_direction_is_from_the_strongest_hour(monkeypatch):
+    """風向は 09:00・10:00・11:00 のうち、いちばん強い風の時刻（10:00）の風向"""
+    cols = _run(monkeypatch, _om_hours(windspeed_10m={9: 7.2, 10: 36.0, 11: 10.8},
+                                       winddirection_10m={9: 90.0, 10: 225.0, 11: 0.0}))
+    assert cols["09"]["wind_dir"] == 225.0
+
+
+def test_wind_direction_missing_is_none(monkeypatch):
+    om = _om_hours()
+    del om["hourly"]["winddirection_10m"]
+    assert _run(monkeypatch, om)["09"]["wind_dir"] is None

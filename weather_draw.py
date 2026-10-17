@@ -9,6 +9,7 @@ E61c draw_weather 完全互換移植版 (lite: Pi Zero W 最適化)
 - 作業サマリーを静的表示に変更（スクロールアニメーション廃止）
 """
 
+import math
 import os
 import pygame
 import datetime
@@ -145,6 +146,42 @@ def _draw_sun_markers(screen, hourly, latitude, longitude, margin_x, col_w,
                 screen.blit(label, (right_x, cy - label.get_height() // 2))
             elif left_x >= text_right + 2:
                 screen.blit(label, (left_x, cy - label.get_height() // 2))
+
+
+# 風向の矢印の色（風速 m/s の下限, 色）。よく使われる天気図の配色
+WIND_ARROW_COLORS = [
+    (18, (230, 40, 20)),     # 18 以上：赤
+    (12, (240, 140, 20)),    # 12〜17：橙
+    (8, (240, 225, 0)),      # 8〜11：黄
+    (5, (70, 0, 255)),       # 5〜7：青紫
+    (1, (70, 170, 255)),     # 1〜4：水色
+    (0, (205, 210, 205)),    # 0：灰色
+]
+WIND_ARROW_OUTLINE = (90, 90, 90)        # 黄色・灰色でも白地で見えるように縁取り
+
+
+def wind_arrow_color(speed):
+    for low, color in WIND_ARROW_COLORS:
+        if speed >= low:
+            return color
+    return WIND_ARROW_COLORS[-1][1]
+
+
+def wind_arrow_points(cx, cy, size, deg):
+    """風が吹いていく向きを指す矢じり（V 字）の頂点。deg は風が吹いてくる方角（0 = 北風 → 下向き）"""
+    # どの向きに回しても直径 size の円に収まる大きさ（斜めにしても上下の行・隣の列にはみ出さない）
+    r = size / 2
+    h, w = r * 0.76, r * 0.64
+    base = [(0, h), (w, -h), (0, -h * 0.15), (-w, -h)]     # 下（南）を指す形
+    t = math.radians(deg)
+    c, s_ = math.cos(t), math.sin(t)
+    return [(cx + x * c - y * s_, cy + x * s_ + y * c) for x, y in base]
+
+
+def draw_wind_arrow(screen, cx, cy, size, deg, speed):
+    pts = wind_arrow_points(cx, cy, size, deg)
+    pygame.draw.polygon(screen, wind_arrow_color(speed), pts)
+    pygame.draw.polygon(screen, WIND_ARROW_OUTLINE, pts, 1)
 
 
 def _is_night_item(item) -> bool:
@@ -467,11 +504,22 @@ def draw_weather(
                         (0, 0, 0)
                     )
                     val_surf  = get_font(base_font_path, 26, bold=v >= 5).render(str(int(v)), True, wcolor)
-                    unit_surf = get_font(base_font_path, 24).render(" m/s", True, wcolor)
+                    # 列が狭い画面（1366・1280 幅）は単位を小さくして、風向の矢印の場所を空ける
+                    unit_surf = (get_font(base_font_path, 24).render(" m/s", True, wcolor) if col_w >= 140
+                                 else get_font(base_font_path, 16).render("m/s", True, wcolor))
                     x_pos = x + 5
                     y_pos = y + (row_heights[row_idx] - val_surf.get_height()) // 2
                     screen.blit(val_surf,  (x_pos, y_pos))
-                    screen.blit(unit_surf, (x_pos + val_surf.get_width(), y_pos))
+                    screen.blit(unit_surf, (x_pos + val_surf.get_width(),
+                                            y_pos + val_surf.get_height() - unit_surf.get_height() - (0 if col_w >= 140 else 3)))
+                    # 風向の矢印（数字の右。列が狭い画面では、入る大きさに縮める・入らなければ描かない）
+                    wdir = item.get("wind_dir")
+                    if isinstance(wdir, (int, float)):
+                        text_right = x_pos + val_surf.get_width() + unit_surf.get_width()
+                        size = min(int(row_heights[row_idx] * 0.8), x + col_w - text_right - 8)
+                        if size >= 16:
+                            draw_wind_arrow(screen, x + col_w - 4 - size / 2, y + row_heights[row_idx] / 2,
+                                            size, wdir, v)
                     continue
 
             if row_idx != 2:

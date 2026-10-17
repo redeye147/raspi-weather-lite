@@ -36,7 +36,7 @@ def _hourly():
     for i in range(10):
         dt = base + datetime.timedelta(hours=3 * i)
         out.append(dict(datetime=dt, date=dt.strftime("%-m/%-d"), hour=dt.strftime("%H"), code=codes[i],
-                        pop="12.5mm", temp_val=-12.3, temp="-12.3℃", wind_val=24.6, wind="24.6 m/s"))
+                        pop="12.5mm", temp_val=-12.3, temp="-12.3℃", wind_val=24.6, wind="24.6 m/s", wind_dir=45 * i))
     return out
 
 
@@ -213,3 +213,44 @@ def test_thunder_banner_is_drawn_above_heat_alert(w, h, kind):
         assert heat.max() - heat.min() > weather_draw.ALERT_BANNER_H_DOUBLE * 1.5
     bottom, _ = _content_box(screen)
     assert bottom < h - 1
+
+
+# ---------------------------------------------------------------- 風向の矢印
+@pytest.mark.parametrize("deg, tip", [(0, "下"), (90, "左"), (180, "上"), (270, "右")])
+def test_wind_arrow_points_downwind(deg, tip):
+    """北風（0 度）は南へ吹くので下向き。東風は左、南風は上、西風は右"""
+    from weather_draw import wind_arrow_points
+    (tx, ty) = wind_arrow_points(100, 100, 40, deg)[0]
+    assert {"下": ty > 110, "上": ty < 90, "左": tx < 90, "右": tx > 110}[tip]
+
+
+@pytest.mark.parametrize("deg", range(0, 360, 15))
+def test_wind_arrow_fits_its_circle(deg):
+    from weather_draw import wind_arrow_points
+    assert all(((x - 100) ** 2 + (y - 100) ** 2) ** 0.5 <= 20.01 for x, y in wind_arrow_points(100, 100, 40, deg))
+
+
+@pytest.mark.parametrize("speed, color", [(0, (205, 210, 205)), (3, (70, 170, 255)), (7, (70, 0, 255)),
+                                          (8, (240, 225, 0)), (17, (240, 140, 20)), (18, (230, 40, 20))])
+def test_wind_arrow_color(speed, color):
+    from weather_draw import wind_arrow_color
+    assert wind_arrow_color(speed) == color
+
+
+@pytest.mark.parametrize("w, h", RESOLUTIONS)
+def test_wind_arrows_drawn_inside_wind_cells(w, h):
+    """風速 24 m/s（いちばん長い数字）でも、矢印（赤）が全部の列で風速の行の中に描かれる"""
+    import weather_draw
+    screen = pygame.Surface((w, h))
+    draw_weather(screen, w, h, _hourly(), _daily(), {}, BASE_FONT, "警報・注意報なし", "", "", "天気更新 10:24",
+                 "成田空港", "05:44", "17:09", "", "3%", now=datetime.datetime(2026, 10, 11, 5, 0, tzinfo=JST))
+    arr = pygame.surfarray.array3d(screen)
+    red = np.all(arr == weather_draw.wind_arrow_color(24), axis=2)
+    margin_x = int(w * 0.05)
+    col_w = int((w - margin_x * 2) // 11)
+    row_h = int(h * 0.055)                                   # 風速の行の高さ
+    ys = np.where(red.any(axis=0))[0]
+    assert len(ys) and ys.max() - ys.min() < row_h           # 矢印は 1 行（風速の行）の高さに収まる
+    for i in range(10):
+        x = margin_x + (1 + i) * col_w
+        assert red[x + 1:x + col_w - 1].sum() > 20, f"{w}×{h}: {i} 列目に矢印が無い"

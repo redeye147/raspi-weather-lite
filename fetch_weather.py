@@ -85,7 +85,7 @@ def fetch_weather_openmeteo(latitude=LATITUDE, longitude=LONGITUDE):
     url = (
         f"https://api.open-meteo.com/v1/forecast?"
         f"latitude={latitude}&longitude={longitude}"
-        "&hourly=weathercode,precipitation,temperature_2m,windspeed_10m"
+        "&hourly=weathercode,precipitation,temperature_2m,windspeed_10m,winddirection_10m"
         "&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weathercode"
         "&timezone=Asia/Tokyo"
     )
@@ -120,6 +120,7 @@ def fetch_weather_openmeteo(latitude=LATITUDE, longitude=LONGITUDE):
     H_PREC = mkm("precipitation")
     H_TMP  = mkm("temperature_2m")
     H_WND  = mkm("windspeed_10m")
+    H_WDIR = mkm("winddirection_10m")      # 風が吹いてくる方角（度。0 = 北から）
 
     targets = get_target_datetimes()
 
@@ -146,6 +147,12 @@ def fetch_weather_openmeteo(latitude=LATITUDE, longitude=LONGITUDE):
             prec = max(precs) if precs else H_PREC.get(ts, 0)
             winds = pick(H_WND, (0, 1, 2))
             windkph = max(winds) if winds else H_WND.get(ts, 0)
+            # 風向は、いちばん強い風の時刻の風向
+            wind_dir = None
+            for k in sorted(map(at, (0, 1, 2)), key=lambda k: -(H_WND.get(k) if H_WND.get(k) is not None else -1)):
+                if H_WDIR.get(k) is not None:
+                    wind_dir = H_WDIR[k]
+                    break
             temps = pick(H_TMP, (1, 2))
             tempC = sum(temps) / len(temps) if temps else H_TMP.get(ts, 0)
 
@@ -159,6 +166,7 @@ def fetch_weather_openmeteo(latitude=LATITUDE, longitude=LONGITUDE):
                 "temp": f"{round(tempC)}℃" if tempC is not None else "--",
                 "wind_val": round(windkph / 3.6) if windkph is not None else None,
                 "wind": f"{round(windkph / 3.6)}m" if windkph is not None else "--",
+                "wind_dir": wind_dir,
             })
 
         elif ts in cached_hourly:
@@ -174,6 +182,7 @@ def fetch_weather_openmeteo(latitude=LATITUDE, longitude=LONGITUDE):
                 "temp": ch.get("temp", "--"),
                 "wind_val": ch.get("wind_val"),
                 "wind": ch.get("wind", "--"),
+                "wind_dir": ch.get("wind_dir"),
             })
 
         else:
