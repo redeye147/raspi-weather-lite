@@ -203,3 +203,19 @@ def test_falls_back_to_slot_time_when_hours_missing(monkeypatch):
     cols = _run(monkeypatch, om, hours=(9,))
     assert cols["09"]["pop"] == "2.0mm" and cols["09"]["code"] == fw.CODE_MAPPING[61]
     assert cols["09"]["temp"] == "20℃" and cols["09"]["wind"] == "2m"
+
+
+@pytest.mark.parametrize("wmo, jma", [(45, "209"), (48, "209"), (95, "350"), (96, "350"), (99, "350")])
+def test_code_mapping_fog_and_thunder(wmo, jma):
+    """霧は「霧」、雷雨（ひょうを含む）は「雨で雷」のアイコン（以前は 曇・雨・雪 になっていた）"""
+    import os
+    from config import ICON_DIR
+    assert fw.CODE_MAPPING[wmo] == jma
+    assert os.path.exists(os.path.join(ICON_DIR, f"{jma}.png"))
+
+
+def test_every_mapped_code_has_icon():
+    import os
+    from config import ICON_DIR
+    for jma in set(fw.CODE_MAPPING.values()):
+        assert os.path.exists(os.path.join(ICON_DIR, f"{jma}.png")), jma
