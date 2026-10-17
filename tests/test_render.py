@@ -267,3 +267,18 @@ def test_wind_text_color_matches_arrow_band(speed):
         assert t != a and sum(t) < sum(a)
     else:
         assert t == a
+
+
+# ---------------------------------------------------------------- 見出し（降水量・気温・風速）の横の絵
+@pytest.mark.parametrize("w, h", RESOLUTIONS)
+def test_label_icons_fit_in_label_column(w, h):
+    """絵は文字と同じ大きさ（22px 以内）で、見出しの列からはみ出さない"""
+    import weather_draw
+    from utils import get_font
+    col_w = int((w - int(w * 0.05) * 2) // 11)
+    for label, name in weather_draw.LABEL_ICONS.items():
+        icon = weather_draw._label_icon(name, weather_draw.LABEL_FONT_SIZE, {})
+        assert icon is not None, name
+        assert max(icon.get_size()) == weather_draw.LABEL_FONT_SIZE
+        text_w = get_font(BASE_FONT, weather_draw.LABEL_FONT_SIZE).size(label)[0]
+        assert 5 + text_w + 4 + icon.get_width() < col_w, f"{w}×{h}: 「{label}」の絵が列からはみ出す"

@@ -200,6 +200,9 @@ def _is_night_item(item) -> bool:
     return item["hour"] in NIGHT_HOURS
 
 ROW_LABELS = ["日付", "時刻", "天気", "降水量", "気温", "風速"]
+# 見出しの文字の右に付ける小さな絵（weather_icons/labels/）
+LABEL_ICONS = {"降水量": "precip", "気温": "temp", "風速": "wind"}
+LABEL_FONT_SIZE = 22
 WEEK_ROW_LABELS = ["日付", "天気", "降水確率", "気温：最高／最低"]
 
 
@@ -332,6 +335,22 @@ def draw_thunder_banner(screen, width, by, base_font_path, info, bh=ALERT_BANNER
     screen.blit(b, (x + t.get_width() + gap, by + (bh - b.get_height()) // 2))
 
 
+def _label_icon(name, size, icon_cache):
+    """見出しの絵を、縦横とも size 以内（縦横比はそのまま）に縮めて返す。無ければ None"""
+    if not name:
+        return None
+    key = ("label", name, size)
+    if key not in icon_cache:
+        try:
+            raw = pygame.image.load(os.path.join(ICON_DIR, "labels", f"{name}.png"))
+            k = size / max(raw.get_width(), raw.get_height())
+            icon_cache[key] = pygame.transform.smoothscale(
+                raw, (max(1, round(raw.get_width() * k)), max(1, round(raw.get_height() * k))))
+        except Exception:
+            icon_cache[key] = None
+    return icon_cache[key]
+
+
 def _load_scaled_icon(icon_path: str, w: int, h: int, icon_cache: dict):
     key = (icon_path, w, h)
     if key not in icon_cache:
@@ -443,8 +462,12 @@ def draw_weather(
                 pygame.draw.rect(screen, (180, 180, 180), (x, y, col_w, row_heights[row_idx]), 1)
 
             if col_idx == 0:
-                text_surf = get_font(base_font_path, 22).render(label, True, (0, 0, 0))
+                text_surf = get_font(base_font_path, LABEL_FONT_SIZE).render(label, True, (0, 0, 0))
                 screen.blit(text_surf, (x + 5, y + 5))
+                icon = _label_icon(LABEL_ICONS.get(label), LABEL_FONT_SIZE, icon_cache)
+                if icon is not None:            # 文字と同じ大きさで、文字のすぐ右に
+                    screen.blit(icon, (x + 5 + text_surf.get_width() + 4,
+                                       y + 5 + (text_surf.get_height() - icon.get_height()) // 2))
                 continue
 
             di = col_idx - 1

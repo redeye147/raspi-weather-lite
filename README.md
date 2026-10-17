@@ -463,6 +463,10 @@ WantedBy=multi-user.target
 
 ---
 
+### 見出しの絵
+
+今日の天気の見出し「降水量」「気温」「風速」の右に、文字と同じ大きさ（22px）の絵を付ける（`weather_icons/labels/` の `precip.png`・`temp.png`・`wind.png`。`weather_draw.py` の `LABEL_ICONS`）。
+
 ### 今日の天気のアイコン（Open-Meteo の天気 → 気象庁のアイコン）
 
 今日の天気（3 時間ごと）は Open-Meteo の天気コード（WMO）を気象庁の天気コードに置き換えてアイコンを選ぶ（`config.py` の `CODE_MAPPING`）。1 週間の天気は気象庁の天気コードをそのまま使う。
