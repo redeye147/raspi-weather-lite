@@ -182,8 +182,9 @@ def wind_arrow_points(cx, cy, size, deg):
     """風が吹いていく向きを指す矢じり（V 字）の頂点。deg は風が吹いてくる方角（0 = 北風 → 下向き）"""
     # どの向きに回しても直径 size の円に収まる大きさ（斜めにしても上下の行・隣の列にはみ出さない）
     r = size / 2
-    h, w = r * 0.76, r * 0.64
-    base = [(0, h), (w, -h), (0, -h * 0.15), (-w, -h)]     # 下（南）を指す形
+    # 細長い矢じり（以前は幅が広く正三角形に近く見えた）。h² + w² ≦ 1 で円に収まる
+    h, w = r * 0.89, r * 0.44
+    base = [(0, h), (w, -h), (0, -h * 0.10), (-w, -h)]     # 下（南）を指す形
     t = math.radians(deg)
     c, s_ = math.cos(t), math.sin(t)
     return [(cx + x * c - y * s_, cy + x * s_ + y * c) for x, y in base]
