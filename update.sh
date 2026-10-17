@@ -7,6 +7,21 @@ NC='\033[0m'
 
 REPO_DIR="/home/pi/raspi-weather-lite"
 
+# --auto: 起動時の自動更新（start.sh から root で実行）。質問をせず、表示プログラムの再起動もしない
+#         （このあと start.sh がそのまま新しい版の表示プログラムを起動するので、再起動は 1 回で済む）
+AUTO=0
+[ "${1:-}" = "--auto" ] && AUTO=1
+
+# リポジトリは pi の持ち物。root で動くときも git は pi として実行する（root の git は「所有者が違う」で止まる・
+# 更新したファイルが root の持ち物になって、あとで pi から更新できなくなる）
+git() {
+    if [ "$(id -u)" = 0 ]; then
+        runuser -u pi -- /usr/bin/git "$@"
+    else
+        command git "$@"
+    fi
+}
+
 echo -e "${GREEN}=== raspi-weather-lite 更新 ===${NC}"
 
 # ── [1/5] 依存パッケージ確認 ──────────────────────────────
@@ -138,7 +153,11 @@ sudo systemctl enable wifi-portal
 pkill -u pi -f "raspi-weather-lite/main01.py" 2>/dev/null || true
 # 短時間に何度も更新・再起動すると StartLimitBurst（10分で5回）に達して起動できなくなるため記録を消す
 sudo systemctl reset-failed main01 2>/dev/null || true
-sudo systemctl restart main01
+if [ "$AUTO" = 1 ]; then
+    echo "  自動更新：表示プログラムはこのあと新しい版で起動します（再起動しない）"
+else
+    sudo systemctl restart main01
+fi
 sudo systemctl restart wifi-portal
 echo -e "  ${GREEN}完了${NC}"
 
@@ -186,7 +205,7 @@ fi
 # ── 設定用テザリング（未登録の Pi だけ聞く）─────────────────
 # 未登録の WiFi 環境でもスマホのテザリングで設定できるよう、全台に setup-hotspot を登録しておく。
 # SSID・パスワードは公開リポジトリに置けないので、ここで入力してもらう（入力は画面に出ない）
-if command -v nmcli >/dev/null && ! nmcli -g NAME connection show 2>/dev/null | grep -Fxq "setup-hotspot"; then
+if [ "$AUTO" = 0 ] && command -v nmcli >/dev/null && ! nmcli -g NAME connection show 2>/dev/null | grep -Fxq "setup-hotspot"; then
     echo ""
     echo -e "${YELLOW}設定用テザリング（setup-hotspot）が未登録です。${NC}"
     read -p "今ここで登録しますか？（スマホのテザリングの SSID・パスワードを入力）[y/N]: " do_hotspot
@@ -197,6 +216,7 @@ fi
 
 # ── [5/5] 完了 ──────────────────────────────────────────
 echo -e "\n${GREEN}✓ 更新完了！${NC}"
+[ "$AUTO" = 1 ] && exit 0
 echo ""
 read -p "今すぐ再起動しますか？ [y/N]: " do_reboot
 if [[ "$do_reboot" =~ ^[Yy]$ ]]; then

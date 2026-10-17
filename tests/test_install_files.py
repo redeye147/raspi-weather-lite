@@ -60,3 +60,26 @@ def test_add_setup_hotspot_keeps_secret_out_of_args():
     """パスワードはコマンド引数ではなく、画面に出さない入力（read -s）で受け取る"""
     s = _read("wifi_setup/add_setup_hotspot.sh")
     assert "read -r -s -p" in s and "autoconnect-priority -10" in s
+
+
+# ---------------------------------------------------------------- 起動時の自動更新（家の WiFi のとき）
+def test_update_auto_mode_never_asks_or_restarts_display():
+    """update.sh --auto は質問をせず（起動中に止まらない）、表示プログラムも再起動しない（start.sh が続けて起動する）"""
+    s = _read("update.sh")
+    assert '[ "${1:-}" = "--auto" ] && AUTO=1' in s
+    for prompt in ("今すぐ再起動しますか", "今ここで登録しますか"):
+        i = s.index(prompt)
+        guard = s.rfind('[ "$AUTO" = 1 ] && exit 0', 0, i) if "再起動" in prompt else s.rfind('[ "$AUTO" = 0 ]', 0, i)
+        assert guard != -1, prompt
+    restart = s.index("sudo systemctl restart main01")
+    assert s.rfind('if [ "$AUTO" = 1 ]; then', 0, restart) > s.index("[3/5]")
+    assert "runuser -u pi -- /usr/bin/git" in s          # root で動いても git は pi として
+
+
+def test_start_sh_auto_update_only_on_listed_wifi_once_per_boot():
+    s = _read("start.sh")
+    assert 'AUTO_SSIDS="$REPO/auto_update_ssids.txt"' in s
+    assert "/run/raspi-weather-auto-updated" in s          # 再起動で消える目印：起動ごとに 1 回だけ
+    assert 'timeout 600 bash "$REPO/update.sh" --auto' in s
+    assert s.index("update.sh\" --auto") < s.index("exec /usr/bin/python3")   # 更新してから表示
+    assert "auto_update_ssids.txt" in _read(".gitignore")  # SSID は公開リポジトリに入れない

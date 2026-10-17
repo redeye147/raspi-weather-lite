@@ -16,3 +16,6 @@ wifi_setup/profiles/
 
 # スクリーンショット（tools/screenshot.py の保存先）
 screenshots/
+
+# 起動時の自動更新の対象 WiFi（Pi ごとに作る）
+auto_update_ssids.txt
