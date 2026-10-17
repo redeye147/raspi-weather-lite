@@ -451,20 +451,25 @@ def main():
             "wbgt_alert": wbgt_alert, "wbgt_level_info": wbgt_level_info,
             "wbgt_status": wbgt_status, "wbgt_data_at": wbgt_data_at,
             "metar_raw": aviation_state.get("raw"),
+            "thunder_status": thunder_status, "thunder_ok_at": thunder_ok_at,
+            "thunder_error": thunder_error, "thunder_data_at": thunder_data_at,
+            "thunder_shown": ({**thunder_info, "at": thunder_info["at"].timestamp()} if thunder_info else None),
         })
+
+    # 雷ナウキャスト：5 分ごとに裏で取得。空港から 20km 以内の雷を帯で出す（範囲外になっても 20 分は保持）
+    thunder_state = ThunderState()
+    thunder_holder = {}
+    thunder_status = thunder_error = None
+    thunder_ok_at = thunder_data_at = 0.0           # 最後に取得できた時刻・その解析時刻（診断ページ用）
+    last_thunder_attempt = 0.0
+    thunder_not_before = time.time() + DEFER_INITIAL_FETCH_S
+    shown_thunder_kind = None
+    thunder_info = None
 
     if fetch_ok and not weather_fresh:
         _save_state()
     _first_draw_logged = False
     last_aviation_attempt = None   # 直近に航空気象を取得した区切り（decisions.aviation_fetch_due）
-    # 雷ナウキャスト：5 分ごとに裏で取得。空港から 20km 以内の雷を帯で出す（範囲外になっても 20 分は保持）
-    thunder_state = ThunderState()
-    thunder_holder = {}
-    thunder_status = None
-    last_thunder_attempt = 0.0
-    thunder_not_before = time.time() + DEFER_INITIAL_FETCH_S
-    shown_thunder_kind = None
-    thunder_info = None
     shown_metar_raw = aviation_state.get("raw")
     _fetch_pending = False
     if kick_fetch:
@@ -609,7 +614,10 @@ def main():
             thunder_state.update(_res)
             if _res.get("status") != thunder_status:
                 logging.info(f"雷ナウキャスト: {_res.get('status')} {_res.get('error', '')}".rstrip())
-            thunder_status = _res.get("status")
+            thunder_status, thunder_error = _res.get("status"), _res.get("error")
+            if thunder_status == "ok":
+                thunder_ok_at, thunder_data_at = time.time(), _res["at"].timestamp()
+            _save_state()
         if args.thunder_test:
             _new = {"kind": args.thunder_test, "km": 6 if args.thunder_test == "near" else 18,
                     "dir": "南西", "at": now.replace(second=0, microsecond=0)}

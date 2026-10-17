@@ -330,6 +330,28 @@ def _aviation_item(now, snap, icao):
                  f"{icao} {m['obs_utc'].astimezone(JST):%H:%M} 観測（{_ago(age)}）・{m['category']}", detail)
 
 
+def _thunder_item(now, snap):
+    snap = snap or {}
+    ok_at, err = snap.get("thunder_ok_at"), snap.get("thunder_error")
+    if not ok_at:
+        return _item("THN", "雷ナウキャスト", WARN, "データなし",
+                     f"まだ取得できていません（{err}）" if err else "まだ取得していません（起動直後は約20秒後）")
+    age = now.timestamp() - ok_at
+    data_at = snap.get("thunder_data_at")
+    at = f"{_hm(data_at)[-5:]} 解析" if data_at else "解析時刻不明"
+    shown = snap.get("thunder_shown")
+    if shown:
+        value = f"{'雷接近' if shown['kind'] == 'near' else '雷注意'} {shown['dir']} {max(1, round(shown['km']))}km（{at}）"
+    else:
+        value = f"20km 以内に雷なし（{at}）"
+    level = OK if age <= 15 * 60 else (WARN if age <= 60 * 60 else BAD)
+    detail = ""
+    if level != OK:
+        detail = f"{_ago(age)}から取得できていません" + (f"（{err}）" if err else "") + \
+            ("。雷の帯は出ません" if level == BAD else "")
+    return _item("THN", "雷ナウキャスト", level, value, detail)
+
+
 def evaluate(info: dict, now: datetime.datetime) -> dict:
     """集めた情報から、項目ごとの判定と総合判定を返す"""
     items = []
@@ -387,6 +409,7 @@ def evaluate(info: dict, now: datetime.datetime) -> dict:
     items.append(_jma_item(now, snap))
     items.append(_wbgt_item(now, snap))
     items.append(_aviation_item(now, snap, info.get("icao")))
+    items.append(_thunder_item(now, snap))
 
     t = info.get("temp")
     if t is None:

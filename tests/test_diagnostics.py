@@ -23,7 +23,9 @@ def healthy(**over):
         "snap": {"weather_at": ts(11, 50), "jma_at": ts(11, 37), "wbgt_at": ts(11, 40),
                  "wbgt_status": "ok", "wbgt_data_at": ts(11, 40),
                  "wbgt_level_info": {"label": "注意", "value": 26.1},
-                 "metar_raw": "RJAA 050300Z 02005KT 9999 FEW020 22/15 Q1018"},
+                 "metar_raw": "RJAA 050300Z 02005KT 9999 FEW020 22/15 Q1018",
+                 "thunder_status": "ok", "thunder_ok_at": ts(12, 17), "thunder_data_at": ts(12, 10),
+                 "thunder_error": None, "thunder_shown": None},
         "display": {"fb0": "1920×1080", "hdmi": {"HDMI-A-1": "connected"}}, "recent_starts": 1,
         "version": "main 9ce2603", "problems": [],
     }
@@ -38,7 +40,7 @@ def item(result, code):
 def test_all_ok():
     r = dg.evaluate(healthy(), NOW)
     assert r["overall"] == "ok" and r["codes"] == []
-    assert [i["code"] for i in r["items"]] == ["SVC", "DSP", "NET", "NTP", "WX", "JMA", "WBGT", "AVI", "TMP", "PWR", "SYS"]
+    assert [i["code"] for i in r["items"]] == ["SVC", "DSP", "NET", "NTP", "WX", "JMA", "WBGT", "AVI", "THN", "TMP", "PWR", "SYS"]
     assert item(r, "AVI")["value"].startswith("RJAA 12:00 観測")
     assert "注意 26.1℃" in item(r, "WBGT")["value"]
 
@@ -183,3 +185,25 @@ def test_recent_starts_counts_only_last_10_minutes(tmp_path):
         "2026-10-11 07:55:00,000 | INFO | 起動: airport=narita",
     ]), encoding="utf-8")
     assert dg.recent_starts(str(log), now=datetime.datetime(2026, 10, 11, 7, 56)) == 2
+
+
+def test_thunder_ok_shows_none_or_banner():
+    assert item(dg.evaluate(healthy(), NOW), "THN")["value"] == "20km 以内に雷なし（12:10 解析）"
+    snap = dict(healthy()["snap"], thunder_shown={"kind": "near", "km": 5.6, "dir": "南西", "at": ts(12, 10)})
+    it = item(dg.evaluate(healthy(snap=snap), NOW), "THN")
+    assert it["level"] == "ok" and it["value"] == "雷接近 南西 6km（12:10 解析）"
+
+
+@pytest.mark.parametrize("ok_at, level", [(ts(12, 7), "ok"), (ts(11, 40), "warn"), (ts(10, 0), "bad")])
+def test_thunder_age(ok_at, level):
+    snap = dict(healthy()["snap"], thunder_ok_at=ok_at, thunder_status="error", thunder_error="timeout")
+    it = item(dg.evaluate(healthy(snap=snap), NOW), "THN")
+    assert it["level"] == level
+    if level != "ok":
+        assert "timeout" in it["detail"]
+
+
+def test_thunder_never_fetched():
+    snap = {k: v for k, v in healthy()["snap"].items() if not k.startswith("thunder")}
+    it = item(dg.evaluate(healthy(snap=snap), NOW), "THN")
+    assert it["level"] == "warn" and it["value"] == "データなし"
