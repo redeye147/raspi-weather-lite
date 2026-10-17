@@ -511,7 +511,7 @@ grep "\[aviation\]" ~/raspi-weather-lite/displayraspi_log.txt | tail -6
 - **範囲外になっても 20 分は出したまま**（出たり消えたりしないように）。10km 以内を見てから 20 分は「雷接近」、その後 20km 以内の検出から 20 分は「雷注意」
 - 熱中症警戒アラートと重なるときは、雷を上・熱中症を下に、帯を少し細くして 2 本並べる
 - 右下の警報・注意報欄の「雷注意報」とは別物。注意報は市町村単位の「おそれ」の予報（数時間〜半日）、帯は今の雷の位置（10 分ごと）
-- 画面の確認だけしたいとき：`python3 main01.py --thunder-test near`（または `watch`）
+- 画面の確認だけしたいとき：`sudo systemctl stop main01` → `sudo python3 ~/raspi-weather-lite/main01.py --thunder-test near`（または `watch`）→ `Ctrl+C` → `sudo systemctl start main01`（表示プログラムは root で動くので `sudo` が必要）
 
 **データの確認（Pi で）**：気象庁ホームページの地図用の画像（公式の API ではない）を使うため、形式が変わったときは次で確かめる。
 
