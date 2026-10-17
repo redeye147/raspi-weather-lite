@@ -167,6 +167,15 @@ def wind_arrow_color(speed):
     return WIND_ARROW_COLORS[-1][1]
 
 
+# 風速の数字の色は矢印と同じ区切り・同じ色合い。黄と灰は白地で読めないので、文字だけ濃くする
+_WIND_TEXT_DARKER = {(240, 225, 0): (185, 150, 0), (205, 210, 205): (120, 120, 120)}
+
+
+def wind_text_color(speed):
+    c = wind_arrow_color(speed)
+    return _WIND_TEXT_DARKER.get(c, c)
+
+
 def wind_arrow_points(cx, cy, size, deg):
     """風が吹いていく向きを指す矢じり（V 字）の頂点。deg は風が吹いてくる方角（0 = 北風 → 下向き）"""
     # どの向きに回しても直径 size の円に収まる大きさ（斜めにしても上下の行・隣の列にはみ出さない）
@@ -497,12 +506,7 @@ def draw_weather(
                 if not isinstance(v, (int, float)):
                     text = item["wind"]
                 else:
-                    wcolor = (
-                        (255, 0, 0) if v >= 15 else
-                        (128, 0, 128) if v >= 10 else
-                        (0, 0, 255) if v >= 5 else
-                        (0, 0, 0)
-                    )
+                    wcolor = wind_text_color(v)          # 矢印と同じ区切り（0・1〜4・5〜7・8〜11・12〜17・18〜）
                     val_surf  = get_font(base_font_path, 26, bold=v >= 5).render(str(int(v)), True, wcolor)
                     # 列が狭い画面（1366・1280 幅）は単位を小さくして、風向の矢印の場所を空ける
                     unit_surf = (get_font(base_font_path, 24).render(" m/s", True, wcolor) if col_w >= 140
