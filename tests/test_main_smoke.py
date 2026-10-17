@@ -4,6 +4,7 @@
 例外なく進むかを確かめる。部品のつなぎ間違い（名前の書き間違い・引数の渡し忘れ）は Pi で起動直後に
 落ちて画面が出なくなるので、ここで先に見つける。
 """
+import datetime
 import json
 import logging
 import time
@@ -54,11 +55,16 @@ def signage(tmp_path, monkeypatch):
     monkeypatch.setattr(main01, "DEFER_INITIAL_FETCH_S", 0)
     # 通信はすべて止める（裏で取得するスレッドもテスト後に本物の通信をしないように）
     monkeypatch.setattr(requests, "get", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("offline")))
-    aviation_calls, wbgt_calls = [], []
+    aviation_calls, wbgt_calls, thunder_calls = [], [], []
     monkeypatch.setattr(aviation, "start_fetch_in_background", lambda *a, **k: aviation_calls.append(a))
     monkeypatch.setattr(main01, "start_wbgt_fetch",
                         lambda airport, holder: (wbgt_calls.append(airport),
                                                  holder.update(result=(27.0, False, fetch_wbgt.level_for(27.0), "ok"))))
+    # 雷：空港の南西 8km（雷接近）を返す。ネットには出ない
+    monkeypatch.setattr(main01, "start_thunder_fetch",
+                        lambda lat, lon, holder: (thunder_calls.append((lat, lon)), holder.update(result={
+                            "status": "ok", "at": datetime.datetime.now(JST),
+                            "hit": {"km": 8.2, "dir": "南西", "level": 2, "max_level": 2}})))
     for mod in (main01, netstate):
         monkeypatch.setattr(mod, "get_connection_kind", lambda: "wifi")
     monkeypatch.setattr(main01, "wired_cable_status", lambda: "")
@@ -87,7 +93,7 @@ def signage(tmp_path, monkeypatch):
         with open(log_file, encoding="utf-8") as f:
             return f.read()
 
-    yield run, snap_file, {"aviation": aviation_calls, "wbgt": wbgt_calls}
+    yield run, snap_file, {"aviation": aviation_calls, "wbgt": wbgt_calls, "thunder": thunder_calls}
     for h in root.handlers:
         if h not in saved[0]:
             h.close()
@@ -108,6 +114,7 @@ def test_cold_start_without_snapshot(signage):
     with open(snap_file, encoding="utf-8") as f:
         snap = json.load(f)
     assert snap["hourly"] and snap["daily"] and snap["airport"]
+    assert calls["thunder"] and "雷: near 南西 8.2km" in log          # 雷は起動直後に取りに行き、帯を出す
     # WBGT は起動直後に取りに行く（0:00〜5:59 は取得しない決まりなので、その時間に試験すると呼ばれない）
     if main01.datetime.datetime.now(main01.JST).hour >= decisions.WBGT_START_HOUR:
         assert calls["wbgt"]

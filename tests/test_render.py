@@ -54,7 +54,8 @@ SCENARIOS = {
         headline_text="千葉県では、１２日夜遅くまで土砂災害や低い土地の浸水、河川の増水や氾濫に厳重に警戒してください。" * 2,
         overview_text="　台風第１９号が関東地方に接近しています。" * 6,
         wbgt=33.5, alert=True, fetch_ok=False,
-        metar="RJAA 110300Z 18035G55KT 0800 +TSRA BR FEW005CB BKN010 OVC020 18/17 Q0985"),
+        metar="RJAA 110300Z 18035G55KT 0800 +TSRA BR FEW005CB BKN010 OVC020 18/17 Q0985",
+        thunder={"kind": "near", "km": 9.6, "dir": "北東", "at": datetime.datetime(2026, 10, 11, 12, 10, tzinfo=JST)}),
 }
 
 
@@ -66,7 +67,7 @@ def _render(w, h, sc):
                  "成田空港", "05:44", "17:09", "", "3% / 53℃",
                  fetch_ok=sc["fetch_ok"], qr_surf=make_qr_surface("http://192.168.11.13:8080", max_size=54),
                  wbgt_level_info=wbgt, wbgt_alert=sc["alert"], latitude=35.76, longitude=140.38,
-                 overview_text=sc["overview_text"])
+                 overview_text=sc["overview_text"], thunder=sc.get("thunder"))
     metar = aviation.parse_metar(sc["metar"], datetime.datetime(2026, 10, 11, 3, 10, tzinfo=datetime.timezone.utc)) \
         if sc["metar"] else None
     draw_header(screen, w, h, BASE_FONT, "成田空港", "05:44", "17:09", "", "",
@@ -188,3 +189,27 @@ def test_sun_marks_stay_inside_their_column(w, h, monkeypatch):
         assert len(xs), f"{color} の印が無い"
         next_col_left = margin_x + (1 + col) * col_w + col_w
         assert xs.max() < next_col_left, f"{w}×{h}: 印が次の列（x={next_col_left}〜）に食い込んでいる（最大 x={xs.max()}）"
+
+
+# ---------------------------------------------------------------- 雷の帯
+@pytest.mark.parametrize("w, h", RESOLUTIONS)
+@pytest.mark.parametrize("kind", ["near", "watch"])
+def test_thunder_banner_is_drawn_above_heat_alert(w, h, kind):
+    """雷の帯がヘッダーの直下に、熱中症アラートの帯はその下に描かれ、どちらも画面に収まる"""
+    import weather_draw
+    sc = dict(SCENARIOS["いちばん詰まる"], thunder={"kind": kind, "km": 18.4, "dir": "南西",
+                                                      "at": datetime.datetime(2026, 10, 11, 12, 10, tzinfo=JST)})
+    screen = _render(w, h, sc)
+    arr = pygame.surfarray.array3d(screen)
+    bg = weather_draw.THUNDER_STYLE[kind]["bg"]
+    rows = np.where(np.all(arr == bg, axis=2).sum(axis=0) > w * 0.5)[0]
+    assert len(rows), "雷の帯が無い"
+    header_h = int(h * 0.25)
+    assert header_h <= rows.min() < header_h + weather_draw.ALERT_BANNER_H
+    heat = np.where(np.all(arr == (160, 0, 0), axis=2).sum(axis=0) > w * 0.5)[0]
+    if kind == "watch":
+        assert heat.min() > rows.max()                               # 熱中症アラートは雷の下
+    else:                                                            # 同じ赤：2 本ぶんの高さがある
+        assert heat.max() - heat.min() > weather_draw.ALERT_BANNER_H_DOUBLE * 1.5
+    bottom, _ = _content_box(screen)
+    assert bottom < h - 1

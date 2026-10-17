@@ -229,20 +229,59 @@ def draw_today_title_bar(
 
 
 ALERT_BANNER_H = 44
+ALERT_BANNER_H_DOUBLE = 28      # 雷と熱中症の帯が 2 本重なるときは細くする（1280×720 で表が画面の下にはみ出さないように）
 SUMMARY_GAP_MIN_HEIGHT = 1000   # この高さ以上の画面で、作業注意情報の下に1行分の余白を入れる
 
 
-def draw_alert_banner(screen, width, header_h, base_font_path):
+def draw_alert_banner(screen, width, header_h, base_font_path, bh=ALERT_BANNER_H):
     """ヘッダー直下に熱中症警戒アラートバナーを表示。"""
-    bh = ALERT_BANNER_H
     by = header_h
     pygame.draw.rect(screen, (160, 0, 0), (0, by, width, bh))
     pygame.draw.line(screen, (255, 60, 60), (0, by), (width, by), 3)
     pygame.draw.line(screen, (255, 60, 60), (0, by + bh - 1), (width, by + bh - 1), 2)
-    f = get_font(base_font_path, 26, bold=True)
+    f = get_font(base_font_path, 26 if bh >= ALERT_BANNER_H else 20, bold=True)
     text = "熱中症警戒アラート発令中 ― こまめな水分補給を！日陰で休憩を！"
     s = f.render(text, True, (255, 255, 180))
     screen.blit(s, ((width - s.get_width()) // 2, by + (bh - s.get_height()) // 2))
+
+
+# 雷の帯：「雷接近」（10km 以内）は赤地に黄色、「雷注意」（20km 以内）は黄色地に黒
+THUNDER_STYLE = {
+    "near":  dict(bg=(160, 0, 0), edge=(255, 60, 60), fg=(255, 255, 180), bolt=(255, 230, 0)),
+    "watch": dict(bg=(255, 200, 0), edge=(200, 140, 0), fg=(0, 0, 0), bolt=(120, 60, 0)),
+}
+
+
+def _draw_bolt(screen, x, y, h, color):
+    """稲妻の形（フォントに ⚡ が無いので図形で描く）。幅は高さの 0.8 倍"""
+    k = h / 40
+    pts = [(22, 0), (6, 22), (18, 22), (12, 40), (32, 14), (20, 14), (28, 0)]
+    pygame.draw.polygon(screen, color, [(x + px * k, y + py * k) for px, py in pts])
+
+
+def draw_thunder_banner(screen, width, by, base_font_path, info, bh=ALERT_BANNER_H):
+    """雷の帯。info = fetch_thunder.ThunderState.current() の戻り値"""
+    from fetch_thunder import banner_text
+    st = THUNDER_STYLE[info["kind"]]
+    pygame.draw.rect(screen, st["bg"], (0, by, width, bh))
+    pygame.draw.line(screen, st["edge"], (0, by), (width, by), 3)
+    pygame.draw.line(screen, st["edge"], (0, by + bh - 1), (width, by + bh - 1), 2)
+    title, body = banner_text(info)
+    bolt_h = bh - 8
+    bolt_w = int(bolt_h * 0.8)
+    # 狭い画面では本文を小さくして 1 行に収める
+    for size in ((26, 24, 22, 20, 18) if bh >= ALERT_BANNER_H else (18, 16, 14)):
+        t = get_font(base_font_path, size + 4, bold=True).render(title, True, st["fg"])
+        b = get_font(base_font_path, size, bold=True).render(body, True, st["fg"])
+        gap = size
+        total = bolt_w + 6 + t.get_width() + gap + b.get_width()
+        if total <= width - 20:
+            break
+    x = max(10, (width - total) // 2)
+    _draw_bolt(screen, x, by + 4, bolt_h, st["bolt"])
+    x += bolt_w + 6
+    screen.blit(t, (x, by + (bh - t.get_height()) // 2))
+    screen.blit(b, (x + t.get_width() + gap, by + (bh - b.get_height()) // 2))
 
 
 def _load_scaled_icon(icon_path: str, w: int, h: int, icon_cache: dict):
@@ -281,14 +320,23 @@ def draw_weather(
     longitude=None,
     overview_text: str = "",
     now=None,
+    thunder=None,
 ):
     screen.fill((255, 255, 255))
 
     margin_x = int(width * 0.05)
     header_h = int(height * 0.25)
 
+    # ヘッダー直下の帯：雷（いちばん急ぐ）→ 熱中症警戒アラートの順に重ねる
+    banner_y = header_h
+    double = bool(thunder) and bool(wbgt_alert)
+    bh = ALERT_BANNER_H_DOUBLE if double else ALERT_BANNER_H
+    if thunder:
+        draw_thunder_banner(screen, width, banner_y, base_font_path, thunder, bh)
+        banner_y += bh + 2
     if wbgt_alert:
-        draw_alert_banner(screen, width, header_h, base_font_path)
+        draw_alert_banner(screen, width, banner_y, base_font_path, bh)
+        banner_y += bh + 2
 
     # 通信エラーの帯は header.draw_fetch_error_bar（ヘッダーの白塗りの後）で描く
 
@@ -296,9 +344,7 @@ def draw_weather(
     total_cols = 1 + data_cols
     col_w = int((width - margin_x * 2) // max(2, total_cols))
 
-    y_offset = int(height * 0.25)
-    if wbgt_alert:
-        y_offset += ALERT_BANNER_H + 2
+    y_offset = banner_y
 
     row_heights = [
         int(height * 0.055),
@@ -455,7 +501,7 @@ def draw_weather(
                          (margin_x + (1 + cur) * col_w, y_offset + row_heights[0], col_w + 1, sum(row_heights[1:]) + 1),
                          NOW_FRAME_WIDTH)
 
-    y_offset += sum(row_heights) + 8
+    y_offset += sum(row_heights) + (2 if double else 8)
 
     week_title_surf = get_font(base_font_path, 28, bold=True).render("１週間の天気", True, (0, 0, 0))
     screen.blit(week_title_surf, (margin_x, y_offset))

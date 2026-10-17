@@ -36,6 +36,8 @@ from fb_display import init_display, present
 from header import draw_header
 from weather_draw import draw_weather
 from fetch_wbgt import level_for, start_fetch_in_background as start_wbgt_fetch
+from fetch_thunder import (ThunderState, start_fetch_in_background as start_thunder_fetch,
+                           FETCH_INTERVAL_MIN as THUNDER_INTERVAL_MIN)
 from startup import boot_log, wait_time_sync, save_snapshot, load_snapshot
 from splash import run_splash
 import aviation
@@ -174,6 +176,8 @@ def main():
                         help="WBGT値(℃)を指定してバッジをテスト（例: --wbgt-test 35）")
     parser.add_argument("--wbgt-alert", action="store_true",
                         help="熱中症警戒アラートバナーを強制表示")
+    parser.add_argument("--thunder-test", choices=["near", "watch"], default=None,
+                        help="雷の帯をテスト表示（near=雷接近 10km 以内 / watch=雷注意 20km 以内）")
     parser.add_argument("--render",
                         choices=["auto", "kmsdrm", "fb0", "x11"], default="auto",
                         help="描画モード（既定: auto = kmsdrm を試し失敗時に fb0 へフォールバック）")
@@ -453,6 +457,14 @@ def main():
         _save_state()
     _first_draw_logged = False
     last_aviation_attempt = None   # 直近に航空気象を取得した区切り（decisions.aviation_fetch_due）
+    # 雷ナウキャスト：5 分ごとに裏で取得。空港から 20km 以内の雷を帯で出す（範囲外になっても 20 分は保持）
+    thunder_state = ThunderState()
+    thunder_holder = {}
+    thunder_status = None
+    last_thunder_attempt = 0.0
+    thunder_not_before = time.time() + DEFER_INITIAL_FETCH_S
+    shown_thunder_kind = None
+    thunder_info = None
     shown_metar_raw = aviation_state.get("raw")
     _fetch_pending = False
     if kick_fetch:
@@ -585,6 +597,33 @@ def main():
             needs_redraw = True
             _save_state()
 
+        # 雷ナウキャスト（5 分ごと。裏で取得）
+        if (args.thunder_test is None and "pending" not in thunder_holder and time.time() >= thunder_not_before
+                and time.time() - last_thunder_attempt >= THUNDER_INTERVAL_MIN * 60):
+            last_thunder_attempt = time.time()
+            thunder_holder["pending"] = True
+            start_thunder_fetch(cfg["latitude"], cfg["longitude"], thunder_holder)
+        if "result" in thunder_holder:
+            _res = thunder_holder.pop("result")
+            thunder_holder.pop("pending", None)
+            thunder_state.update(_res)
+            if _res.get("status") != thunder_status:
+                logging.info(f"雷ナウキャスト: {_res.get('status')} {_res.get('error', '')}".rstrip())
+            thunder_status = _res.get("status")
+        if args.thunder_test:
+            _new = {"kind": args.thunder_test, "km": 6 if args.thunder_test == "near" else 18,
+                    "dir": "南西", "at": now.replace(second=0, microsecond=0)}
+        else:
+            _new = thunder_state.current(now)
+        if _new != thunder_info:
+            _kind = _new and _new["kind"]
+            if _kind != shown_thunder_kind:
+                logging.warning(f"雷: {_kind} {_new['dir']} {_new['km']:.1f}km（{_new['at']:%H:%M} 解析）"
+                                if _new else "雷: 解除")
+                shown_thunder_kind = _kind
+            thunder_info = _new
+            needs_redraw = True
+
         if time.time() - last_jma_update > 3600:
             try:
                 new_warn, _ = fetch_warning_data(airport)
@@ -673,6 +712,7 @@ def main():
             wbgt_alert=(wbgt_alert if _wbgt_today else False),
             latitude=cfg["latitude"], longitude=cfg["longitude"],
             overview_text=overview_text,
+            thunder=thunder_info,
         )
 
         _metar = aviation_state.get("metar")
