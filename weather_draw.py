@@ -199,9 +199,10 @@ def _is_night_item(item) -> bool:
     """18・21・00・03 時の列は夜（月アイコン）。日の出・日の入りの時刻では判断しない"""
     return item["hour"] in NIGHT_HOURS
 
-ROW_LABELS = ["日付", "時刻", "天気", "降水量", "気温", "風速"]
+# 「気　温」「風　速」は全角スペースで「降水量」と同じ 3 文字幅にし、右の絵の位置をそろえる
+ROW_LABELS = ["日付", "時刻", "天気", "降水量", "気　温", "風　速"]
 # 見出しの文字の右に付ける小さな絵（weather_icons/labels/）
-LABEL_ICONS = {"降水量": "precip", "気温": "temp", "風速": "wind"}
+LABEL_ICONS = {"降水量": "precip", "気　温": "temp", "風　速": "wind"}
 LABEL_FONT_SIZE = 22
 WEEK_ROW_LABELS = ["日付", "天気", "降水確率", "気温：最高／最低"]
 

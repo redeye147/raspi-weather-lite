@@ -87,7 +87,7 @@ LONGITUDE = 136.8053
 
 WEEKDAY_JP = ["月", "火", "水", "木", "金", "土", "日"]
 
-ROW_LABELS = ["日付", "時刻", "天気", "降水量", "気温", "風速"]
+ROW_LABELS = ["日付", "時刻", "天気", "降水量", "気　温", "風　速"]
 WEEK_ROW_LABELS = ["日付", "天気", "降水確率", "気温"]
 
 JST = pytz.timezone("Asia/Tokyo")

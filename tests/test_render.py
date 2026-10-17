@@ -282,3 +282,11 @@ def test_label_icons_fit_in_label_column(w, h):
         assert max(icon.get_size()) == weather_draw.LABEL_FONT_SIZE
         text_w = get_font(BASE_FONT, weather_draw.LABEL_FONT_SIZE).size(label)[0]
         assert 5 + text_w + 4 + icon.get_width() < col_w, f"{w}×{h}: 「{label}」の絵が列からはみ出す"
+
+
+def test_label_icons_line_up():
+    """「降水量」「気　温」「風　速」は同じ幅なので、右の絵が縦一列にそろう"""
+    import weather_draw
+    from utils import get_font
+    f = get_font(BASE_FONT, weather_draw.LABEL_FONT_SIZE)
+    assert len({f.size(label)[0] for label in weather_draw.LABEL_ICONS}) == 1
