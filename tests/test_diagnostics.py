@@ -265,3 +265,10 @@ def test_short_error():
     assert dg.short_error("Read timed out. (read timeout=15)") == "タイムアウト"
     assert dg.short_error("x" * 100).endswith("…") and len(dg.short_error("x" * 100)) == 81
     assert dg.short_error(None) == ""
+
+
+def test_git_version_time_is_japan_time():
+    """版の時刻は日本時間（2026-10-18 05:51 UTC のコミット → 14:51）"""
+    ts = int(datetime.datetime(2026, 10, 18, 5, 51, tzinfo=datetime.timezone.utc).timestamp())
+    assert dg.format_git_log(f"3bbd350 {ts}\n") == "3bbd350 2026-10-18 14:51"
+    assert dg.format_git_log("") == ""

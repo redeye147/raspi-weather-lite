@@ -129,11 +129,20 @@ def _local_ip():
     return (out or "").split()[0] if out else ""
 
 
+def format_git_log(out: str) -> str:
+    """「3bbd350 1792302667」（版・作った時刻の秒）→「3bbd350 2026-10-18 14:51」（日本時間。
+    以前はコミットした環境の時刻（UTC）のまま「05:51」と出ていた。天気画面右下の版表示と同じ日本時間に）"""
+    parts = out.strip().split()
+    if len(parts) != 2 or not parts[1].isdigit():
+        return out.strip()
+    return f"{parts[0]} {datetime.datetime.fromtimestamp(int(parts[1]), JST):%Y-%m-%d %H:%M}"
+
+
 def _git_version():
     env = dict(os.environ, GIT_CONFIG_COUNT="1", GIT_CONFIG_KEY_0="safe.directory", GIT_CONFIG_VALUE_0=BASE_DIR)
     try:
-        out = subprocess.run(["git", "log", "-1", "--format=%h %cd", "--date=format:%Y-%m-%d %H:%M"],
-                             cwd=BASE_DIR, capture_output=True, text=True, timeout=5, env=env).stdout.strip()
+        out = format_git_log(subprocess.run(["git", "log", "-1", "--format=%h %ct"],
+                                            cwd=BASE_DIR, capture_output=True, text=True, timeout=5, env=env).stdout)
         br = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"],
                             cwd=BASE_DIR, capture_output=True, text=True, timeout=5, env=env).stdout.strip()
         return f"{br} {out}".strip()
