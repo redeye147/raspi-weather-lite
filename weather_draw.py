@@ -33,6 +33,11 @@ OVERVIEW_MAX_LINES = 3
 
 # 月アイコンにする列（日の出・日の入りの時刻によらず一律）
 NIGHT_HOURS = {"18", "21", "00", "03"}
+# 時刻の行のマスの色：昼（06・09・12・15）は薄い黄、夜（18・21・00・03）は薄い青。月のアイコンと同じ固定の区分
+TIME_DAY_BG = (255, 246, 222)
+TIME_NIGHT_BG = (226, 232, 246)
+WIND_BOLD_FROM = 9                     # 風速の数字を太字にするのは 9 m/s 以上
+WIND_ARROW_SCALE = 0.72                # 矢印の大きさ（行の高さに対して。以前の 0.8 の 0.9 倍）
 
 
 def _wrap_text(text, font, max_width):
@@ -459,6 +464,11 @@ def draw_weather(
             x = margin_x + col_idx * col_w
             y = y_offset + sum(row_heights[:row_idx])
 
+            # 時刻の行は、昼と夜でマスの色を塗り分ける（枠より先に塗る）
+            if row_idx == 1 and 1 <= col_idx <= data_cols:
+                night = hourly[col_idx - 1].get("hour") in NIGHT_HOURS
+                screen.fill(TIME_NIGHT_BG if night else TIME_DAY_BG, (x, y, col_w, row_heights[row_idx]))
+
             # 日付行は3時間ごとの区切り線を引かず、日付ごとにまとめて枠を描く（下で描画）
             if not (row_idx == 0 and col_idx >= 1):
                 pygame.draw.rect(screen, (180, 180, 180), (x, y, col_w, row_heights[row_idx]), 1)
@@ -534,7 +544,7 @@ def draw_weather(
                     text = item["wind"]
                 else:
                     wcolor = wind_text_color(v)          # 矢印と同じ区切り（0・1〜4・5〜7・8〜11・12〜17・18〜）
-                    val_surf  = get_font(base_font_path, 26, bold=v >= 5).render(str(int(v)), True, wcolor)
+                    val_surf  = get_font(base_font_path, 26, bold=v >= WIND_BOLD_FROM).render(str(int(v)), True, wcolor)
                     # 列が狭い画面（1366・1280 幅）は単位を小さくして、風向の矢印の場所を空ける
                     unit_surf = (get_font(base_font_path, 24).render(" m/s", True, wcolor) if col_w >= 140
                                  else get_font(base_font_path, 16).render("m/s", True, wcolor))
@@ -543,13 +553,15 @@ def draw_weather(
                     screen.blit(val_surf,  (x_pos, y_pos))
                     screen.blit(unit_surf, (x_pos + val_surf.get_width(),
                                             y_pos + val_surf.get_height() - unit_surf.get_height() - (0 if col_w >= 140 else 3)))
-                    # 風向の矢印（数字の右。列が狭い画面では、入る大きさに縮める・入らなければ描かない）
+                    # 風向の矢印：どの列も同じ位置（2 桁の太字「88 m/s」の右）に置く。1 桁でも離れすぎず、2 桁でも重ならない。
+                    # 列が狭い画面では入る大きさに縮め、入らなければ描かない
                     wdir = item.get("wind_dir")
                     if isinstance(wdir, (int, float)):
-                        text_right = x_pos + val_surf.get_width() + unit_surf.get_width()
-                        size = min(int(row_heights[row_idx] * 0.8), x + col_w - text_right - 8)
+                        widest = get_font(base_font_path, 26, bold=True).size("88")[0] + unit_surf.get_width()
+                        text_right = x_pos + max(widest, val_surf.get_width() + unit_surf.get_width())
+                        size = min(int(row_heights[row_idx] * WIND_ARROW_SCALE), x + col_w - text_right - 8)
                         if size >= 16:
-                            draw_wind_arrow(screen, x + col_w - 4 - size / 2, y + row_heights[row_idx] / 2,
+                            draw_wind_arrow(screen, text_right + 6 + size / 2, y + row_heights[row_idx] / 2,
                                             size, wdir, v)
                     continue
 

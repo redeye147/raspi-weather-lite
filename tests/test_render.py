@@ -290,3 +290,50 @@ def test_label_icons_line_up():
     from utils import get_font
     f = get_font(BASE_FONT, weather_draw.LABEL_FONT_SIZE)
     assert len({f.size(label)[0] for label in weather_draw.LABEL_ICONS}) == 1
+
+
+# ---------------------------------------------------------------- 時刻の行の昼夜の色・風速の数字と矢印
+@pytest.mark.parametrize("w, h", RESOLUTIONS)
+def test_time_row_day_night_colors(w, h):
+    """時刻の行のマス：06・09・12・15 時は薄い黄、18・21・00・03 時は薄い青（日の出・日の入りに関係なく固定）"""
+    import weather_draw
+    screen = pygame.Surface((w, h))
+    hourly = _hourly()
+    draw_weather(screen, w, h, hourly, _daily(), {}, BASE_FONT, "警報・注意報なし", "", "", "天気更新 10:24",
+                 "成田空港", "05:44", "17:09", "", "3%", now=datetime.datetime(2026, 10, 11, 5, 0, tzinfo=JST))
+    arr = pygame.surfarray.array3d(screen)
+    margin_x = int(w * 0.05)
+    col_w = int((w - margin_x * 2) // 11)
+    for i, item in enumerate(hourly):
+        x = margin_x + (1 + i) * col_w
+        want = weather_draw.TIME_NIGHT_BG if item["hour"] in weather_draw.NIGHT_HOURS else weather_draw.TIME_DAY_BG
+        cell = np.all(arr[x + 2:x + col_w - 2] == want, axis=2)
+        assert cell.sum() > col_w * 5, f"{w}×{h}: {item['hour']} 時のマスの色が違う"
+
+
+@pytest.mark.parametrize("w, h", RESOLUTIONS)
+def test_wind_arrow_does_not_touch_two_digit_number(w, h):
+    """2 桁の風速（11 m/s）でも、矢印が数字・単位に重ならない（数字は濃い黄、矢印は黄で区別できる）"""
+    import weather_draw
+    hourly = _hourly()
+    for it in hourly:
+        it.update(wind_val=11, wind="11 m/s", wind_dir=270)            # 西風 → 右向き（いちばん左に寄る向き）
+    screen = pygame.Surface((w, h))
+    draw_weather(screen, w, h, hourly, _daily(), {}, BASE_FONT, "警報・注意報なし", "", "", "天気更新 10:24",
+                 "成田空港", "05:44", "17:09", "", "3%", now=datetime.datetime(2026, 10, 11, 5, 0, tzinfo=JST))
+    arr = pygame.surfarray.array3d(screen)
+    text = np.all(arr == weather_draw.wind_text_color(11), axis=2)
+    arrow = np.all(arr == weather_draw.wind_arrow_color(11), axis=2)
+    margin_x = int(w * 0.05)
+    col_w = int((w - margin_x * 2) // 11)
+    for i in range(10):
+        x = margin_x + (1 + i) * col_w
+        tx = np.where(text[x:x + col_w].any(axis=1))[0]
+        ax = np.where(arrow[x:x + col_w].any(axis=1))[0]
+        assert len(tx) and len(ax), f"{w}×{h}: {i} 列目"
+        assert ax.min() > tx.max(), f"{w}×{h}: {i} 列目で矢印が数字に重なる"
+
+
+def test_wind_number_bold_from_9():
+    import weather_draw
+    assert weather_draw.WIND_BOLD_FROM == 9
