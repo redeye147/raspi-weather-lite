@@ -12,6 +12,7 @@ import threading
 
 import requests
 
+from netretry import get_with_retry
 from utils import JST
 
 # CSVダウンロード用（英語名形式: yohou_aichi.csv 等）
@@ -69,7 +70,7 @@ def _fetch_wbgt_csv(csv_code: str, point: str, today: str = None):
     状態: "ok"（今日の値あり）/ "nodata"（ファイルが無い・地点や今日の列が無い＝提供期間外の可能性）/ "error"（通信エラー等）"""
     url = f"https://www.wbgt.env.go.jp/prev15WG/dl/yohou_{csv_code}.csv"
     try:
-        r = requests.get(url, headers=_HEADERS, timeout=10)
+        r = get_with_retry(url, headers=_HEADERS, timeout=10)
         if r.status_code == 404:
             return None, "nodata"
         r.raise_for_status()
@@ -108,7 +109,7 @@ def _fetch_alert(alert_code: str) -> bool:
     """熱中症警戒アラート発令中なら True。取得失敗時は False。"""
     url = "https://www.wbgt.env.go.jp/alert.php"
     try:
-        r = requests.get(url, headers=_HEADERS, timeout=10)
+        r = get_with_retry(url, headers=_HEADERS, timeout=10)
         r.raise_for_status()
         text = r.text
         marker = f'class="alert" data-pref="{alert_code}"'

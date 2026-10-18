@@ -20,6 +20,7 @@ import threading
 
 import requests
 
+from netretry import FailureLog, get_with_retry
 from utils import JST
 
 TIMES_URL = "https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N3.json"
@@ -136,7 +137,7 @@ def _load_png(data: bytes):
 
 def fetch_tiles(lat: float, lon: float, km=SEARCH_KM, z=ZOOM, session=requests):
     """最新の解析時刻と、空港から半径 km を覆うタイル {(tx, ty): 画像} を返す。((base, valid), tiles)"""
-    r = session.get(TIMES_URL, headers=_HEADERS, timeout=TIMEOUT)
+    r = get_with_retry(TIMES_URL, session=session, headers=_HEADERS, timeout=TIMEOUT)
     r.raise_for_status()
     latest = latest_analysis(r.json())
     if latest is None:
@@ -145,7 +146,7 @@ def fetch_tiles(lat: float, lon: float, km=SEARCH_KM, z=ZOOM, session=requests):
     tiles = {}
     for tx, ty in tiles_for(lat, lon, km, z):
         url = TILE_URL.format(base=base, valid=valid, z=z, x=tx, y=ty)
-        tr = session.get(url, headers=_HEADERS, timeout=TIMEOUT)
+        tr = get_with_retry(url, session=session, headers=_HEADERS, timeout=TIMEOUT)
         if tr.status_code == 404:              # 雷の無い範囲はタイルが無いことがある
             continue
         tr.raise_for_status()
@@ -168,14 +169,21 @@ def fetch_thunder(lat: float, lon: float, session=requests):
     return {"status": "ok", "at": jst_of(latest[1]), "hit": nearest_thunder(lat, lon, tiles)}
 
 
+_FAILURES = FailureLog("雷ナウキャスト")      # 一時的な失敗は INFO、15 分以上続いたら WARNING
+
+
 def start_fetch_in_background(lat: float, lon: float, holder: dict) -> None:
     """裏で取得して holder["result"] に入れる（取得中も時計を止めない）"""
     def run():
         try:
-            holder["result"] = fetch_thunder(lat, lon)
+            result = fetch_thunder(lat, lon)
         except Exception as e:
-            logging.warning(f"雷ナウキャスト取得失敗: {e}")
-            holder["result"] = {"status": "error", "error": str(e)}
+            result = {"status": "error", "error": str(e)}
+        if result.get("status") == "ok":
+            _FAILURES.ok()
+        else:
+            _FAILURES.failed(result.get("error"))
+        holder["result"] = result
     holder.pop("result", None)
     threading.Thread(target=run, daemon=True).start()
 

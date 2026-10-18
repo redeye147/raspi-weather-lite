@@ -236,8 +236,8 @@ def fit_band(parts, avail: int, measure, sizes=(24, 22, 20, 18)):
 
 # ------------------------------------------------------------------ 取得
 def fetch_raw(url: str, timeout: float = 10) -> str:
-    import requests
-    r = requests.get(url, timeout=timeout, headers={"User-Agent": "raspi-weather-lite (weather signage)"})
+    from netretry import get_with_retry
+    r = get_with_retry(url, timeout=timeout, headers={"User-Agent": "raspi-weather-lite (weather signage)"})
     r.raise_for_status()
     return r.text.strip()
 
@@ -247,10 +247,20 @@ def fetch_and_parse(icao: str, now_utc=None):
     now_utc = now_utc or datetime.datetime.now(UTC)
     try:
         raw = fetch_raw(METAR_URL.format(icao=icao)).splitlines()[0]
-        return parse_metar(raw, now_utc), raw
+        metar = parse_metar(raw, now_utc)
     except Exception as e:
-        logging.warning(f"METAR 取得失敗 ({icao}): {e}")
+        _failures(icao).failed(e)          # 一時的な失敗は INFO、15 分以上続いたら WARNING
         return None, None
+    _failures(icao).ok()
+    return metar, raw
+
+
+_FAILURE_LOGS = {}
+
+
+def _failures(icao):
+    from netretry import FailureLog
+    return _FAILURE_LOGS.setdefault(icao, FailureLog(f"METAR ({icao}) "))
 
 
 def fetch_into(icao: str, holder: dict, expected_obs=None) -> None:
