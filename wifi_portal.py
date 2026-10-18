@@ -477,7 +477,7 @@ DIAG_HTML = """<!DOCTYPE html>
 <div id="area" class="hidden">
   <div id="overall" class="overall"></div>
   <div class="box" id="items"></div>
-  <div class="box"><div class="sub">直近の警告・エラー（新しい順・最大10件）</div><div id="problems"></div></div>
+  <div class="box"><div class="sub">直近の警告・エラー（新しい順・最大20件。同じ内容はまとめて回数を表示）</div><div id="problems"></div></div>
   <div class="sub" id="foot" style="margin-top:10px"></div>
   <button onclick="load()">🔄 再診断</button>
 </div>

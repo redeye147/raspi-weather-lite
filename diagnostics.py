@@ -7,6 +7,7 @@ diagnostics.py
 import datetime
 import glob
 import json
+import re
 import os
 import shutil
 import subprocess
@@ -152,11 +153,11 @@ _ERROR_HINTS = [      # 上から順に調べる（名前解決の失敗は「�
 ]
 
 
-def summarize_problem(line: str) -> str:
-    """ログ1行を「10/05 15:40 WARNING METAR 取得失敗 (RJAA): 名前解決エラー（DNS）」のように短くする"""
+def _problem_parts(line: str):
+    """ログ1行 → (時刻「10/05 15:40」, レベル, 短くした内容)。形式が違う行は (None, None, 行の先頭 200 文字)"""
     parts = [p.strip() for p in line.split("|", 2)]
     if len(parts) < 3:
-        return line[:200]
+        return None, None, line[:200]
     when, level, msg = parts
     try:
         when = datetime.datetime.strptime(when[:16], "%Y-%m-%d %H:%M").strftime("%m/%d %H:%M")
@@ -172,25 +173,54 @@ def summarize_problem(line: str) -> str:
             break
     else:
         msg = msg if len(msg) <= 160 else msg[:160] + "…"
-    return f"{when} {level} {msg}"
+    return when, level, msg
 
 
-def recent_problems(log_path=LOG_FILE, limit=10):
-    """ログの WARNING / ERROR の行を新しい順に最大 limit 件（今日のファイル → 前日のファイル）"""
-    paths = [log_path]
-    yesterday = (datetime.datetime.now(JST) - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
-    paths.append(f"{log_path}.{yesterday}")
-    found = []
-    for p in paths:
+def summarize_problem(line: str) -> str:
+    """ログ1行を「10/05 15:40 WARNING METAR 取得失敗 (RJAA): 名前解決エラー（DNS）」のように短くする"""
+    when, level, msg = _problem_parts(line)
+    return msg if when is None else f"{when} {level} {msg}"
+
+
+PROBLEM_LIMIT = 20       # 診断ページに出す件数（同じ内容はまとめて 1 件）
+PROBLEM_MAX_DAYS = 7     # 件数に足りないときにさかのぼるログの日数（ログは 7 日分残る）
+
+
+def recent_problems(log_path=LOG_FILE, limit=PROBLEM_LIMIT, max_days=PROBLEM_MAX_DAYS, today=None):
+    """ログの WARNING / ERROR を新しい順に最大 limit 件。
+    同じ内容（時刻・数字だけ違う。例「停止（801回目）→ 60秒後に再起動」）は 1 件にまとめ、
+    「×81回（10/17 09:00〜21:11）」のように回数と期間を付ける（同じ失敗が続いても、ほかの記録が押し出されない）。
+    今日・前日のファイルは必ず読み、それでも limit 件に足りなければ max_days 日前までさかのぼる"""
+    today = today or datetime.datetime.now(JST).date()
+    groups = {}          # まとめる鍵 → {"line": 最新の 1 行, "last": 最新の時刻, "first": 最古の時刻, "count": 回数}
+    for d in range(max_days):
+        if d >= 2 and len(groups) >= limit:
+            break
+        path = log_path if d == 0 else f"{log_path}.{today - datetime.timedelta(days=d):%Y-%m-%d}"
         try:
-            with open(p, encoding="utf-8", errors="replace") as f:
+            with open(path, encoding="utf-8", errors="replace") as f:
                 lines = [l.rstrip("\n") for l in f if "| WARNING |" in l or "| ERROR |" in l]
         except OSError:
             continue
-        found.extend(summarize_problem(l) for l in reversed(lines))
-        if len(found) >= limit:
-            break
-    return found[:limit]
+        for l in reversed(lines):                     # 新しい順
+            when, level, msg = _problem_parts(l)
+            key = (level, re.sub(r"\d+", "#", msg))
+            g = groups.get(key)
+            if g is None:
+                if len(groups) >= limit:              # 件数は満杯：新しい種類は増やさず、回数だけ数える
+                    continue
+                g = groups[key] = {"line": msg if when is None else f"{when} {level} {msg}",
+                                   "last": when, "count": 0}
+            g["count"] += 1
+            g["first"] = when
+    out = []
+    for g in groups.values():
+        if g["count"] == 1:
+            out.append(g["line"])
+        else:
+            span = f"{g['first']}〜{g['last'][-5:] if g['first'] and g['last'] and g['first'][:5] == g['last'][:5] else g['last']}"
+            out.append(f"{g['line']} ×{g['count']}回（{span}）")
+    return out
 
 
 def collect() -> dict:

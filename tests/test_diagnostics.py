@@ -207,3 +207,44 @@ def test_thunder_never_fetched():
     snap = {k: v for k, v in healthy()["snap"].items() if not k.startswith("thunder")}
     it = item(dg.evaluate(healthy(snap=snap), NOW), "THN")
     assert it["level"] == "warn" and it["value"] == "データなし"
+
+
+def _log_line(day, hh, mm, level, msg):
+    return f"2026-10-{day:02d} {hh:02d}:{mm:02d}:00,000 | {level} | {msg}\n"
+
+
+def test_recent_problems_groups_same_message_with_count_and_span(tmp_path):
+    """同じ内容（回数・秒数だけ違う）は 1 件にまとめ、回数と期間を付ける。ほかの記録は押し出されない"""
+    log = tmp_path / "log.txt"
+    lines = [_log_line(17, 8, 50, "WARNING", "雷ナウキャスト取得失敗（15分以上続いている）: timed out")]
+    for i, hh in enumerate(range(9, 22)):
+        lines.append(_log_line(17, hh, 0, "ERROR", f"表示プログラムが停止（{(i + 1) * 10}回目）→ 60秒後に再起動: "
+                                                   "RuntimeError: /dev/fb0 を開けない（描画先なし）"))
+    log.write_text("".join(lines), encoding="utf-8")
+    out = dg.recent_problems(str(log), today=datetime.date(2026, 10, 17))
+    assert out == [
+        "10/17 21:00 ERROR 表示プログラムが停止（130回目）→ 60秒後に再起動: RuntimeError: /dev/fb0 を開けない（描画先なし）"
+        " ×13回（10/17 09:00〜21:00）",
+        "10/17 08:50 WARNING 雷ナウキャスト取得失敗（15分以上続いている）: タイムアウト",
+    ]
+
+
+def test_recent_problems_reads_older_days_until_limit(tmp_path):
+    """今日・前日で 20 件に足りなければ、さらに前の日のログもさかのぼる。期間が日をまたぐと日付も出す"""
+    log = tmp_path / "log.txt"
+    log.write_text(_log_line(18, 9, 0, "WARNING", "A 失敗"), encoding="utf-8")
+    (tmp_path / "log.txt.2026-10-17").write_text(_log_line(17, 9, 0, "WARNING", "A 失敗"), encoding="utf-8")
+    (tmp_path / "log.txt.2026-10-15").write_text(
+        "".join(_log_line(15, 9, m, "WARNING", f"B{chr(65 + m)} 失敗") for m in range(3)), encoding="utf-8")
+    out = dg.recent_problems(str(log), today=datetime.date(2026, 10, 18))
+    assert out[0] == "10/18 09:00 WARNING A 失敗 ×2回（10/17 09:00〜10/18 09:00）"
+    assert len(out) == 4 and out[-1] == "10/15 09:00 WARNING BA 失敗"
+
+
+def test_recent_problems_limit_20(tmp_path):
+    log = tmp_path / "log.txt"
+    log.write_text("".join(_log_line(18, 9, m, "WARNING", f"種類{chr(0x3042 + m)} 失敗") for m in range(30)),
+                   encoding="utf-8")
+    out = dg.recent_problems(str(log), today=datetime.date(2026, 10, 18))
+    assert len(out) == dg.PROBLEM_LIMIT == 20
+    assert out[0].startswith("10/18 09:29")                  # 新しい順
