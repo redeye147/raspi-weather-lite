@@ -47,7 +47,7 @@ def signage(tmp_path, monkeypatch):
     monkeypatch.setattr(main01, "LOG_FILE", log_file)
     monkeypatch.setattr(fb_display, "RENDER_MODE", "fb0")
     monkeypatch.setattr(main01, "init_display",
-                        lambda r: (pygame.display.init(), pygame.font.init(), pygame.display.set_mode((1920, 1080)))[2])
+                        lambda r, **kw: (pygame.display.init(), pygame.font.init(), pygame.display.set_mode((1920, 1080)))[2])
     monkeypatch.setattr(main01, "present", lambda s: None)
     monkeypatch.setattr(main01, "wait_time_sync", lambda t=15: True)
     monkeypatch.setattr(main01, "get_overview_and_warning",
@@ -185,3 +185,24 @@ def test_network_wait_logs_details_and_retries(signage, monkeypatch):
     assert calls["reconnect"] >= 1 and "WiFi を探し直して再接続: Error: No network with SSID" in log
     assert "[netwait] 待機終了（つながった状態）" in log
     assert "天気画面を表示" in log
+
+
+# ---------------------------------------------------------------- 画面出力なし（HDMI 未接続）でも取得を続ける
+def test_headless_keeps_fetching_and_restarts_when_hdmi_attached(signage, monkeypatch):
+    """HDMI が無くても天気・WBGT・雷を取りに行き、前回データを保存する。HDMI がつながったら作り直す"""
+    run, snap_file, calls = signage
+
+    def headless(r, **kw):
+        assert kw.get("allow_headless") is True
+        pygame.display.init(); pygame.font.init()
+        monkeypatch.setattr(fb_display, "RENDER_MODE", "headless")
+        return pygame.display.set_mode((1920, 1080))
+    monkeypatch.setattr(main01, "init_display", headless)
+    monkeypatch.setattr(main01, "DISPLAY_CHECK_S", 0)
+    attached = iter([False, False, False, True])
+    monkeypatch.setattr(fb_display, "display_attached", lambda: next(attached))
+    with pytest.raises(main01.DisplayAttached):
+        run(loops=50)
+    with open(snap_file, encoding="utf-8") as f:
+        assert json.load(f)["hourly"]                     # 画面が無くても天気を取って保存している
+    assert calls["wbgt"] and calls["thunder"]

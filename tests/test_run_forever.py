@@ -26,3 +26,20 @@ def test_backoff_and_log_when_start_keeps_failing(monkeypatch, caplog):
     logged = [r.getMessage() for r in caplog.records if "表示プログラムが停止" in r.getMessage()]
     assert len(logged) == 2                       # 1 回目と 11 回目だけ（同じエラーを毎回は書かない）
     assert "描画先なし" in logged[0] and "1回目" in logged[0] and "11回目" in logged[1]
+
+
+def test_display_attached_restarts_at_once_without_counting_failure(monkeypatch, caplog):
+    """画面なしで動いている間に HDMI がつながったら、失敗とは数えず 2 秒後に作り直す（ERROR を残さない）"""
+    sleeps, runs = [], []
+
+    def main():
+        runs.append(1)
+        if len(runs) == 1:
+            raise main01.DisplayAttached("画面出力の状態が変わった")
+        raise KeyboardInterrupt
+    monkeypatch.setattr(main01, "main", main)
+    monkeypatch.setattr(main01.time, "sleep", sleeps.append)
+    with caplog.at_level(logging.INFO), pytest.raises(KeyboardInterrupt):
+        main01.run_forever()
+    assert sleeps == [2] and len(runs) == 2
+    assert not [r for r in caplog.records if r.levelno >= logging.ERROR]

@@ -36,8 +36,10 @@ _fb_mmap = None
 _fb_w = 0
 _fb_h = 0
 
-# 描画モード（init_display() で決まる）: 'x11' | 'kmsdrm' | 'fb0'
+# 描画モード（init_display() で決まる）: 'x11' | 'kmsdrm' | 'fb0' | 'headless'（画面出力なし。描くだけで表示しない）
 RENDER_MODE = 'x11'
+HEADLESS_SIZE = (1920, 1080)
+_headless_signature = None
 
 
 KD_TEXT     = 0
@@ -191,17 +193,55 @@ def wait_display_device(timeout_s: float = 90) -> bool:
     return True
 
 
-def init_display(mode_request):
+def display_signature():
+    """画面出力の状態（fb0 の有無と HDMI 端子の接続状態）。画面なしで動いている間に変わったら作り直す目印"""
+    import glob
+    hdmi = []
+    for path in sorted(glob.glob('/sys/class/drm/card*-HDMI-A-*/status')):
+        try:
+            with open(path) as f:
+                hdmi.append(f.read().strip())
+        except OSError:
+            pass
+    return os.path.exists('/sys/class/graphics/fb0/virtual_size'), tuple(hdmi)
+
+
+def _init_headless(reason):
+    """画面出力が無いときの描画先（メモリ上の画面）。表示はしないが、天気などの取得・保存は続けられる"""
+    global RENDER_MODE, _headless_signature
+    try:
+        pygame.display.quit()
+    except Exception:
+        pass
+    os.environ['SDL_VIDEODRIVER'] = 'offscreen'
+    pygame.display.init()
+    screen = pygame.display.set_mode(HEADLESS_SIZE)
+    RENDER_MODE = 'headless'
+    _headless_signature = display_signature()
+    print(f"[display] mode=headless（{reason}）size={screen.get_size()}", flush=True)
+    return screen
+
+
+def display_attached() -> bool:
+    """画面なしで動いている間に、画面出力の状態が変わったか（HDMI をつないだ等）"""
+    return RENDER_MODE == 'headless' and display_signature() != _headless_signature
+
+
+def init_display(mode_request, allow_headless=False):
     """描画モードを決定して pygame の display を初期化。
     mode_request: 'auto' | 'kmsdrm' | 'fb0' | 'x11'
+    allow_headless: 'auto' で画面出力が見つからないとき、例外にせず画面なし（headless）で返す
     戻り値: 描画対象の pygame Surface（画面）
     """
     global RENDER_MODE
     pygame.font.init()
 
     # X11 以外は画面出力の装置が必要。見つからなければ例外で終了し、systemd に再起動させる
+    # （'auto' で allow_headless なら、画面なしで動かし続ける）
     if not (mode_request == 'x11' or (mode_request == 'auto' and os.environ.get('DISPLAY'))):
         if not wait_display_device():
+            if mode_request == 'auto' and allow_headless:
+                return _init_headless("画面出力の装置が無い")
             raise RuntimeError("画面出力の装置（/dev/dri, /dev/fb0）が見つからない（HDMI 未接続？）")
 
     # X11 環境（DISPLAY が設定されている）はそのまま使う
@@ -228,7 +268,12 @@ def init_display(mode_request):
         return screen
     print("[display] kmsdrm 失敗 → offscreen+fb0 にフォールバック", flush=True)
     pygame.display.quit()
-    return _init_fb0_mode()
+    try:
+        return _init_fb0_mode()
+    except RuntimeError as e:
+        if not allow_headless:
+            raise
+        return _init_headless(str(e))
 
 
 def flip_to_fb(surface):
@@ -255,5 +300,7 @@ def flip_to_fb(surface):
 def present(surface):
     """通常の flip に加え、fb0 モードなら /dev/fb0 にも書き込む。
     pygame.display.flip() の置き換えとして使う。"""
+    if RENDER_MODE == 'headless':        # 画面出力なし：描いた内容はメモリ上だけ（スクリーンショットには使える）
+        return
     pygame.display.flip()
     flip_to_fb(surface)

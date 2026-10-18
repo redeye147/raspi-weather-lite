@@ -248,3 +248,20 @@ def test_recent_problems_limit_20(tmp_path):
     out = dg.recent_problems(str(log), today=datetime.date(2026, 10, 18))
     assert len(out) == dg.PROBLEM_LIMIT == 20
     assert out[0].startswith("10/18 09:29")                  # 新しい順
+
+
+def test_thunder_error_detail_is_short():
+    """雷の取得失敗の詳細に、URL などの長い例外の文をそのまま出さない"""
+    err = ("HTTPSConnectionPool(host='www.jma.go.jp', port=443): Max retries exceeded with url: /bosai/jmatile/data/nowc/"
+           "20261018050000/none/20261018050000/surf/thns/8/227/100.png (Caused by NewConnectionError('<urllib3.connection."
+           "HTTPSConnection object at 0xa4208fd0>: Failed to establish a new connection: [Errno -3] Temporary failure in "
+           "name resolution'))")
+    snap = dict(healthy()["snap"], thunder_ok_at=ts(11, 45), thunder_status="error", thunder_error=err)
+    it = item(dg.evaluate(healthy(snap=snap), NOW), "THN")
+    assert it["detail"] == "35分前から取得できていません（名前解決エラー（DNS））"
+
+
+def test_short_error():
+    assert dg.short_error("Read timed out. (read timeout=15)") == "タイムアウト"
+    assert dg.short_error("x" * 100).endswith("…") and len(dg.short_error("x" * 100)) == 81
+    assert dg.short_error(None) == ""

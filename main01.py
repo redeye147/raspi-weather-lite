@@ -205,8 +205,12 @@ def main():
     os.environ["SDL_VIDEO_MINIMIZE_ON_FOCUS_LOSS"] = "0"
 
     # 描画モードを自動判定（auto: kmsdrm を検証 → 失敗時 offscreen+fb0）
-    screen = init_display(args.render)
+    screen = init_display(args.render, allow_headless=True)
     boot_log(f"描画初期化完了 mode={fb_display.RENDER_MODE}")
+    if fb_display.RENDER_MODE == "headless":
+        # HDMI が無くても天気・警報・WBGT・雷・METAR の取得と保存は続ける（つないだ瞬間から最新で表示できるように）
+        logging.warning("画面出力なし（HDMI 未接続）→ 画面なしで天気などの取得を続ける。HDMI をつなぐと自動で表示を始める")
+    last_display_check = time.time()
 
     if not pygame.display.get_init():
         driver = os.environ.get("SDL_VIDEODRIVER", "(unset)")
@@ -488,6 +492,11 @@ def main():
     while True:
         now = datetime.datetime.now(JST)
         needs_redraw = False
+        # 画面なしで動いている間は 1 分ごとに、HDMI がつながったか確かめる。変わったら作り直して表示を始める
+        if fb_display.RENDER_MODE == "headless" and time.time() - last_display_check >= DISPLAY_CHECK_S:
+            last_display_check = time.time()
+            if fb_display.display_attached():
+                raise DisplayAttached("画面出力の状態が変わった（HDMI 接続？）→ 表示を始めるため作り直し")
         if _first_draw_logged:                 # 天気画面を 1 回描いてから（起動画面を撮らないように）
             save_requested_screenshot(screen)
 
@@ -792,6 +801,13 @@ def save_requested_screenshot(screen, request_path=None) -> None:
         logging.warning(f"スクリーンショット保存失敗: {e}")
 
 
+DISPLAY_CHECK_S = 60
+
+
+class DisplayAttached(Exception):
+    """画面なしで動いている間に HDMI がつながった。run_forever が失敗とは数えずにすぐ作り直す"""
+
+
 def run_forever():
     """main() が例外で止まったら作り直す。続けて失敗するときは間隔を 5→10→20→40→60 秒と延ばし、
     ログファイルにも残す（診断ページの「直近の警告・エラー」に出るように。journal だけだと見えない）"""
@@ -806,6 +822,14 @@ def run_forever():
         except KeyboardInterrupt:
             print("KeyboardInterrupt: exiting.", flush=True)
             raise
+        except DisplayAttached as e:
+            logging.info(str(e))
+            try:
+                pygame.quit()
+            except Exception:
+                pass
+            time.sleep(2)
+            continue
         except Exception as e:
             print("FATAL ERROR", flush=True)
             traceback.print_exc()

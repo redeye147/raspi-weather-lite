@@ -153,6 +153,15 @@ _ERROR_HINTS = [      # 上から順に調べる（名前解決の失敗は「�
 ]
 
 
+def short_error(err) -> str:
+    """例外の長い文（URL・内部の型名など）を「名前解決エラー（DNS）」のように短くする"""
+    text = str(err or "")
+    for key, hint in _ERROR_HINTS:
+        if key in text:
+            return hint
+    return text if len(text) <= 80 else text[:80] + "…"
+
+
 def _problem_parts(line: str):
     """ログ1行 → (時刻「10/05 15:40」, レベル, 短くした内容)。形式が違う行は (None, None, 行の先頭 200 文字)"""
     parts = [p.strip() for p in line.split("|", 2)]
@@ -365,7 +374,7 @@ def _thunder_item(now, snap):
     ok_at, err = snap.get("thunder_ok_at"), snap.get("thunder_error")
     if not ok_at:
         return _item("THN", "雷ナウキャスト", WARN, "データなし",
-                     f"まだ取得できていません（{err}）" if err else "まだ取得していません（起動直後は約20秒後）")
+                     f"まだ取得できていません（{short_error(err)}）" if err else "まだ取得していません（起動直後は約20秒後）")
     age = now.timestamp() - ok_at
     data_at = snap.get("thunder_data_at")
     at = f"{_hm(data_at)[-5:]} 解析" if data_at else "解析時刻不明"
@@ -377,7 +386,7 @@ def _thunder_item(now, snap):
     level = OK if age <= 15 * 60 else (WARN if age <= 60 * 60 else BAD)
     detail = ""
     if level != OK:
-        detail = f"{_ago(age)}から取得できていません" + (f"（{err}）" if err else "") + \
+        detail = f"{_ago(age)}から取得できていません" + (f"（{short_error(err)}）" if err else "") + \
             ("。雷の帯は出ません" if level == BAD else "")
     return _item("THN", "雷ナウキャスト", level, value, detail)
 
@@ -412,7 +421,8 @@ def evaluate(info: dict, now: datetime.datetime) -> dict:
             items.append(_item("DSP", "画面出力", OK, f"{'/'.join(connected)} 接続"))
         else:
             items.append(_item("DSP", "画面出力", BAD, "画面出力なし（HDMI 未検出）",
-                               "テレビの電源・入力切替・HDMI ケーブルを確認して再起動（sudo reboot）。"
+                               "画面なしで天気などの取得は続けています。HDMI をつなぐと 1 分ほどで表示を始めます。"
+                               "始まらなければテレビの電源・入力切替・HDMI ケーブルを確認して再起動（sudo reboot）。"
                                "テレビが消えていても起動できる設定は README「トラブルシューティング」"))
 
     kind, sig = info.get("conn_kind"), info.get("signal")
