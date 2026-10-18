@@ -32,6 +32,7 @@ import psutil
 import subprocess
 
 import fb_display
+from netretry import get_with_retry
 from fb_display import init_display, present
 from header import draw_header
 from weather_draw import draw_weather
@@ -339,7 +340,7 @@ def main():
         info = AIRPORT_WARNING[airport_key]
         url = f"https://www.jma.go.jp/bosai/warning/data/warning/{info['pref']}.json"
         try:
-            r = requests.get(url, headers=HEADERS, timeout=5)
+            r = get_with_retry(url, headers=HEADERS, timeout=5)      # 一瞬の DNS エラーなどは 3 秒後に 1 回取り直す
             r.raise_for_status()
             data = r.json()
         except Exception as e:
