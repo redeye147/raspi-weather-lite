@@ -384,3 +384,16 @@ def test_night_mix_changes_smoothly_in_dusk_and_dawn_columns():
     assert mix(7, 0.0) == 1.0 and mix(7, 1.0) == 0.0                               # 03 時：夜 → 昼
     vals = [mix(3, k / 20) for k in range(21)]
     assert all(b >= a for a, b in zip(vals, vals[1:]))                             # 途中で戻らない
+
+
+def test_time_row_background_is_reused_until_columns_shift():
+    """時刻の行の背景は 1 回作ったら使い回し、列の並び（昼夜の並び）が変わったときだけ作り直す（Pi Zero の負担を増やさない）"""
+    import weather_draw
+    weather_draw._time_row_cache.clear()
+    hourly = _hourly()                                             # 06 09 12 15 18 21 00 03 06 09
+    a = weather_draw._time_row_surface(hourly, 150, 30)
+    assert weather_draw._time_row_surface(hourly, 150, 30) is a     # 毎分の描き直しでは作り直さない
+    shifted = hourly[1:] + hourly[:1]                               # 3 時間後：09 12 15 18 21 00 03 06 09 06
+    b = weather_draw._time_row_surface(shifted, 150, 30)
+    assert b is not a and b.get_size() == (1500, 30)
+    assert b.get_at((5, 0))[:3] == weather_draw.TIME_DAY_TOP        # 上端の色はそのまま

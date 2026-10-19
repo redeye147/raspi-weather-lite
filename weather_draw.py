@@ -265,27 +265,22 @@ def _time_row_surface(hourly, col_w, row_h):
     key = (tuple(h.get("hour") in NIGHT_HOURS for h in hourly), col_w, row_h)
     surf = _time_row_cache.get(key)
     if surf is None:
+        # 上端の色・下端の色の 2 行だけを 1 画素ずつ作り、縦に引き伸ばす（引き伸ばしで上下の間がなめらかになる）。
+        # 全部の画素を 1 つずつ塗るより十数倍速い（Pi Zero で 3 時間に 1 回、ほぼ一瞬）
         n = len(hourly)
-        surf = pygame.Surface((col_w * n, row_h))
+        edge = pygame.Surface((col_w * n, 2))
         for px in range(col_w * n):
             t = night_mix(hourly, px // col_w, (px % col_w + 0.5) / col_w)
-            top = tuple(int(TIME_DAY_TOP[k] + (TIME_NIGHT_TOP[k] - TIME_DAY_TOP[k]) * t) for k in range(3))
-            bottom = tuple(int(TIME_DAY_BOTTOM[k] + (TIME_NIGHT_BOTTOM[k] - TIME_DAY_BOTTOM[k]) * t) for k in range(3))
-            for j in range(row_h):
-                v = j / max(1, row_h - 1)
-                surf.set_at((px, j), tuple(int(top[k] + (bottom[k] - top[k]) * v) for k in range(3)))
+            edge.set_at((px, 0), tuple(int(TIME_DAY_TOP[k] + (TIME_NIGHT_TOP[k] - TIME_DAY_TOP[k]) * t) for k in range(3)))
+            edge.set_at((px, 1), tuple(int(TIME_DAY_BOTTOM[k] + (TIME_NIGHT_BOTTOM[k] - TIME_DAY_BOTTOM[k]) * t)
+                                       for k in range(3)))
+        surf = pygame.transform.smoothscale(edge.convert(24) if edge.get_bitsize() not in (24, 32) else edge,
+                                            (col_w * n, max(2, row_h)))
+        if row_h < 2:
+            surf = surf.subsurface((0, 0, col_w * n, row_h)).copy()
         _time_row_cache.clear()
         _time_row_cache[key] = surf
     return surf
-
-
-def _vgradient(screen, rect, top, bottom):
-    """rect を上の色から下の色へ、なめらかに塗る"""
-    x, y, w, h = rect
-    for j in range(h):
-        t = j / max(1, h - 1)
-        c = tuple(int(top[k] + (bottom[k] - top[k]) * t) for k in range(3))
-        pygame.draw.line(screen, c, (x, y + j), (x + w - 1, y + j))
 
 
 def _is_night_item(item) -> bool:
