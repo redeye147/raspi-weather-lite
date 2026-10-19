@@ -36,11 +36,12 @@ NIGHT_HOURS = {"18", "21", "00", "03"}
 # 時刻の行のマスの色：昼（06・09・12・15）と夜（18・21・00・03）。月のアイコンと同じ固定の区分。
 # 50 インチのテレビを離れて見ても昼夜がわかるよう、上から下へのグラデーション（昼＝黄→白、夜＝紺→青。夜は数字を白）
 TIME_DAY_TOP, TIME_DAY_BOTTOM = (255, 210, 90), (255, 248, 225)
-TIME_NIGHT_TOP, TIME_NIGHT_BOTTOM = (70, 95, 170), (130, 155, 215)   # 2026-10 に薄く（以前 (35,50,115)→(95,120,190) は濃すぎた）
-TIME_NIGHT_TEXT = (255, 255, 255)
+# 2026-10 に 2 段階薄く（(35,50,115)→(95,120,190) は濃すぎ、(70,95,170)→(130,155,215) もまだ濃い）。薄いので数字は黒
+TIME_NIGHT_TOP, TIME_NIGHT_BOTTOM = (120, 145, 210), (185, 202, 240)
+TIME_NIGHT_TEXT = (0, 0, 0)
 # 夜のマス（紺）に日の出・日の入りの印が入るときの色（ふだんの紺・濃い橙では見えないため）
-SUNSET_ON_NIGHT = (200, 210, 255)
-SUNRISE_TEXT_ON_NIGHT = (255, 175, 70)
+SUNSET_ON_NIGHT = (25, 25, 110)        # 夜のマスは薄い青なので、ふだんより少し濃い紺
+SUNRISE_TEXT_ON_NIGHT = (150, 55, 0)   # 同じく、ふだんより少し濃い橙
 WIND_BOLD_FROM = 9                     # 風速の数字を太字にするのは 9 m/s 以上
 WIND_ARROW_SCALE = 0.72                # 矢印の大きさ（行の高さに対して。以前の 0.8 の 0.9 倍）
 
@@ -86,7 +87,7 @@ def _time_to_col(times, t):
     return len(times) - 1 + (t - times[-1]) / last
 
 
-NOW_FRAME_COLOR = (0, 110, 220)   # 今の時間帯の列の枠の色（青）
+NOW_FRAME_COLOR = (0, 0, 0)       # 今の時間帯の列の枠の色（黒。以前は青）
 NOW_FRAME_WIDTH = 4               # 枠の太さ（px。普段の罫線は 1）
 
 
@@ -170,7 +171,7 @@ def _draw_sun_markers(screen, hourly, latitude, longitude, margin_x, col_w,
 
 
 LABEL_OUTLINE_ON_DAY = (255, 255, 255)
-LABEL_OUTLINE_ON_NIGHT = (20, 30, 80)
+LABEL_OUTLINE_ON_NIGHT = (255, 255, 255)   # 夜のマスも薄い色なので白で縁取り
 
 
 def _blit_outlined(screen, font, text, color, outline, pos):

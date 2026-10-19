@@ -158,9 +158,10 @@ def test_current_slot_frame_is_drawn(w, h):
                  now=datetime.datetime(2026, 10, 11, 10, 30, tzinfo=JST))
     arr = pygame.surfarray.array3d(screen)
     blue = np.all(arr == weather_draw.NOW_FRAME_COLOR, axis=2)
-    cols = np.where(blue.sum(axis=1) > h * 0.1)[0]          # 縦に長く続く青い線（枠の左右）
     margin_x = int(w * 0.05)
     col_w = int((w - margin_x * 2) // 11)
+    blue[:margin_x + col_w] = False                          # 見出しの列（黒い文字が縦に並ぶ）は除く
+    cols = np.where(blue.sum(axis=1) > h * 0.1)[0]          # 縦に長く続く線（枠の左右。色は NOW_FRAME_COLOR）
     left = margin_x + 2 * col_w                               # 見出し列 + 06 の列 の右
     assert len(cols) >= 2 * weather_draw.NOW_FRAME_WIDTH
     assert cols.min() == left and cols.max() <= left + col_w
