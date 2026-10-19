@@ -83,7 +83,7 @@ def _sun_frames(code, w, h):
 def _rain_frames(code, w, h, heavy):
     base = _scaled(code, w, h)
     n = max(1, round(WEATHER_PERIOD_S * FPS))
-    count, speed, width, length, slant = (24, 2, 3, 13, 0.3) if heavy else (9, 1, 2, 9, 0.15)
+    count, speed, width, length, slant = (19, 2, 3, 13, 0.3) if heavy else (7, 1, 2, 9, 0.15)   # 雨粒の数は 2026-10 に 8 割に（24→19・9→7）
     rnd = random.Random(1)
     drops = [(rnd.uniform(0.05, 1.0) * w, rnd.uniform(0, 1)) for _ in range(count)]
     frames = []
