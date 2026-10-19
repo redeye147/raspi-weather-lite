@@ -341,8 +341,8 @@ def test_wind_number_bold_from_9():
 
 @pytest.mark.parametrize("w, h", RESOLUTIONS)
 @pytest.mark.parametrize("wind_dir", [135, None])
-def test_calm_wind_shows_circle_not_arrow(w, h, wind_dir):
-    """風速 0 m/s は風向に意味が無いので、矢印（灰）を描かず ○（静穏）を描く。風向のデータが無くても ○"""
+def test_calm_wind_shows_dashes_not_arrow(w, h, wind_dir):
+    """風速 0 m/s は風向に意味が無いので、矢印（灰）を描かず「---」（静穏）を描く。風向のデータが無くても「---」"""
     import weather_draw
     hourly = _hourly()
     for it in hourly:
@@ -357,4 +357,4 @@ def test_calm_wind_shows_circle_not_arrow(w, h, wind_dir):
     col_w = int((w - margin_x * 2) // 11)
     for i in range(10):
         x = margin_x + (1 + i) * col_w
-        assert circle[x:x + col_w].sum() > 10, f"{w}×{h}: {i} 列目に ○ が無い"
+        assert circle[x:x + col_w].sum() > 10, f"{w}×{h}: {i} 列目に「---」が無い"

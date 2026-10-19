@@ -205,9 +205,15 @@ CALM_MARK_COLOR = (150, 150, 150)
 
 
 def draw_calm_mark(screen, cx, cy, size):
-    """静穏（風速 0 m/s）の印：天気図と同じ小さな丸（矢印と同じ場所・矢印の半分ほどの大きさ）"""
-    r = max(4, int(size * 0.28))
-    pygame.draw.circle(screen, CALM_MARK_COLOR, (int(cx), int(cy)), r, max(2, size // 14))
+    """静穏（風速 0 m/s）の印「---」（風向が無いことを表す。矢印と同じ場所に、矢印の幅に収まる 3 本の短い線）"""
+    seg = max(3, int(size * 0.22))
+    gap = max(2, int(size * 0.12))
+    total = seg * 3 + gap * 2
+    x = int(cx - total / 2)
+    th = max(2, size // 14)
+    for _ in range(3):
+        pygame.draw.rect(screen, CALM_MARK_COLOR, (x, int(cy - th / 2), seg, th))
+        x += seg + gap
 
 
 def _is_night_item(item) -> bool:
@@ -565,7 +571,7 @@ def draw_weather(
                     # 風向の矢印：どの列も同じ位置（2 桁の太字「88 m/s」の右）に置く。1 桁でも離れすぎず、2 桁でも重ならない。
                     # 列が狭い画面では入る大きさに縮め、入らなければ描かない
                     wdir = item.get("wind_dir")
-                    calm = int(v) == 0                  # 0 m/s（ほぼ無風）は風向に意味が無いので、矢印の代わりに ○（静穏）
+                    calm = int(v) == 0                  # 0 m/s（ほぼ無風）は風向に意味が無いので、矢印の代わりに「---」（静穏）
                     if calm or isinstance(wdir, (int, float)):
                         widest = get_font(base_font_path, 26, bold=True).size("88")[0] + unit_surf.get_width()
                         text_right = x_pos + max(widest, val_surf.get_width() + unit_surf.get_width())
