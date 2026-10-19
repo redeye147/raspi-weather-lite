@@ -882,7 +882,13 @@ def run_forever():
 
 
 def _on_sigterm(signum, frame):
-    print(f"signal {signum} 受信: 終了します", flush=True)
+    """停止の合図で終了する。print は使わない：合図が続けて届くと（sudo 経由など）表示の途中で
+    もう一度呼ばれて RuntimeError（reentrant call）になり、run_forever がそれを失敗として捕まえて
+    止まらずにやり直していた（2026-10-19 raspi2w）"""
+    try:
+        os.write(2, f"signal {signum} 受信: 終了します\n".encode())
+    except OSError:
+        pass
     raise SystemExit(0)   # run_forever は Exception しか捕まえないので、そのまま終了する
 
 

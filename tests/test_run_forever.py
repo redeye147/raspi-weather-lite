@@ -43,3 +43,19 @@ def test_display_attached_restarts_at_once_without_counting_failure(monkeypatch,
         main01.run_forever()
     assert sleeps == [2] and len(runs) == 2
     assert not [r for r in caplog.records if r.levelno >= logging.ERROR]
+
+
+def test_sigterm_twice_still_exits(monkeypatch):
+    """停止の合図が続けて 2 回届いても（ハンドラの中でもう一度呼ばれても）、SystemExit で終わる。
+    以前は print の中で再び呼ばれて RuntimeError になり、run_forever がやり直していた"""
+    import signal
+
+    def main():
+        try:
+            main01._on_sigterm(signal.SIGTERM, None)
+        except SystemExit:
+            main01._on_sigterm(signal.SIGTERM, None)          # 終了処理の途中でもう 1 回
+    monkeypatch.setattr(main01, "main", main)
+    monkeypatch.setattr(main01.time, "sleep", lambda s: (_ for _ in ()).throw(AssertionError("やり直してはいけない")))
+    with pytest.raises(SystemExit):
+        main01.run_forever()
