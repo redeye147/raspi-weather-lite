@@ -100,7 +100,7 @@ def _rain_frames(code, w, h, heavy):
 def _snow_frames(code, w, h, heavy):
     base = _scaled(code, w, h)
     n = max(1, round(WEATHER_PERIOD_S * FPS))
-    count, speed, wind = (28, 2, 0.45) if heavy else (10, 1, 0.0)
+    count, speed, wind = (22, 2, 0.45) if heavy else (8, 1, 0.0)   # 雪の数は 2026-10 に 8 割に（28→22・10→8）
     rad = max(2, round(h * 0.055))
     rnd = random.Random(2)
     flakes = [(rnd.uniform(0, 1) * w, rnd.uniform(0, 1), rnd.uniform(0, 6.28)) for _ in range(count)]
