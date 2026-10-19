@@ -295,7 +295,8 @@ def test_label_icons_line_up():
 # ---------------------------------------------------------------- 時刻の行の昼夜の色・風速の数字と矢印
 @pytest.mark.parametrize("w, h", RESOLUTIONS)
 def test_time_row_day_night_colors(w, h):
-    """時刻の行のマス：06・09・12・15 時は薄い黄、18・21・00・03 時は薄い青（日の出・日の入りに関係なく固定）"""
+    """時刻の行のマス：06・09・12・15 時は黄→白、18・21・00・03 時は紺→青のグラデーション（日の出・日の入りに関係なく固定）。
+    夜のマスの時刻の数字は白"""
     import weather_draw
     screen = pygame.Surface((w, h))
     hourly = _hourly()
@@ -304,11 +305,20 @@ def test_time_row_day_night_colors(w, h):
     arr = pygame.surfarray.array3d(screen)
     margin_x = int(w * 0.05)
     col_w = int((w - margin_x * 2) // 11)
+    # 時刻の行の位置：昼の上端の色（黄）の行を探す
+    first_x = margin_x + col_w + col_w - 6                        # 06 時のマスの右端近く（数字の無い所）
+    near = lambda px, c: np.abs(px.astype(int) - np.array(c)).max(axis=-1) <= 12     # 枠の下のグラデーションの上端
+    ys = np.where(near(arr[first_x], weather_draw.TIME_DAY_TOP))[0]
+    assert len(ys), f"{w}×{h}: 時刻の行の昼の色が無い"
+    top_y = ys.min()
     for i, item in enumerate(hourly):
-        x = margin_x + (1 + i) * col_w
-        want = weather_draw.TIME_NIGHT_BG if item["hour"] in weather_draw.NIGHT_HOURS else weather_draw.TIME_DAY_BG
-        cell = np.all(arr[x + 2:x + col_w - 2] == want, axis=2)
-        assert cell.sum() > col_w * 5, f"{w}×{h}: {item['hour']} 時のマスの色が違う"
+        x = margin_x + (1 + i) * col_w + col_w - 6
+        night = item["hour"] in weather_draw.NIGHT_HOURS
+        want = weather_draw.TIME_NIGHT_TOP if night else weather_draw.TIME_DAY_TOP
+        assert near(arr[x, top_y], want), f"{w}×{h}: {item['hour']} 時のマスの色が違う"
+        if night:
+            cell = arr[x - col_w + 8:x - col_w + 40, top_y:top_y + int(h * 0.030)]
+            assert np.all(cell == weather_draw.TIME_NIGHT_TEXT, axis=2).any(), f"{w}×{h}: {item['hour']} 時の数字が白でない"
 
 
 @pytest.mark.parametrize("w, h", RESOLUTIONS)

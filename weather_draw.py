@@ -33,9 +33,14 @@ OVERVIEW_MAX_LINES = 3
 
 # 月アイコンにする列（日の出・日の入りの時刻によらず一律）
 NIGHT_HOURS = {"18", "21", "00", "03"}
-# 時刻の行のマスの色：昼（06・09・12・15）は薄い黄、夜（18・21・00・03）は薄い青。月のアイコンと同じ固定の区分
-TIME_DAY_BG = (255, 246, 222)
-TIME_NIGHT_BG = (226, 232, 246)
+# 時刻の行のマスの色：昼（06・09・12・15）と夜（18・21・00・03）。月のアイコンと同じ固定の区分。
+# 50 インチのテレビを離れて見ても昼夜がわかるよう、上から下へのグラデーション（昼＝黄→白、夜＝紺→青。夜は数字を白）
+TIME_DAY_TOP, TIME_DAY_BOTTOM = (255, 210, 90), (255, 248, 225)
+TIME_NIGHT_TOP, TIME_NIGHT_BOTTOM = (35, 50, 115), (95, 120, 190)
+TIME_NIGHT_TEXT = (255, 255, 255)
+# 夜のマス（紺）に日の出・日の入りの印が入るときの色（ふだんの紺・濃い橙では見えないため）
+SUNSET_ON_NIGHT = (200, 210, 255)
+SUNRISE_TEXT_ON_NIGHT = (255, 175, 70)
 WIND_BOLD_FROM = 9                     # 風速の数字を太字にするのは 9 m/s 以上
 WIND_ARROW_SCALE = 0.72                # 矢印の大きさ（行の高さに対して。以前の 0.8 の 0.9 倍）
 
@@ -133,14 +138,15 @@ def _draw_sun_markers(screen, hourly, latitude, longitude, margin_x, col_w,
             # （05:58 のように境目の直前だと、▲が「06」に食い込んでいた。位置は数分ずれるが時刻はラベルで読める）
             x = min(x, cell_x + col_w - half - SUN_MARK_EDGE_GAP)
 
-            color = SUNRISE_COLOR if is_rise else SUNSET_COLOR
+            on_night = hourly[ci].get("hour") in NIGHT_HOURS     # 印が夜のマス（紺）に入る
+            color = SUNRISE_COLOR if is_rise else (SUNSET_ON_NIGHT if on_night else SUNSET_COLOR)
             if is_rise:
                 pts = [(x, cy - half), (x - half, cy + half), (x + half, cy + half)]
             else:
                 pts = [(x - half, cy - half), (x + half, cy - half), (x, cy + half)]
             pygame.draw.polygon(screen, color, pts)
 
-            text_color = SUNRISE_TEXT_COLOR if is_rise else color
+            text_color = ((SUNRISE_TEXT_ON_NIGHT if on_night else SUNRISE_TEXT_COLOR) if is_rise else color)
             label = label_font.render(t.strftime("%H:%M"), True, text_color)
             lw = label.get_width()
             next_text_x = cell_x + col_w + 5
@@ -214,6 +220,15 @@ def draw_calm_mark(screen, cx, cy, size):
     for _ in range(3):
         pygame.draw.rect(screen, CALM_MARK_COLOR, (x, int(cy - th / 2), seg, th))
         x += seg + gap
+
+
+def _vgradient(screen, rect, top, bottom):
+    """rect を上の色から下の色へ、なめらかに塗る"""
+    x, y, w, h = rect
+    for j in range(h):
+        t = j / max(1, h - 1)
+        c = tuple(int(top[k] + (bottom[k] - top[k]) * t) for k in range(3))
+        pygame.draw.line(screen, c, (x, y + j), (x + w - 1, y + j))
 
 
 def _is_night_item(item) -> bool:
@@ -482,7 +497,8 @@ def draw_weather(
             # 時刻の行は、昼と夜でマスの色を塗り分ける（枠より先に塗る）
             if row_idx == 1 and 1 <= col_idx <= data_cols:
                 night = hourly[col_idx - 1].get("hour") in NIGHT_HOURS
-                screen.fill(TIME_NIGHT_BG if night else TIME_DAY_BG, (x, y, col_w, row_heights[row_idx]))
+                _vgradient(screen, (x, y, col_w, row_heights[row_idx]),
+                           *((TIME_NIGHT_TOP, TIME_NIGHT_BOTTOM) if night else (TIME_DAY_TOP, TIME_DAY_BOTTOM)))
 
             # 日付行は3時間ごとの区切り線を引かず、日付ごとにまとめて枠を描く（下で描画）
             if not (row_idx == 0 and col_idx >= 1):
@@ -514,6 +530,8 @@ def draw_weather(
 
             elif row_idx == 1:
                 text = item["hour"]
+                if item["hour"] in NIGHT_HOURS:
+                    color = TIME_NIGHT_TEXT          # 夜のマスは紺なので白い数字
 
             elif row_idx == 2:
                 icon_code = item["code"]
