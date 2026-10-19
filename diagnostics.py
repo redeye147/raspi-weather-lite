@@ -348,6 +348,11 @@ def _wbgt_item(now, snap):
     if wbgt_off_season(now, status, data_dt):
         return _item("WBGT", "WBGT（熱中症）", INFO, "提供期間外（データなし）",
                      f"1日1回（朝6時）確認中（最後の確認 {_hm(attempt)}）")
+    # 夜間（0:00〜5:59）は取りに行かない決まりなので、まだ取っていない・前回失敗でも正常（夜に起動し直すと
+    # 朝まで「データなし」の注意になっていた。2026-10-20 の 112）
+    if now.hour < WBGT_START_HOUR:
+        return _item("WBGT", "WBGT（熱中症）", OK, "夜間は取得なし（6時から）",
+                     f"最後の取得 {_hm(attempt)}" if attempt else "起動後まだ取得していません（6時に取得）")
     if not attempt:
         return _item("WBGT", "WBGT（熱中症）", WARN, "データなし", "まだ取得していません")
     age = now.timestamp() - attempt
@@ -355,8 +360,6 @@ def _wbgt_item(now, snap):
     val = f"{lv['label']} {lv['value']:.1f}℃" if lv and data_dt and data_dt.date() == now.date() else "25℃未満（バッジなし）"
     if status == "error":
         return _item("WBGT", "WBGT（熱中症）", WARN, f"取得失敗（{_hm(attempt)}）", "通信エラー。1時間後に再取得します")
-    if now.hour < WBGT_START_HOUR:
-        return _item("WBGT", "WBGT（熱中症）", OK, "夜間は取得なし（6時から）", f"最後の取得 {_hm(attempt)}")
     level = OK if age <= 90 * 60 else (WARN if age <= 3 * 3600 else BAD)
     return _item("WBGT", "WBGT（熱中症）", level, f"{val}・{_hm(attempt)} 取得（{_ago(age)}）")
 

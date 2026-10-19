@@ -272,3 +272,21 @@ def test_git_version_time_is_japan_time():
     ts = int(datetime.datetime(2026, 10, 18, 5, 51, tzinfo=datetime.timezone.utc).timestamp())
     assert dg.format_git_log(f"3bbd350 {ts}\n") == "3bbd350 2026-10-18 14:51"
     assert dg.format_git_log("") == ""
+
+
+@pytest.mark.parametrize("snap_over", [
+    {"wbgt_at": None, "wbgt_status": None, "wbgt_data_at": None},      # 夜に起動し直して、まだ 1 度も取っていない
+    {"wbgt_status": "error"},                                           # 夜になる前の取得が失敗していた
+])
+def test_wbgt_at_night_is_ok_even_without_data(snap_over):
+    """夜間（0:00〜5:59）は WBGT を取りに行かない決まりなので、データなし・前回失敗でも注意にしない"""
+    snap = dict(healthy()["snap"], **snap_over)
+    it = item(dg.evaluate(healthy(snap=snap), datetime.datetime(2026, 10, 20, 2, 16, tzinfo=JST)), "WBGT")
+    assert it["level"] == "ok" and it["value"] == "夜間は取得なし（6時から）"
+    if not snap_over.get("wbgt_status") == "error":
+        assert it["detail"] == "起動後まだ取得していません（6時に取得）"
+
+
+def test_wbgt_no_data_in_daytime_is_warn():
+    snap = dict(healthy()["snap"], wbgt_at=None, wbgt_status=None, wbgt_data_at=None)
+    assert item(dg.evaluate(healthy(snap=snap), NOW), "WBGT")["level"] == "warn"
