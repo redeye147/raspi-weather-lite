@@ -33,7 +33,9 @@ import subprocess
 
 import fb_display
 from netretry import get_with_retry
-from fb_display import init_display, present
+from fb_display import init_display, present, present_rect
+import anim_icons
+import weather_draw
 from header import draw_header
 from weather_draw import draw_weather
 from fetch_wbgt import level_for, start_fetch_in_background as start_wbgt_fetch
@@ -177,6 +179,8 @@ def main():
                         help="WBGT値(℃)を指定してバッジをテスト（例: --wbgt-test 35）")
     parser.add_argument("--wbgt-alert", action="store_true",
                         help="熱中症警戒アラートバナーを強制表示")
+    parser.add_argument("--no-anim", action="store_true",
+                        help="今の時間帯の天気アイコンを動かさない（静止画のまま）")
     parser.add_argument("--thunder-test", choices=["near", "watch"], default=None,
                         help="雷の帯をテスト表示（near=雷接近 10km 以内 / watch=雷注意 20km 以内）")
     parser.add_argument("--render",
@@ -206,6 +210,8 @@ def main():
     os.environ["SDL_VIDEO_MINIMIZE_ON_FOCUS_LOSS"] = "0"
 
     # 描画モードを自動判定（auto: kmsdrm を検証 → 失敗時 offscreen+fb0）
+    global ANIMATE
+    ANIMATE = ANIMATE and not args.no_anim
     screen = init_display(args.render, allow_headless=True)
     boot_log(f"描画初期化完了 mode={fb_display.RENDER_MODE}")
     if fb_display.RENDER_MODE == "headless":
@@ -715,7 +721,7 @@ def main():
             for event in pygame.event.get():
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                     pygame.quit(); return
-            _wait_ms(_ms_until_next_check())
+            _wait_animating(screen, _ms_until_next_check())
             continue
 
         # WBGT は「その日の最高予測」なので、取得した日のうちだけ出す（0:00 に消え、6 時台の取得で再表示）
@@ -767,7 +773,7 @@ def main():
             if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                 pygame.quit(); return
 
-        _wait_ms(_ms_until_next_check())
+        _wait_animating(screen, _ms_until_next_check())
 
 
 NETWAIT_SNAPSHOT_EVERY_S = 60     # 起動時のネットワーク待機中、状態をログに残す間隔（10 分以降は 5 分）
@@ -803,6 +809,34 @@ def save_requested_screenshot(screen, request_path=None) -> None:
 
 
 DISPLAY_CHECK_S = 60
+ANIMATE = True           # 今の時間帯の天気アイコンを動かす（--no-anim で止める）
+
+
+def _wait_animating(screen, ms):
+    """ms ミリ秒待つ。その間、今の時間帯の天気アイコン（晴れ・夜の晴れ・雨・雪）だけを 1 秒に数回描き直す。
+    動かすアイコンが無い・部分だけ書けないときは、ただ待つ"""
+    anim = weather_draw.current_anim if ANIMATE else None
+    frames = None
+    if anim:
+        x, y, w, h = anim["rect"]
+        frames = anim_icons.frames_for(anim["icon_code"], w, h)
+    if not frames:
+        _wait_ms(ms)
+        return
+    end = time.monotonic() + ms / 1000
+    step = 1.0 / anim_icons.FPS
+    while True:
+        remaining = end - time.monotonic()
+        if remaining <= 0:
+            return
+        frame = frames[int(time.monotonic() * anim_icons.FPS) % len(frames)]
+        screen.fill((255, 255, 255), anim["rect"])
+        screen.blit(frame, anim["rect"][:2])
+        if not present_rect(screen, anim["rect"]):
+            weather_draw.current_anim = None          # 部分だけ書けない環境：以後は動かさない
+            _wait_ms(remaining * 1000)
+            return
+        _wait_ms(min(step, remaining) * 1000)
 
 
 class DisplayAttached(Exception):

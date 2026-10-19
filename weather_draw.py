@@ -369,6 +369,7 @@ def draw_today_title_bar(
 
 
 ALERT_BANNER_H = 44
+current_anim = None      # 最後に描いた画面の「今の時間帯のアイコン」{"rect", "icon_code"}（無ければ None）
 ALERT_BANNER_H_DOUBLE = 28      # 雷と熱中症の帯が 2 本重なるときは細くする（1280×720 で表が画面の下にはみ出さないように）
 SUMMARY_GAP_MIN_HEIGHT = 1000   # この高さ以上の画面で、作業注意情報の下に1行分の余白を入れる
 
@@ -541,6 +542,9 @@ def draw_weather(
     )
     y_offset += title_bar_h + 4
 
+    global current_anim
+    current_anim = None
+    icon_cells = {}                     # 列 → (アイコンを描いたマス, 実際に描いたアイコンの番号)
     for row_idx, label in enumerate(ROW_LABELS):
         for col_idx in range(total_cols):
             x = margin_x + col_idx * col_w
@@ -597,6 +601,7 @@ def draw_weather(
                 icon = _load_scaled_icon(icon_path, col_w - 10, row_heights[row_idx] - 10, icon_cache)
                 if icon:
                     screen.blit(icon, (x + 5, y + 5))
+                icon_cells[di] = ((x + 5, y + 5, col_w - 10, row_heights[row_idx] - 10), icon_code)
                 continue
 
             elif row_idx == 3:
@@ -678,6 +683,10 @@ def draw_weather(
         pygame.draw.rect(screen, NOW_FRAME_COLOR,
                          (margin_x + (1 + cur) * col_w, y_offset + row_heights[0], col_w + 1, sum(row_heights[1:]) + 1),
                          NOW_FRAME_WIDTH)
+        # 今の時間帯のアイコンを動かすための情報（main01 が 1 秒に数回、このマスだけ描き直す）
+        if cur in icon_cells:
+            rect, code = icon_cells[cur]
+            current_anim = {"rect": rect, "icon_code": code}
 
     y_offset += sum(row_heights) + (2 if double else 8)
 

@@ -297,6 +297,34 @@ def flip_to_fb(surface):
         logging.warning(f"fb0 flip failed: {e}")
 
 
+def present_rect(surface, rect) -> bool:
+    """画面の一部（rect）だけを表示に反映する（アイコンを動かすとき用。全面の書き込みより軽い）。
+    反映できたら True。fb0 で numpy が無いなど、部分だけ書けないときは False（呼ぶ側は動かすのをやめる）"""
+    if RENDER_MODE == 'headless':
+        return True
+    rect = pygame.Rect(rect).clip(surface.get_rect())
+    if rect.w <= 0 or rect.h <= 0:
+        return True
+    if RENDER_MODE != 'fb0':
+        pygame.display.update(rect)
+        return True
+    if _fb_mmap is None or _np is None or surface.get_size() != (_fb_w, _fb_h):
+        return False
+    try:
+        arr = pygame.surfarray.array3d(surface.subsurface(rect)).swapaxes(0, 1)   # (h, w, 3)
+        r = arr[:, :, 0].astype(_np.uint16) >> 3
+        g = arr[:, :, 1].astype(_np.uint16) >> 2
+        b = arr[:, :, 2].astype(_np.uint16) >> 3
+        rows = ((r << 11) | (g << 5) | b).astype('<u2')
+        for j in range(rect.h):
+            _fb_mmap.seek(((rect.y + j) * _fb_w + rect.x) * 2)
+            _fb_mmap.write(rows[j].tobytes())
+        return True
+    except Exception as e:
+        logging.warning(f"fb0 partial flip failed: {e}")
+        return False
+
+
 def present(surface):
     """通常の flip に加え、fb0 モードなら /dev/fb0 にも書き込む。
     pygame.display.flip() の置き換えとして使う。"""

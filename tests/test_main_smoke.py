@@ -53,6 +53,7 @@ def signage(tmp_path, monkeypatch):
     monkeypatch.setattr(main01, "get_overview_and_warning",
                         lambda **k: {"headline": "濃霧注意報", "overview": "晴れ。", "updated": "2026-10-11 05:00"})
     monkeypatch.setattr(main01, "DEFER_INITIAL_FETCH_S", 0)
+    monkeypatch.setattr(main01, "ANIMATE", False)    # アイコンを動かすと待ちの回数が増えて、ループの周回の数え方が変わる
     # 通信はすべて止める（裏で取得するスレッドもテスト後に本物の通信をしないように）
     monkeypatch.setattr(requests, "get", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("offline")))
     aviation_calls, wbgt_calls, thunder_calls = [], [], []
@@ -205,4 +206,6 @@ def test_headless_keeps_fetching_and_restarts_when_hdmi_attached(signage, monkey
         run(loops=50)
     with open(snap_file, encoding="utf-8") as f:
         assert json.load(f)["hourly"]                     # 画面が無くても天気を取って保存している
-    assert calls["wbgt"] and calls["thunder"]
+    assert calls["thunder"]
+    # WBGT は 0:00〜5:59 は取りに行かない決まり（その時間に試験すると呼ばれない）
+    assert bool(calls["wbgt"]) == (main01.datetime.datetime.now(main01.JST).hour >= decisions.WBGT_START_HOUR)
