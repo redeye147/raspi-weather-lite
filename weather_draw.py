@@ -138,7 +138,7 @@ def _draw_sun_markers(screen, hourly, latitude, longitude, margin_x, col_w,
             # （05:58 のように境目の直前だと、▲が「06」に食い込んでいた。位置は数分ずれるが時刻はラベルで読める）
             x = min(x, cell_x + col_w - half - SUN_MARK_EDGE_GAP)
 
-            on_night = hourly[ci].get("hour") in NIGHT_HOURS     # 印が夜のマス（紺）に入る
+            on_night = night_mix(hourly, ci, (x - cell_x) / col_w) > 0.5   # 印のある所が夜の色（紺）
             color = SUNRISE_COLOR if is_rise else (SUNSET_ON_NIGHT if on_night else SUNSET_COLOR)
             if is_rise:
                 pts = [(x, cy - half), (x - half, cy + half), (x + half, cy + half)]
@@ -146,17 +146,40 @@ def _draw_sun_markers(screen, hourly, latitude, longitude, margin_x, col_w,
                 pts = [(x - half, cy - half), (x + half, cy - half), (x, cy + half)]
             pygame.draw.polygon(screen, color, pts)
 
-            text_color = ((SUNRISE_TEXT_ON_NIGHT if on_night else SUNRISE_TEXT_COLOR) if is_rise else color)
-            label = label_font.render(t.strftime("%H:%M"), True, text_color)
-            lw = label.get_width()
+            text = t.strftime("%H:%M")
+            lw = label_font.size(text)[0]
             next_text_x = cell_x + col_w + 5
             right_x = x + half + 2
             left_x = x - half - 2 - lw
             # 右に置くと次の列の時刻（例「18」）にくっついて「17:0518」と読めるので、十分すき間があるときだけ右
             if right_x + lw <= next_text_x - SUN_LABEL_GAP and ci < n:
-                screen.blit(label, (right_x, cy - label.get_height() // 2))
+                lx = right_x
             elif left_x >= text_right + 2:
-                screen.blit(label, (left_x, cy - label.get_height() // 2))
+                lx = left_x
+            else:
+                continue
+            # 文字の色は、文字のある所の背景（昼↔夜の移り変わりの途中もある）で決め、反対の色で縁取って読みやすく
+            label_night = night_mix(hourly, ci, (lx + lw / 2 - cell_x) / col_w) > 0.45
+            if is_rise:
+                text_color = SUNRISE_TEXT_ON_NIGHT if label_night else SUNRISE_TEXT_COLOR
+            else:
+                text_color = SUNSET_ON_NIGHT if label_night else SUNSET_COLOR
+            _blit_outlined(screen, label_font, text, text_color,
+                           LABEL_OUTLINE_ON_NIGHT if label_night else LABEL_OUTLINE_ON_DAY,
+                           (lx, cy - label_font.get_height() // 2))
+
+
+LABEL_OUTLINE_ON_DAY = (255, 255, 255)
+LABEL_OUTLINE_ON_NIGHT = (20, 30, 80)
+
+
+def _blit_outlined(screen, font, text, color, outline, pos):
+    """縁取りした文字（背景の色が途中で変わっても読めるように）"""
+    x, y = pos
+    edge = font.render(text, True, outline)
+    for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (1, 1), (-1, 1), (1, -1)):
+        screen.blit(edge, (x + dx, y + dy))
+    screen.blit(font.render(text, True, color), (x, y))
 
 
 # 風向の矢印の色（風速 m/s の下限, 色）。よく使われる天気図の配色
@@ -220,6 +243,39 @@ def draw_calm_mark(screen, cx, cy, size):
     for _ in range(3):
         pygame.draw.rect(screen, CALM_MARK_COLOR, (x, int(cy - th / 2), seg, th))
         x += seg + gap
+
+
+def night_mix(hourly, i, frac):
+    """時刻の行の i 列目の、左端から frac（0〜1）の位置の「夜らしさ」（0 = 昼、1 = 夜）。
+    昼と夜が変わる手前の列（15 時・03 時）の中で、なめらかに移り変わる（急に色が変わらないように）"""
+    night = hourly[i].get("hour") in NIGHT_HOURS
+    if i + 1 >= len(hourly) or (hourly[i + 1].get("hour") in NIGHT_HOURS) == night:
+        return 1.0 if night else 0.0
+    f = max(0.0, min(1.0, frac))
+    s = f * f * (3 - 2 * f)                           # はじめと終わりをゆるやかに
+    return 1.0 - s if night else s
+
+
+_time_row_cache = {}
+
+
+def _time_row_surface(hourly, col_w, row_h):
+    """時刻の行の背景（全列ぶん）。上下は 上の色→下の色、左右は昼↔夜をなめらかにつなぐ。同じ並びなら作り直さない"""
+    key = (tuple(h.get("hour") in NIGHT_HOURS for h in hourly), col_w, row_h)
+    surf = _time_row_cache.get(key)
+    if surf is None:
+        n = len(hourly)
+        surf = pygame.Surface((col_w * n, row_h))
+        for px in range(col_w * n):
+            t = night_mix(hourly, px // col_w, (px % col_w + 0.5) / col_w)
+            top = tuple(int(TIME_DAY_TOP[k] + (TIME_NIGHT_TOP[k] - TIME_DAY_TOP[k]) * t) for k in range(3))
+            bottom = tuple(int(TIME_DAY_BOTTOM[k] + (TIME_NIGHT_BOTTOM[k] - TIME_DAY_BOTTOM[k]) * t) for k in range(3))
+            for j in range(row_h):
+                v = j / max(1, row_h - 1)
+                surf.set_at((px, j), tuple(int(top[k] + (bottom[k] - top[k]) * v) for k in range(3)))
+        _time_row_cache.clear()
+        _time_row_cache[key] = surf
+    return surf
 
 
 def _vgradient(screen, rect, top, bottom):
@@ -494,11 +550,9 @@ def draw_weather(
             x = margin_x + col_idx * col_w
             y = y_offset + sum(row_heights[:row_idx])
 
-            # 時刻の行は、昼と夜でマスの色を塗り分ける（枠より先に塗る）
-            if row_idx == 1 and 1 <= col_idx <= data_cols:
-                night = hourly[col_idx - 1].get("hour") in NIGHT_HOURS
-                _vgradient(screen, (x, y, col_w, row_heights[row_idx]),
-                           *((TIME_NIGHT_TOP, TIME_NIGHT_BOTTOM) if night else (TIME_DAY_TOP, TIME_DAY_BOTTOM)))
+            # 時刻の行は、昼と夜でマスの色を塗り分ける（枠より先に塗る。全列ぶんを 1 枚で、最初の列のときに）
+            if row_idx == 1 and col_idx == 1 and data_cols:
+                screen.blit(_time_row_surface(hourly, col_w, row_heights[row_idx]), (x, y))
 
             # 日付行は3時間ごとの区切り線を引かず、日付ごとにまとめて枠を描く（下で描画）
             if not (row_idx == 0 and col_idx >= 1):
@@ -530,8 +584,8 @@ def draw_weather(
 
             elif row_idx == 1:
                 text = item["hour"]
-                if item["hour"] in NIGHT_HOURS:
-                    color = TIME_NIGHT_TEXT          # 夜のマスは紺なので白い数字
+                if night_mix(hourly, di, 0.1) > 0.5:
+                    color = TIME_NIGHT_TEXT          # 夜のマスは紺なので白い数字（数字のある左端の色で決める）
 
             elif row_idx == 2:
                 icon_code = item["code"]

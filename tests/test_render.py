@@ -183,8 +183,11 @@ def test_sun_marks_stay_inside_their_column(w, h, monkeypatch):
     margin_x = int(w * 0.05)
     col_w = int((w - margin_x * 2) // 11)
     # 時刻の行（印とラベルがある行）だけを見る：天気アイコンの橙色と区別するため、▲▼の色そのものの画素
-    for color, col in ((weather_draw.SUNRISE_COLOR, 7), (weather_draw.SUNSET_COLOR, 3)):     # 03 の列・15 の列
-        near = np.all(arr == np.array(color), axis=2)
+    # 日の入り▼は、昼↔夜の移り変わりの途中（15 時の列の右端）では夜用の明るい色になることがある
+    for colors, col in (((weather_draw.SUNRISE_COLOR,), 7),
+                        ((weather_draw.SUNSET_COLOR, weather_draw.SUNSET_ON_NIGHT), 3)):     # 03 の列・15 の列
+        color = colors
+        near = np.any([np.all(arr == np.array(c), axis=2) for c in colors], axis=0)
         xs = np.where(near.any(axis=1))[0]
         assert len(xs), f"{color} の印が無い"
         next_col_left = margin_x + (1 + col) * col_w + col_w
@@ -306,18 +309,18 @@ def test_time_row_day_night_colors(w, h):
     margin_x = int(w * 0.05)
     col_w = int((w - margin_x * 2) // 11)
     # 時刻の行の位置：昼の上端の色（黄）の行を探す
-    first_x = margin_x + col_w + col_w - 6                        # 06 時のマスの右端近く（数字の無い所）
+    first_x = margin_x + col_w + 3                                # 06 時のマスの左端（上の端は数字が無い）
     near = lambda px, c: np.abs(px.astype(int) - np.array(c)).max(axis=-1) <= 12     # 枠の下のグラデーションの上端
     ys = np.where(near(arr[first_x], weather_draw.TIME_DAY_TOP))[0]
     assert len(ys), f"{w}×{h}: 時刻の行の昼の色が無い"
     top_y = ys.min()
     for i, item in enumerate(hourly):
-        x = margin_x + (1 + i) * col_w + col_w - 6
+        x = margin_x + (1 + i) * col_w + 3                        # 左端：昼↔夜の移り変わりは列の右へ向かって起きる
         night = item["hour"] in weather_draw.NIGHT_HOURS
         want = weather_draw.TIME_NIGHT_TOP if night else weather_draw.TIME_DAY_TOP
         assert near(arr[x, top_y], want), f"{w}×{h}: {item['hour']} 時のマスの色が違う"
         if night:
-            cell = arr[x - col_w + 8:x - col_w + 40, top_y:top_y + int(h * 0.030)]
+            cell = arr[x + 2:x + 40, top_y:top_y + int(h * 0.030)]
             assert np.all(cell == weather_draw.TIME_NIGHT_TEXT, axis=2).any(), f"{w}×{h}: {item['hour']} 時の数字が白でない"
 
 
@@ -368,3 +371,15 @@ def test_calm_wind_shows_dashes_not_arrow(w, h, wind_dir):
     for i in range(10):
         x = margin_x + (1 + i) * col_w
         assert circle[x:x + col_w].sum() > 10, f"{w}×{h}: {i} 列目に「---」が無い"
+
+
+def test_night_mix_changes_smoothly_in_dusk_and_dawn_columns():
+    """15 時の列の中で昼→夜、03 時の列の中で夜→昼になめらかに移り、ほかの列は一色"""
+    import weather_draw
+    hourly = _hourly()                                            # 06 09 12 15 18 21 00 03 06 09
+    mix = lambda i, f: weather_draw.night_mix(hourly, i, f)
+    assert mix(0, 0.5) == mix(2, 0.9) == 0.0 and mix(4, 0.5) == mix(6, 0.9) == 1.0
+    assert mix(3, 0.0) == 0.0 and 0.4 < mix(3, 0.5) < 0.6 and mix(3, 1.0) == 1.0   # 15 時：昼 → 夜
+    assert mix(7, 0.0) == 1.0 and mix(7, 1.0) == 0.0                               # 03 時：夜 → 昼
+    vals = [mix(3, k / 20) for k in range(21)]
+    assert all(b >= a for a, b in zip(vals, vals[1:]))                             # 途中で戻らない
