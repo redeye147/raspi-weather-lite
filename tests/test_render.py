@@ -337,3 +337,24 @@ def test_wind_arrow_does_not_touch_two_digit_number(w, h):
 def test_wind_number_bold_from_9():
     import weather_draw
     assert weather_draw.WIND_BOLD_FROM == 9
+
+
+@pytest.mark.parametrize("w, h", RESOLUTIONS)
+@pytest.mark.parametrize("wind_dir", [135, None])
+def test_calm_wind_shows_circle_not_arrow(w, h, wind_dir):
+    """風速 0 m/s は風向に意味が無いので、矢印（灰）を描かず ○（静穏）を描く。風向のデータが無くても ○"""
+    import weather_draw
+    hourly = _hourly()
+    for it in hourly:
+        it.update(wind_val=0, wind="0 m/s", wind_dir=wind_dir)
+    screen = pygame.Surface((w, h))
+    draw_weather(screen, w, h, hourly, _daily(), {}, BASE_FONT, "警報・注意報なし", "", "", "天気更新 10:24",
+                 "成田空港", "05:44", "17:09", "", "3%", now=datetime.datetime(2026, 10, 11, 5, 0, tzinfo=JST))
+    arr = pygame.surfarray.array3d(screen)
+    assert not np.all(arr == weather_draw.wind_arrow_color(0), axis=2).any()        # 灰色の矢印は無い
+    circle = np.all(arr == weather_draw.CALM_MARK_COLOR, axis=2)
+    margin_x = int(w * 0.05)
+    col_w = int((w - margin_x * 2) // 11)
+    for i in range(10):
+        x = margin_x + (1 + i) * col_w
+        assert circle[x:x + col_w].sum() > 10, f"{w}×{h}: {i} 列目に ○ が無い"

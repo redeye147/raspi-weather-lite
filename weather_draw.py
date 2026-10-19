@@ -201,6 +201,15 @@ def draw_wind_arrow(screen, cx, cy, size, deg, speed):
     pygame.draw.polygon(screen, WIND_ARROW_OUTLINE, pts, 1)
 
 
+CALM_MARK_COLOR = (150, 150, 150)
+
+
+def draw_calm_mark(screen, cx, cy, size):
+    """静穏（風速 0 m/s）の印：天気図と同じ小さな丸（矢印と同じ場所・矢印の半分ほどの大きさ）"""
+    r = max(4, int(size * 0.28))
+    pygame.draw.circle(screen, CALM_MARK_COLOR, (int(cx), int(cy)), r, max(2, size // 14))
+
+
 def _is_night_item(item) -> bool:
     """18・21・00・03 時の列は夜（月アイコン）。日の出・日の入りの時刻では判断しない"""
     return item["hour"] in NIGHT_HOURS
@@ -556,13 +565,17 @@ def draw_weather(
                     # 風向の矢印：どの列も同じ位置（2 桁の太字「88 m/s」の右）に置く。1 桁でも離れすぎず、2 桁でも重ならない。
                     # 列が狭い画面では入る大きさに縮め、入らなければ描かない
                     wdir = item.get("wind_dir")
-                    if isinstance(wdir, (int, float)):
+                    calm = int(v) == 0                  # 0 m/s（ほぼ無風）は風向に意味が無いので、矢印の代わりに ○（静穏）
+                    if calm or isinstance(wdir, (int, float)):
                         widest = get_font(base_font_path, 26, bold=True).size("88")[0] + unit_surf.get_width()
                         text_right = x_pos + max(widest, val_surf.get_width() + unit_surf.get_width())
                         size = min(int(row_heights[row_idx] * WIND_ARROW_SCALE), x + col_w - text_right - 8)
                         if size >= 16:
-                            draw_wind_arrow(screen, text_right + 6 + size / 2, y + row_heights[row_idx] / 2,
-                                            size, wdir, v)
+                            cx, cy = text_right + 6 + size / 2, y + row_heights[row_idx] / 2
+                            if calm:
+                                draw_calm_mark(screen, cx, cy, size)
+                            else:
+                                draw_wind_arrow(screen, cx, cy, size, wdir, v)
                     continue
 
             if row_idx != 2:
