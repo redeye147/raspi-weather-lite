@@ -409,6 +409,8 @@ def test_header_sun_icons_instead_of_text(w, h):
     screen.fill((255, 255, 255))
     draw_header(screen, w, h, BASE_FONT, "成田空港", "05:47", "16:59", "", "")
     arr = pygame.surfarray.array3d(screen)
-    band = arr[:, int(h * 0.15):int(h * 0.25)]
-    assert np.all(band == (230, 120, 0), axis=2).any()           # 日の出の絵（オレンジ）
-    assert np.all(band == (40, 40, 140), axis=2).any()           # 日の入りの絵（紺）
+    band = arr[:, int(h * 0.15):int(h * 0.25)].astype(int)
+    r, g, b = band[..., 0], band[..., 1], band[..., 2]
+    # 小さい画面では線が細く、縁がなめらかに薄まるので、色合いで探す
+    assert ((r - b > 100) & (g < 200) & (r > 200)).sum() > 10         # 日の出の絵（オレンジ）
+    assert ((b - r > 40) & (b - g > 40)).sum() > 10                   # 日の入りの絵（紺）
