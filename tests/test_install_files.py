@@ -83,3 +83,10 @@ def test_start_sh_auto_update_only_on_listed_wifi_once_per_boot():
     assert 'timeout 600 bash "$REPO/update.sh" --auto' in s
     assert s.index("update.sh\" --auto") < s.index("exec /usr/bin/python3")   # 更新してから表示
     assert "auto_update_ssids.txt" in _read(".gitignore")  # SSID は公開リポジトリに入れない
+
+
+def test_update_moves_old_default_interval_to_one_hour():
+    """以前の既定（2 時間）のままの Pi は、update.sh で 1 時間に。ほかの値はそのまま"""
+    s = _read("update.sh")
+    assert 'if float(c.get("interval_hours", 2.0)) == 2.0:' in s and 'c["interval_hours"] = 1.0' in s
+    assert '"interval_hours": 1.0' in _read("setup.sh") and '"interval_hours": 1.0' in _read("config.json")

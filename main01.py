@@ -35,6 +35,7 @@ import fb_display
 from netretry import get_with_retry
 from fb_display import init_display, present, present_rect
 import anim_icons
+import obs_now
 import weather_draw
 from header import draw_header
 from weather_draw import draw_weather
@@ -158,11 +159,11 @@ def main():
     import json as _json
     _cfg_path = os.path.join(os.path.dirname(__file__), "config.json")
     _default_airport = "centrair"
-    _default_interval = 2.0
+    _default_interval = 1.0
     try:
         _cfg = _json.load(open(_cfg_path))
         _default_airport = _cfg.get("airport", "centrair")
-        _default_interval = float(_cfg.get("interval_hours", 2.0))
+        _default_interval = float(_cfg.get("interval_hours", 1.0))
     except Exception:
         pass
 
@@ -728,7 +729,7 @@ def main():
         _wbgt_today = args.wbgt_test is not None or wbgt_badge_visible(now, _ts_to_dt(wbgt_data_at))
         draw_weather(
             screen, width, height,
-            hourly, daily, icon_cache, BASE_FONT,
+            _with_observation(hourly, now, aviation_state.get("metar")), daily, icon_cache, BASE_FONT,
             warning_text, headline_text, updated_text,
             weather_updated_text, airport_label,
             sunrise_str, sunset_str, work_summary, cpu_text,
@@ -809,6 +810,15 @@ def save_requested_screenshot(screen, request_path=None) -> None:
 
 
 DISPLAY_CHECK_S = 60
+
+
+def _with_observation(hourly, now, metar):
+    """今の時間帯の列を、空港の実況（METAR）で置き換えた表示用の写し（観測が古い・無いときは予報のまま）"""
+    try:
+        return obs_now.apply_observation(hourly, weather_draw.current_slot_index(hourly, now), metar)
+    except Exception as e:                       # 置き換えに失敗しても、予報のまま表示を続ける
+        logging.warning(f"実況の置き換え失敗: {e}")
+        return hourly
 ANIMATE = True           # 今の時間帯の天気アイコンを動かす（--no-anim で止める）
 
 

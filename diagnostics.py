@@ -273,7 +273,7 @@ def collect() -> dict:
         "airport": airport,
         "airport_name": AIRPORT_CONFIG.get(airport, {}).get("name", airport),
         "icao": AIRPORT_CONFIG.get(airport, {}).get("icao"),
-        "interval_hours": float(cfg.get("interval_hours", 2.0)),
+        "interval_hours": float(cfg.get("interval_hours", 1.0)),
         "service": _service_info(),
         "display": _display_info(),
         "recent_starts": recent_starts(),
@@ -457,7 +457,7 @@ def evaluate(info: dict, now: datetime.datetime) -> dict:
                        "" if ntp == "yes" else "時刻がずれていると取得の予定が狂います"))
 
     snap = info.get("snap")
-    items.append(_weather_item(now, snap, info.get("interval_hours", 2.0)))
+    items.append(_weather_item(now, snap, info.get("interval_hours", 1.0)))
     items.append(_jma_item(now, snap))
     items.append(_wbgt_item(now, snap))
     items.append(_aviation_item(now, snap, info.get("icao")))

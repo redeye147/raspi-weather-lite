@@ -64,7 +64,7 @@ echo -e "\n${YELLOW}[3/6] 設定ファイルを作成中...${NC}"
 cat > "$REPO_DIR/config.json" << EOF
 {
   "airport": "$AIRPORT",
-  "interval_hours": 2.0
+  "interval_hours": 1.0
 }
 EOF
 

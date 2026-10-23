@@ -105,6 +105,20 @@ if [ "$PULL_OUT" = "__fail__" ]; then
     exit 1
 fi
 [ -f "$CFG_BAK" ] && cp "$CFG_BAK" "$CFG"
+# 天気の取得間隔：以前の既定（2 時間）のままの Pi は 1 時間に（2026-10。気象庁モデルの新しい計算を早く反映）。
+# 2 時間以外に変えてある Pi はそのまま
+python3 - "$CFG" <<'PYEOF' || true
+import json, sys
+p = sys.argv[1]
+try:
+    c = json.load(open(p))
+except Exception:
+    sys.exit(0)
+if float(c.get("interval_hours", 2.0)) == 2.0:
+    c["interval_hours"] = 1.0
+    json.dump(c, open(p, "w"), ensure_ascii=False, indent=2)
+    print("  天気の取得間隔を 2 時間 → 1 時間に変更")
+PYEOF
 echo -e "  ${GREEN}完了${NC}"
 
 # ── [3/5] サービスファイル更新 ────────────────────────────

@@ -87,6 +87,7 @@ def _time_to_col(times, t):
     return len(times) - 1 + (t - times[-1]) / last
 
 
+OBS_LABEL_COLOR = (0, 110, 220)   # 「実況09:30」の文字（今の時間帯の枠と同じ青）
 NOW_FRAME_COLOR = (0, 110, 220)   # 今の時間帯の列の枠の色（青。いったん黒にしたが青に戻した）
 NOW_FRAME_WIDTH = 4               # 枠の太さ（px。普段の罫線は 1）
 
@@ -664,6 +665,15 @@ def draw_weather(
                     text_surf,
                     (x + 5, y + (row_heights[row_idx] - text_surf.get_height()) // 2)
                 )
+                # 今の時間帯を空港の観測（METAR）で置き換えた列は、気温の右に「実況09:30」（狭い画面は「実況」）
+                if row_idx == 4 and item.get("obs_label"):
+                    lf = get_font(base_font_path, 15)
+                    room = col_w - 5 - text_surf.get_width() - 10
+                    label = item["obs_label"] if lf.size(item["obs_label"])[0] <= room else item["obs_label"][:2]
+                    ls = lf.render(label, True, OBS_LABEL_COLOR)
+                    if ls.get_width() <= room:
+                        screen.blit(ls, (x + col_w - 5 - ls.get_width(),
+                                         y + (row_heights[row_idx] - ls.get_height()) // 2))
 
     # 日付行：同じ日付の列をひとまとめにした枠（区切り線は日付が変わる所だけ）
     start = 0

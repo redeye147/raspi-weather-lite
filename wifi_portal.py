@@ -33,7 +33,7 @@ def _load_config() -> dict:
         with open(CONFIG_PATH) as f:
             return json.load(f)
     except Exception:
-        return {"airport": "centrair", "interval_hours": 2.0}
+        return {"airport": "centrair", "interval_hours": 1.0}
 
 
 def _save_config(updates: dict) -> None:

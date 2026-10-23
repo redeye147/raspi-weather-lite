@@ -414,3 +414,22 @@ def test_header_sun_icons_instead_of_text(w, h):
     # 小さい画面では線が細く、縁がなめらかに薄まるので、色合いで探す
     assert ((r - b > 100) & (g < 200) & (r > 200)).sum() > 10         # 日の出の絵（オレンジ）
     assert ((b - r > 40) & (b - g > 40)).sum() > 10                   # 日の入りの絵（紺）
+
+
+@pytest.mark.parametrize("w, h", RESOLUTIONS)
+def test_observation_label_in_temperature_cell(w, h):
+    """実況で置き換えた列は、気温の右に「実況10:00」（狭い画面は「実況」）を青で書き、列からはみ出さない"""
+    import weather_draw
+    hourly = _hourly()
+    hourly[1] = dict(hourly[1], obs_label="実況10:00", temp="19℃", temp_val=19)
+    screen = pygame.Surface((w, h))
+    draw_weather(screen, w, h, hourly, _daily(), {}, BASE_FONT, "警報・注意報なし", "", "", "天気更新 10:24",
+                 "成田空港", "05:44", "17:09", "", "3%", now=datetime.datetime(2026, 10, 11, 5, 0, tzinfo=JST))
+    arr = pygame.surfarray.array3d(screen)
+    blue = np.all(arr == weather_draw.OBS_LABEL_COLOR, axis=2)
+    margin_x = int(w * 0.05)
+    col_w = int((w - margin_x * 2) // 11)
+    x = margin_x + 2 * col_w
+    assert blue[x:x + col_w].sum() > 10
+    xs = np.where(blue.any(axis=1))[0]
+    assert xs.min() >= x and xs.max() < x + col_w

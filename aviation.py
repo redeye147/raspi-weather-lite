@@ -51,7 +51,7 @@ def wx_to_japanese(token: str):
 def _parse_elements(tokens):
     """風・視程・天気・雲・気温・気圧を読み取る（METAR 本文）"""
     out = {"wind_dir": None, "wind_kt": None, "gust_kt": None, "wind_var": None, "vis_m": None,
-           "cavok": False, "nsw": False, "wx": [], "clouds": [], "no_cloud": False,
+           "cavok": False, "nsw": False, "wx": [], "wx_codes": [], "clouds": [], "no_cloud": False,
            "temp": None, "dew": None, "qnh": None}
     for t in tokens:
         if m := _WIND_RE.match(t):
@@ -84,6 +84,7 @@ def _parse_elements(tokens):
             jp = wx_to_japanese(t)
             if jp:
                 out["wx"].append(jp)
+                out["wx_codes"].append(t)          # 元の記号（-SHRA など。今の時間帯のアイコンを決めるのに使う）
     return out
 
 
