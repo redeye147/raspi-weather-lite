@@ -397,3 +397,18 @@ def test_time_row_background_is_reused_until_columns_shift():
     b = weather_draw._time_row_surface(shifted, 150, 30)
     assert b is not a and b.get_size() == (1500, 30)
     assert b.get_at((5, 0))[:3] == weather_draw.TIME_DAY_TOP        # 上端の色はそのまま
+
+
+@pytest.mark.parametrize("w, h", RESOLUTIONS)
+def test_header_sun_icons_instead_of_text(w, h):
+    """2 行目の「日の出」「日の入り」は文字ではなく絵（オレンジ・紺）。時刻の数字はそのまま"""
+    import header
+    for name in ("sunrise", "sunset"):
+        assert header._sun_label_icon(name, 40) is not None
+    screen = pygame.Surface((w, h))
+    screen.fill((255, 255, 255))
+    draw_header(screen, w, h, BASE_FONT, "成田空港", "05:47", "16:59", "", "")
+    arr = pygame.surfarray.array3d(screen)
+    band = arr[:, int(h * 0.15):int(h * 0.25)]
+    assert np.all(band == (230, 120, 0), axis=2).any()           # 日の出の絵（オレンジ）
+    assert np.all(band == (40, 40, 140), axis=2).any()           # 日の入りの絵（紺）

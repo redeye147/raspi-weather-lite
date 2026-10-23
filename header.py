@@ -1,7 +1,10 @@
 import socket
 import datetime
+import os
 import time
 import pygame
+
+from config import ICON_DIR
 from utils import JST, get_japanese_weekday, get_font
 
 import aviation
@@ -64,6 +67,22 @@ def get_ip_last3():
         return "---"
 
 
+_sun_icons = {}
+
+
+def _sun_label_icon(name, size):
+    """日の出・日の入りの絵を、高さ size に縮めて返す（無ければ None）"""
+    key = (name, size)
+    if key not in _sun_icons:
+        try:
+            raw = pygame.image.load(os.path.join(ICON_DIR, "labels", f"{name}.png"))
+            k = size / raw.get_height()
+            _sun_icons[key] = pygame.transform.smoothscale(raw, (max(1, round(raw.get_width() * k)), size))
+        except Exception:
+            _sun_icons[key] = None
+    return _sun_icons[key]
+
+
 def draw_header(
     screen, width, height, base_font_path,
     airport_label,
@@ -112,11 +131,29 @@ def draw_header(
     screen.blit(title_surf, (title_x, top_margin))
 
     # ===== 2) 2行目 =====
-    info = f"{airport_label}  日の出:{sunrise_str} / 日の入り:{sunset_str}  "
-    info_surf = get_font(base_font_path, int(height * 0.035)).render(info, True, (0, 0, 0))
+    # 「日の出」「日の入り」は文字の代わりに絵（weather_icons/labels/sunrise.png・sunset.png）。絵が無ければ文字
+    info_font = get_font(base_font_path, int(height * 0.035))
+    icon_h = int(info_font.get_height() * 1.05)                   # 文字より少し大きく（細い線の絵なので）
+    parts = [airport_label + "　", ("sunrise", "日の出:"), sunrise_str + " / ", ("sunset", "日の入り:"), sunset_str + "  "]
+    surfs = []
+    for p in parts:
+        if isinstance(p, tuple):
+            icon = _sun_label_icon(p[0], icon_h)
+            surfs.append(icon if icon is not None else info_font.render(p[1], True, (0, 0, 0)))
+        else:
+            surfs.append(info_font.render(p, True, (0, 0, 0)))
+    gap = max(2, icon_h // 8)                                   # 絵と時刻の数字の間
+    info_w = sum(s.get_width() for s in surfs) + gap * 2
+    line_h = info_font.get_height()
     y2 = top_margin + title_surf.get_height() + line_gap
-    x2 = max(10, center_x - info_surf.get_width() // 2)
-    screen.blit(info_surf, (x2, y2))
+    x2 = max(10, center_x - info_w // 2)
+    for p, s in zip(parts, surfs):
+        if isinstance(p, tuple):
+            screen.blit(s, (x2, y2 + (line_h - s.get_height()) // 2))
+            x2 += s.get_width() + gap
+        else:
+            screen.blit(s, (x2, y2))
+            x2 += s.get_width()
 
     # ===== 3) WBGT バッジ =====
     if badge_data:
@@ -138,7 +175,7 @@ def draw_header(
 
     # ===== 4) 航空気象（METAR）の帯：2行目の下〜ヘッダー下端の余白。狭すぎる画面では出さない =====
     if aviation_metar:
-        band_y = y2 + info_surf.get_height() + 2
+        band_y = y2 + line_h + 2
         band_h = header_h - 6 - band_y
         if band_h >= 22:
             margin_x = int(width * 0.05)
