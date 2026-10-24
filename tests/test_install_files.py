@@ -90,3 +90,25 @@ def test_update_moves_old_default_interval_to_one_hour():
     s = _read("update.sh")
     assert 'if float(c.get("interval_hours", 2.0)) == 2.0:' in s and 'c["interval_hours"] = 1.0' in s
     assert '"interval_hours": 1.0' in _read("setup.sh") and '"interval_hours": 1.0' in _read("config.json")
+
+
+@pytest.mark.parametrize("script", ["update.sh", "setup.sh"])
+def test_scripts_turn_off_hdmi_audio(script):
+    assert 'wifi_setup/hdmi_noaudio.sh"' in _read(script)
+
+
+@pytest.mark.parametrize("before, after", [
+    ("dtoverlay=vc4-kms-v3d\n", "dtoverlay=vc4-kms-v3d,noaudio\n"),
+    ("[all]\ndtoverlay=vc4-kms-v3d,cma-128  # gpu\n", "[all]\ndtoverlay=vc4-kms-v3d,cma-128,noaudio  # gpu\n"),
+    ("dtoverlay=vc4-kms-v3d,noaudio\n", "dtoverlay=vc4-kms-v3d,noaudio\n"),          # 2 回目は何もしない
+    ("#dtoverlay=vc4-kms-v3d\ndtparam=audio=on\n", "#dtoverlay=vc4-kms-v3d\ndtparam=audio=on\n"),   # コメントの行は触らない
+    ("dtoverlay=vc4-fkms-v3d\n", "dtoverlay=vc4-fkms-v3d,noaudio\n"),
+])
+def test_hdmi_noaudio(tmp_path, before, after):
+    import subprocess
+    cfg = tmp_path / "config.txt"
+    cfg.write_text(before)
+    subprocess.run(["bash", os.path.join(REPO, "wifi_setup/hdmi_noaudio.sh"), str(cfg)], check=True, capture_output=True)
+    assert cfg.read_text() == after
+    subprocess.run(["bash", os.path.join(REPO, "wifi_setup/hdmi_noaudio.sh"), str(cfg)], check=True, capture_output=True)
+    assert cfg.read_text() == after

@@ -216,6 +216,9 @@ else
     _setup_watchdog
 fi
 
+# HDMI の音声を切る（テレビによってはカーネルのメッセージが 10 秒ごとに出てログが増える。再起動後に有効）
+sudo bash "$REPO_DIR/wifi_setup/hdmi_noaudio.sh" /boot/firmware/config.txt || true
+
 # ── 設定用テザリング（未登録の Pi だけ聞く）─────────────────
 # 未登録の WiFi 環境でもスマホのテザリングで設定できるよう、全台に setup-hotspot を登録しておく。
 # SSID・パスワードは公開リポジトリに置けないので、ここで入力してもらう（入力は画面に出ない）

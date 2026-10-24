@@ -98,6 +98,7 @@ bash ~/raspi-weather-lite/update.sh
 | ログ（journal）を SD にも保存する設定を配置（`99-persistent.conf`、上限 50MB） | 再起動・強制再起動の前の起動の記録を `journalctl -b -1` で後から見られる（2026-10-14 の 110 で原因を確定できなかった対策） |
 | `systemctl reset-failed main01` → `restart` | テスト・更新で短時間に何度も再起動しても、起動回数上限（10分で5回）で止まらないように |
 | watchdog の確認・設定 | 固まったときの自動復旧 |
+| HDMI の音声を切る（config.txt の `dtoverlay=vc4-kms-v3d` に `,noaudio`。再起動後に有効） | テレビによって `hdmi-audio-codec … audio coding xtype 6 not expected` が 10 秒ごとにログに出て、SD への書き込みが増えるのを止める（音は使わない） |
 
 > `update.sh` は実行開始時に読み込んだ版のまま最後まで動きます。`update.sh` 自体が修正された回は、新しい処理が効くのは**次回の実行から**です。
 
