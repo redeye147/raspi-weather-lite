@@ -42,6 +42,9 @@ def rain_forecast(lat, lon, km):
     times = r.json()
     print(f"  {len(times)} 件。最初の 3 件: {json.dumps(times[:3], ensure_ascii=False)}")
     print(f"  member: {sorted({str(t.get('member')) for t in times})}・要素: {sorted({e for t in times for e in t.get('elements', [])})}")
+    for m in ("immed", "none"):
+        sample = [t for t in times if t.get("member") == m][:2]
+        print(f"  member {m} の例: {json.dumps(sample, ensure_ascii=False)}")
     latest, valids = rf.forecast_targets(times)
     if latest is None:
         print("✗ 予報の時刻が見つからない（時刻一覧の形式が変わった可能性）")

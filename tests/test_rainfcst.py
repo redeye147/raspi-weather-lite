@@ -22,6 +22,15 @@ def test_forecast_targets_hourly_up_to_6h():
     assert valids == [f"20261024{h:02d}0000" for h in range(1, 7)]       # 毎正時・6 時間先まで
 
 
+def test_forecast_targets_skips_other_elements_and_offhour():
+    """別の要素・毎正時でない予報しか無い新しい発表は飛ばす（Pi で「発表時刻が見つからない」になった）"""
+    times = [{"basetime": "20261024120000", "validtime": f"20261024{h}0000", "member": "none",
+              "elements": ["rasrf", "rasrf_point", "rasrf_nd"]} for h in (13, 14)]
+    times += [{"basetime": "20261024121000", "validtime": "20261024131000", "member": "immed", "elements": ["rasrf"]},
+              {"basetime": "20261024123000", "validtime": "20261024130000", "member": "none", "elements": ["slmcs"]}]
+    assert rf.forecast_targets(times) == (("20261024120000", "none", "rasrf"), ["20261024130000", "20261024140000"])
+
+
 def test_forecast_targets_empty():
     assert rf.forecast_targets([]) == (None, [])
 

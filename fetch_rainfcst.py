@@ -42,20 +42,21 @@ def hour_key(dt):
 
 
 def forecast_targets(times):
-    """時刻一覧から、最新の発表 (basetime, member, element) と、その予報の時刻（毎正時・AHEAD_H 時間先まで）の並び"""
-    entries = [t for t in times if t.get("basetime") and t.get("validtime")]
-    entries = [t for t in entries if t["validtime"] > t["basetime"]]
-    if not entries:
+    """時刻一覧から、最新の発表 (basetime, member, element) と、その予報の時刻（毎正時・AHEAD_H 時間先まで）の並び。
+    一覧には別の要素（slmcs など）や、毎正時でない時刻の発表（速報版 immed）も混ざっているので、
+    rasrf があって毎正時の予報がある発表のうち、いちばん新しいものを使う"""
+    by_base = {}
+    for t in times:
+        b, v = t.get("basetime"), t.get("validtime")
+        if not b or not v or v <= b or ELEMENT not in (t.get("elements") or []):
+            continue
+        if v[10:14] != "0000" or v > (_utc(b) + datetime.timedelta(hours=AHEAD_H)).strftime("%Y%m%d%H%M%S"):
+            continue
+        by_base.setdefault((b, t.get("member") or "none"), set()).add(v)
+    if not by_base:
         return None, []
-    base = max(t["basetime"] for t in entries)
-    limit = (_utc(base) + datetime.timedelta(hours=AHEAD_H)).strftime("%Y%m%d%H%M%S")
-    same = [t for t in entries if t["basetime"] == base and t["validtime"] <= limit]
-    first = same[0]
-    els = first.get("elements") or [ELEMENT]
-    element = ELEMENT if ELEMENT in els else els[0]
-    member = first.get("member") or "none"
-    valids = sorted({t["validtime"] for t in same if t["validtime"][10:14] == "0000"})
-    return (base, member, element), valids
+    base, member = max(by_base, key=lambda k: (k[0], k[1] == "none"))   # 同じ時刻なら none（ふつうの発表）を
+    return (base, member, ELEMENT), sorted(by_base[(base, member)])
 
 
 def fetch_rainfcst(lat, lon, session=requests):
