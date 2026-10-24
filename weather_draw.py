@@ -206,6 +206,28 @@ def wind_arrow_color(speed):
 _WIND_TEXT_DARKER = {(240, 225, 0): (185, 150, 0)}
 
 
+WIND_LEGEND_LABELS = ["0", "1-4", "5-7", "8-11", "12-17", "18-"]   # WIND_ARROW_COLORS の区切りと同じ（弱い順）
+
+
+def _draw_wind_legend(screen, base_font_path, right_x, top_y):
+    """「風速(m/s) [0][1-4][5-7][8-11][12-17][18-]」の色の帯。各区切りを矢印の色で塗り、数字を中に書く"""
+    font = get_font(base_font_path, 15, bold=True)
+    h = 20
+    colors = [c for _, c in reversed(WIND_ARROW_COLORS)]          # 弱い順
+    widths = [font.size(t)[0] + 12 for t in WIND_LEGEND_LABELS]
+    title = get_font(base_font_path, 16).render("風速(m/s)", True, (80, 80, 80))
+    x = right_x - sum(widths) - title.get_width() - 6
+    screen.blit(title, (x, top_y + (h - title.get_height()) // 2))
+    x += title.get_width() + 6
+    for label, color, w in zip(WIND_LEGEND_LABELS, colors, widths):
+        pygame.draw.rect(screen, color, (x, top_y, w, h))
+        light = sum(color) > 450                                    # 明るい色（灰・水色・黄）は黒い字
+        t = font.render(label, True, (40, 40, 40) if light else (255, 255, 255))
+        screen.blit(t, (x + (w - t.get_width()) // 2, top_y + (h - t.get_height()) // 2))
+        x += w
+    pygame.draw.rect(screen, WIND_ARROW_OUTLINE, (x - sum(widths), top_y, sum(widths), h), 1)
+
+
 def wind_text_color(speed):
     if speed < 5:
         return (0, 0, 0)
@@ -727,6 +749,9 @@ def draw_weather(
         if cur in icon_cells:
             rect, code = icon_cells[cur]
             current_anim = {"rect": rect, "icon_code": code}
+
+    # 風速の矢印の色の見方（色の帯）。今日の天気の表のすぐ下・右端（左の「１週間の天気」の題名と同じ高さ）
+    _draw_wind_legend(screen, base_font_path, margin_x + col_w * (1 + data_cols), y_offset + sum(row_heights) + 3)
 
     y_offset += sum(row_heights) + (2 if double else 8)
 

@@ -250,6 +250,9 @@ def test_wind_arrows_drawn_inside_wind_cells(w, h):
                  "成田空港", "05:44", "17:09", "", "3%", now=datetime.datetime(2026, 10, 11, 5, 0, tzinfo=JST))
     arr = pygame.surfarray.array3d(screen)
     red = np.all(arr == weather_draw.wind_arrow_color(24), axis=2)
+    # 表の下の風速の色の帯（赤の区切りもある）は除く：帯の上端＝灰（0 m/s の色）がある最初の行
+    legend_top = np.where(np.all(arr == weather_draw.wind_arrow_color(0), axis=2).any(axis=0))[0].min()
+    red[:, legend_top:] = False
     margin_x = int(w * 0.05)
     col_w = int((w - margin_x * 2) // 11)
     row_h = int(h * 0.055)                                   # 風速の行の高さ
@@ -338,6 +341,10 @@ def test_wind_arrow_does_not_touch_two_digit_number(w, h):
     arr = pygame.surfarray.array3d(screen)
     text = np.all(arr == weather_draw.wind_text_color(11), axis=2)
     arrow = np.all(arr == weather_draw.wind_arrow_color(11), axis=2)
+    tys = np.where(text.any(axis=0))[0]                     # 風速の行だけを見る（表の下の色の帯の黄は除く）
+    keep = np.zeros(arrow.shape[1], bool)
+    keep[max(0, tys.min() - 15):tys.max() + 12] = True
+    arrow &= keep[None, :]
     margin_x = int(w * 0.05)
     col_w = int((w - margin_x * 2) // 11)
     for i in range(10):
@@ -365,8 +372,10 @@ def test_calm_wind_shows_dashes_not_arrow(w, h, wind_dir):
     draw_weather(screen, w, h, hourly, _daily(), {}, BASE_FONT, "警報・注意報なし", "", "", "天気更新 10:24",
                  "成田空港", "05:44", "17:09", "", "3%", now=datetime.datetime(2026, 10, 11, 5, 0, tzinfo=JST))
     arr = pygame.surfarray.array3d(screen)
-    assert not np.all(arr == weather_draw.wind_arrow_color(0), axis=2).any()        # 灰色の矢印は無い
     circle = np.all(arr == weather_draw.CALM_MARK_COLOR, axis=2)
+    # 灰色の矢印は無い：灰（0 m/s の色）があるのは、表の下の色の帯（高さ 20）の中だけ
+    gys = np.where(np.all(arr == weather_draw.wind_arrow_color(0), axis=2).any(axis=0))[0]
+    assert gys.max() - gys.min() <= 22
     margin_x = int(w * 0.05)
     col_w = int((w - margin_x * 2) // 11)
     for i in range(10):
@@ -487,3 +496,21 @@ def test_reliability_colors_get_lighter_from_a_to_c():
     assert light[0] < light[1] < light[2]
     for r, (red, green, blue) in weather_draw.REL_COLORS.items():
         assert green >= red and green >= blue, f"{r} が緑系でない"
+
+
+@pytest.mark.parametrize("w, h", RESOLUTIONS)
+def test_wind_color_legend_below_today_table(w, h):
+    """今日の天気の表のすぐ下・右端に、風速の矢印の色の帯（6 区切り）。表の右端からはみ出さない"""
+    import weather_draw
+    screen = pygame.Surface((w, h))
+    draw_weather(screen, w, h, _hourly(), _daily(), {}, BASE_FONT, "警報・注意報なし", "", "", "天気更新 10:24",
+                 "成田空港", "05:44", "17:09", "", "3%", now=datetime.datetime(2026, 10, 11, 5, 0, tzinfo=JST))
+    arr = pygame.surfarray.array3d(screen)
+    margin_x = int(w * 0.05)
+    right = margin_x + int((w - margin_x * 2) // 11) * 11
+    gray = np.all(arr == weather_draw.wind_arrow_color(0), axis=2)        # 0 m/s の区切り（灰）
+    assert gray.sum() > 50
+    for speed in (3, 6, 9, 15, 20):
+        c = np.all(arr == weather_draw.wind_arrow_color(speed), axis=2)
+        xs = np.where(c.any(axis=1))[0]
+        assert len(xs) and xs.max() <= right, f"{w}×{h}: {speed} m/s の区切りが無い・はみ出す"
