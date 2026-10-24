@@ -377,7 +377,7 @@ def draw_today_title_bar(
 ):
     pygame.draw.rect(screen, (255, 255, 255), (x, y, w, h))
 
-    title_font = get_font(base_font_path, 26, bold=True)
+    title_font = get_font(base_font_path, SECTION_TITLE_SIZE, bold=True)
     title = "今日の天気"
     if airport_name:
         title += f"（{airport_name}）"
@@ -430,6 +430,7 @@ def draw_today_title_bar(
 
 ALERT_BANNER_H = 44
 DATE_FONT_SIZE = 34                 # 今日の天気の日付（10/24 など）の文字の大きさ（太字）
+SECTION_TITLE_SIZE = 28             # 「今日の天気」「１週間の天気」の題名の文字の大きさ（太字。2 つをそろえる）
 current_anim = None      # 最後に描いた画面の「今の時間帯のアイコン」{"rect", "icon_code"}（無ければ None）
 ALERT_BANNER_H_DOUBLE = 28      # 雷と熱中症の帯が 2 本重なるときは細くする（1280×720 で表が画面の下にはみ出さないように）
 SUMMARY_GAP_MIN_HEIGHT = 1000   # この高さ以上の画面で、作業注意情報の下に1行分の余白を入れる
@@ -759,7 +760,7 @@ def draw_weather(
 
     y_offset += sum(row_heights) + (2 if double else 8)
 
-    week_title_surf = get_font(base_font_path, 28, bold=True).render("１週間の天気", True, (0, 0, 0))
+    week_title_surf = get_font(base_font_path, SECTION_TITLE_SIZE, bold=True).render("１週間の天気", True, (0, 0, 0))
     screen.blit(week_title_surf, (margin_x, y_offset))
     y_offset += week_title_surf.get_height() + 4
 
