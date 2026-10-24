@@ -35,7 +35,9 @@ import fb_display
 from netretry import get_with_retry
 from fb_display import init_display, present, present_rect
 import anim_icons
+import fetch_rainnow
 import obs_now
+import verify
 import weather_draw
 from header import draw_header
 from weather_draw import draw_weather
@@ -466,6 +468,10 @@ def main():
             "thunder_status": thunder_status, "thunder_ok_at": thunder_ok_at,
             "thunder_error": thunder_error, "thunder_data_at": thunder_data_at,
             "thunder_shown": ({**thunder_info, "at": thunder_info["at"].timestamp()} if thunder_info else None),
+            "rain_status": rain_status, "rain_error": rain_error, "rain_ok_at": rain_ok_at,
+            "rain_data_at": rain_result["at"].timestamp() if rain_result else 0.0,
+            "rain_now_mmh": rain_result["now_mmh"] if rain_result else None,
+            "rain_max_mmh": rain_result["max_mmh"] if rain_result else None,
         })
 
     # 雷ナウキャスト：5 分ごとに裏で取得。空港から 20km 以内の雷を帯で出す（範囲外になっても 20 分は保持）
@@ -477,6 +483,12 @@ def main():
     thunder_not_before = time.time() + DEFER_INITIAL_FETCH_S
     shown_thunder_kind = None
     thunder_info = None
+    # 降水ナウキャスト：10 分ごとに裏で取得。今の時間帯の降水量を、雨雲レーダーの実測と 1 時間先までの予測に
+    rain_holder = {}
+    rain_result = None                              # 最後に取れた結果（status ok）
+    rain_status = rain_error = None
+    rain_ok_at = 0.0
+    last_rain_attempt = 0.0
 
     if fetch_ok and not weather_fresh:
         _save_state()
@@ -597,6 +609,12 @@ def main():
             shown_metar_raw = aviation_state.get("raw")
             needs_redraw = True
             _save_state()
+            # 予報の精度の記録：毎時 00 分の観測と、その時刻について出していた予報を並べる（verify.py）
+            try:
+                _radar = rain_result["now_mmh"] if fetch_rainnow.is_fresh(rain_result, now) else None
+                verify.record_observation(aviation_state.get("metar"), _radar)
+            except Exception as e:
+                logging.info(f"予報の精度の記録に失敗: {e}")
 
         # WBGT 更新（6〜23 時台に 1 時間ごと。提供期間外は 1 日 1 回（朝 6 時）。裏で取得。テスト時はスキップ）
         if (args.wbgt_test is None and "pending" not in wbgt_holder and time.time() >= wbgt_not_before
@@ -617,6 +635,22 @@ def main():
                 logging.info("WBGT 提供期間外（データなし）→ 1日1回（朝6時）の確認に切替" if _is_off
                              else "WBGT データあり → 1 時間ごとの取得に戻す")
             needs_redraw = True
+            _save_state()
+
+        # 降水ナウキャスト（10 分ごと。裏で取得）
+        if ("pending" not in rain_holder and time.time() >= thunder_not_before
+                and time.time() - last_rain_attempt >= fetch_rainnow.FETCH_INTERVAL_MIN * 60):
+            last_rain_attempt = time.time()
+            rain_holder["pending"] = True
+            fetch_rainnow.start_fetch_in_background(cfg["latitude"], cfg["longitude"], rain_holder)
+        if "result" in rain_holder:
+            _res = rain_holder.pop("result")
+            rain_holder.pop("pending", None)
+            rain_status, rain_error = _res.get("status"), _res.get("error")
+            if rain_status == "ok":
+                if rain_result is None or (_res["now_mmh"], _res["max_mmh"]) != (rain_result["now_mmh"], rain_result["max_mmh"]):
+                    needs_redraw = True
+                rain_result, rain_ok_at = _res, time.time()
             _save_state()
 
         # 雷ナウキャスト（5 分ごと。裏で取得）
@@ -699,6 +733,10 @@ def main():
                     weather_at = time.time()
                     _save_state()
                     logging.info("天気取得完了")
+                    try:
+                        verify.record_forecast(hourly, now)          # 予報の精度の記録（1 時間ごとの予報）
+                    except Exception as e:
+                        logging.info(f"予報の記録に失敗: {e}")
                 else:
                     last_weather_update = retry_base_after_failure(now, args.interval_hours)
                     fetch_ok = False
@@ -729,7 +767,9 @@ def main():
         _wbgt_today = args.wbgt_test is not None or wbgt_badge_visible(now, _ts_to_dt(wbgt_data_at))
         draw_weather(
             screen, width, height,
-            _with_observation(hourly, now, aviation_state.get("metar")), daily, icon_cache, BASE_FONT,
+            _with_observation(hourly, now, aviation_state.get("metar"),
+                              rain_result if fetch_rainnow.is_fresh(rain_result, now) else None),
+            daily, icon_cache, BASE_FONT,
             warning_text, headline_text, updated_text,
             weather_updated_text, airport_label,
             sunrise_str, sunset_str, work_summary, cpu_text,
@@ -812,10 +852,12 @@ def save_requested_screenshot(screen, request_path=None) -> None:
 DISPLAY_CHECK_S = 60
 
 
-def _with_observation(hourly, now, metar):
-    """今の時間帯の列を、空港の実況（METAR）で置き換えた表示用の写し（観測が古い・無いときは予報のまま）"""
+def _with_observation(hourly, now, metar, rain=None):
+    """今の時間帯の列を、空港の実況（METAR）と降水ナウキャスト（rain）で置き換えた表示用の写し
+    （観測が古い・無いときは予報のまま）"""
     try:
-        return obs_now.apply_observation(hourly, weather_draw.current_slot_index(hourly, now), metar)
+        return obs_now.apply_observation(hourly, weather_draw.current_slot_index(hourly, now), metar,
+                                         rain=rain)
     except Exception as e:                       # 置き換えに失敗しても、予報のまま表示を続ける
         logging.warning(f"実況の置き換え失敗: {e}")
         return hourly

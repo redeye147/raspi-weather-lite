@@ -478,6 +478,7 @@ DIAG_HTML = """<!DOCTYPE html>
   <div id="overall" class="overall"></div>
   <div class="box" id="items"></div>
   <div class="box"><div class="sub">直近の警告・エラー（新しい順・最大20件。同じ内容はまとめて回数を表示）</div><div id="problems"></div></div>
+  <div class="box"><div class="sub">予報の精度（予報と空港の観測のずれ）</div><div id="accuracy"></div></div>
   <div class="sub" id="foot" style="margin-top:10px"></div>
   <button onclick="load()">🔄 再診断</button>
 </div>
@@ -515,6 +516,9 @@ async function load() {
   document.getElementById('problems').innerHTML = d.problems.length
     ? d.problems.map(l => '<div class="log">' + esc(l) + '</div>').join('')
     : '<div class="sub">なし</div>';
+  document.getElementById('accuracy').innerHTML = (d.accuracy || []).length
+    ? d.accuracy.map(l => '<div class="log">' + esc(l) + '</div>').join('')
+    : '<div class="sub">まだ記録がありません（毎時 00 分の観測ごとに記録。数日〜数週間で傾向がわかります）</div>';
   document.getElementById('foot').textContent = '版: ' + d.version + '　診断: ' + d.checked_at;
 }
 load();

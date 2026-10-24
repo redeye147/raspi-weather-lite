@@ -285,6 +285,7 @@ def collect() -> dict:
         "snap": snap,
         "version": _git_version(),
         "problems": recent_problems(),
+        "accuracy": _accuracy(),
     }
 
 
@@ -403,6 +404,34 @@ def _thunder_item(now, snap):
     return _item("THN", "雷ナウキャスト", level, value, detail)
 
 
+def _accuracy():
+    """予報の精度（過去 30 日の予報と観測のずれ。verify.py）"""
+    try:
+        import verify
+        return verify.summarize()
+    except Exception:
+        return []
+
+
+def _rain_item(now, snap):
+    """降水ナウキャスト（今の時間帯の降水量に使う雨雲レーダー）"""
+    snap = snap or {}
+    ok_at, err = snap.get("rain_ok_at"), snap.get("rain_error")
+    if not ok_at:
+        return _item("RAD", "降水ナウキャスト", WARN, "データなし",
+                     f"まだ取得できていません（{short_error(err)}）" if err else "まだ取得していません（起動直後は約20秒後）")
+    age = now.timestamp() - ok_at
+    data_at = snap.get("rain_data_at")
+    at = f"{_hm(data_at)[-5:]} 解析" if data_at else "解析時刻不明"
+    now_mmh, max_mmh = snap.get("rain_now_mmh") or 0, snap.get("rain_max_mmh") or 0
+    value = (f"空港に雨なし・1時間先まで雨なし（{at}）" if not max_mmh
+             else f"今 {now_mmh:g}mm/h・1時間先まで最大 {max_mmh:g}mm/h（{at}）")
+    level = OK if age <= 30 * 60 else (WARN if age <= 90 * 60 else BAD)
+    detail = "" if level == OK else (f"{_ago(age)}から取得できていません" + (f"（{short_error(err)}）" if err else "")
+                                     + ("。今の時間帯の降水量は予報のまま" if level != OK else ""))
+    return _item("RAD", "降水ナウキャスト", level, value, detail)
+
+
 def evaluate(info: dict, now: datetime.datetime) -> dict:
     """集めた情報から、項目ごとの判定と総合判定を返す"""
     items = []
@@ -462,6 +491,7 @@ def evaluate(info: dict, now: datetime.datetime) -> dict:
     items.append(_wbgt_item(now, snap))
     items.append(_aviation_item(now, snap, info.get("icao")))
     items.append(_thunder_item(now, snap))
+    items.append(_rain_item(now, snap))
 
     t = info.get("temp")
     if t is None:
@@ -512,6 +542,7 @@ def evaluate(info: dict, now: datetime.datetime) -> dict:
         "ip": info.get("ip", ""),
         "version": info.get("version", ""),
         "problems": info.get("problems", []),
+        "accuracy": info.get("accuracy", []),
         "checked_at": now.strftime("%Y-%m-%d %H:%M:%S"),
     }
 

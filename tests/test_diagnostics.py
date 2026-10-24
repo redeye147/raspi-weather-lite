@@ -25,7 +25,9 @@ def healthy(**over):
                  "wbgt_level_info": {"label": "注意", "value": 26.1},
                  "metar_raw": "RJAA 050300Z 02005KT 9999 FEW020 22/15 Q1018",
                  "thunder_status": "ok", "thunder_ok_at": ts(12, 17), "thunder_data_at": ts(12, 10),
-                 "thunder_error": None, "thunder_shown": None},
+                 "thunder_error": None, "thunder_shown": None,
+                 "rain_status": "ok", "rain_ok_at": ts(12, 15), "rain_data_at": ts(12, 10),
+                 "rain_error": None, "rain_now_mmh": 0, "rain_max_mmh": 0},
         "display": {"fb0": "1920×1080", "hdmi": {"HDMI-A-1": "connected"}}, "recent_starts": 1,
         "version": "main 9ce2603", "problems": [],
     }
@@ -40,7 +42,7 @@ def item(result, code):
 def test_all_ok():
     r = dg.evaluate(healthy(), NOW)
     assert r["overall"] == "ok" and r["codes"] == []
-    assert [i["code"] for i in r["items"]] == ["SVC", "DSP", "NET", "NTP", "WX", "JMA", "WBGT", "AVI", "THN", "TMP", "PWR", "SYS"]
+    assert [i["code"] for i in r["items"]] == ["SVC", "DSP", "NET", "NTP", "WX", "JMA", "WBGT", "AVI", "THN", "RAD", "TMP", "PWR", "SYS"]
     assert item(r, "AVI")["value"].startswith("RJAA 12:00 観測")
     assert "注意 26.1℃" in item(r, "WBGT")["value"]
 
@@ -290,3 +292,12 @@ def test_wbgt_at_night_is_ok_even_without_data(snap_over):
 def test_wbgt_no_data_in_daytime_is_warn():
     snap = dict(healthy()["snap"], wbgt_at=None, wbgt_status=None, wbgt_data_at=None)
     assert item(dg.evaluate(healthy(snap=snap), NOW), "WBGT")["level"] == "warn"
+
+
+def test_rain_item():
+    assert item(dg.evaluate(healthy(), NOW), "RAD")["value"] == "空港に雨なし・1時間先まで雨なし（12:10 解析）"
+    snap = dict(healthy()["snap"], rain_now_mmh=3.0, rain_max_mmh=7.5)
+    assert item(dg.evaluate(healthy(snap=snap), NOW), "RAD")["value"] == "今 3mm/h・1時間先まで最大 7.5mm/h（12:10 解析）"
+    snap = dict(healthy()["snap"], rain_ok_at=ts(11, 0), rain_error="timed out")
+    it = item(dg.evaluate(healthy(snap=snap), NOW), "RAD")
+    assert it["level"] == "warn" and "タイムアウト" in it["detail"]

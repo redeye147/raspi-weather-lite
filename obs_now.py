@@ -38,16 +38,21 @@ def icon_code_from_metar(m):
     return "100"                                      # 晴（CAVOK・雲なし・FEW・SCT）
 
 
-def apply_observation(hourly, cur, metar, now_utc=None):
-    """hourly の cur 列を METAR の実況で置き換えた「表示用の写し」を返す（元の予報は変えない）。
+def apply_observation(hourly, cur, metar, now_utc=None, rain=None):
+    """hourly の cur 列を、METAR の実況と降水ナウキャスト（rain）で置き換えた「表示用の写し」を返す（元の予報は変えない）。
+    rain = {"max_mmh": 1 時間先までのいちばん強い雨}（新しいときだけ渡す）。
     置き換えられないとき（観測なし・古い・列なし）は hourly をそのまま返す"""
-    if metar is None or cur is None or not (0 <= cur < len(hourly)):
+    if cur is None or not (0 <= cur < len(hourly)):
         return hourly
     now_utc = now_utc or datetime.datetime.now(datetime.timezone.utc)
-    obs = metar.get("obs_utc")
+    out = list(hourly)
+    if rain is not None:
+        # 降水量は、雨雲レーダーの実測と 1 時間先までの予測のいちばん強い雨（1 時間あたり）
+        out[cur] = dict(out[cur], pop=f"{rain['max_mmh']:.1f}mm", radar=True)
+    obs = metar.get("obs_utc") if metar else None
     if obs is None or (now_utc - obs).total_seconds() > OBS_MAX_AGE_MIN * 60:
-        return hourly
-    item = dict(hourly[cur])
+        return out if rain is not None else hourly
+    item = dict(out[cur])
     item["code"] = icon_code_from_metar(metar)
     if metar.get("temp") is not None:
         item["temp_val"] = metar["temp"]
@@ -60,6 +65,5 @@ def apply_observation(hourly, cur, metar, now_utc=None):
         # 風向が変動（VRB）：向きが無いので、矢印の代わりに「---」（無風と同じ印）
         item["wind_variable"] = metar.get("wind_dir") is None and ms > 0
     item["observed"] = True                           # 実況で置き換えた列（画面には何も足さない）
-    out = list(hourly)
     out[cur] = item
     return out

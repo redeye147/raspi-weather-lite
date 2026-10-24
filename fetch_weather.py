@@ -167,6 +167,10 @@ def fetch_weather_openmeteo(latitude=LATITUDE, longitude=LONGITUDE):
                 "wind_val": round(windkph / 3.6) if windkph is not None else None,
                 "wind": f"{round(windkph / 3.6)}m" if windkph is not None else "--",
                 "wind_dir": wind_dir,
+                # 予報の精度を確かめる（verify.py）ための、1 時間ごとの元の値（その時刻の気温・風、その 1 時間の天気・雨）
+                "hours": [{"t": at(h), "temp": H_TMP.get(at(h)),
+                           "wind": round(H_WND[at(h)] / 3.6, 1) if H_WND.get(at(h)) is not None else None,
+                           "wmo": H_WC.get(at(h + 1)), "prec": H_PREC.get(at(h + 1))} for h in (0, 1, 2)],
             })
 
         elif ts in cached_hourly:
@@ -183,6 +187,7 @@ def fetch_weather_openmeteo(latitude=LATITUDE, longitude=LONGITUDE):
                 "wind_val": ch.get("wind_val"),
                 "wind": ch.get("wind", "--"),
                 "wind_dir": ch.get("wind_dir"),
+                "hours": ch.get("hours", []),
             })
 
         else:
