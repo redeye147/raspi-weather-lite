@@ -306,10 +306,9 @@ def _time_row_surface(hourly, col_w, row_h):
 
 
 # 週間予報の信頼度（気象庁）：A 確度が高い・B やや高い・C やや低い
-# 緑の濃淡で「濃い＝確か・薄い＝あまり確かでない」。赤・橙は警報・高温など注意の意味に使うので避ける
-# （A の緑に白を B 30%・C 82% 混ぜた色。C は地が薄いので文字を濃い緑に）
-REL_COLORS = {"A": (0, 140, 70), "B": (76, 174, 126), "C": (209, 234, 222)}
-REL_TEXT_COLORS = {"A": (255, 255, 255), "B": (255, 255, 255), "C": (0, 110, 55)}
+# 風速の色の帯と同じ配色：A 赤・B 黄・C 水色（強い色ほど確度が高い）。黄の地は文字を黒に
+REL_COLORS = {"A": (230, 40, 20), "B": (240, 225, 0), "C": (70, 170, 255)}
+REL_TEXT_COLORS = {"A": (255, 255, 255), "B": (40, 40, 40), "C": (255, 255, 255)}
 REL_TEXT = {"A": "高い", "B": "やや高い", "C": "やや低い"}
 
 
@@ -430,6 +429,7 @@ def draw_today_title_bar(
 
 
 ALERT_BANNER_H = 44
+DATE_FONT_SIZE = 34                 # 今日の天気の日付（10/24 など）の文字の大きさ（太字）
 current_anim = None      # 最後に描いた画面の「今の時間帯のアイコン」{"rect", "icon_code"}（無ければ None）
 ALERT_BANNER_H_DOUBLE = 28      # 雷と熱中症の帯が 2 本重なるときは細くする（1280×720 で表が画面の下にはみ出さないように）
 SUMMARY_GAP_MIN_HEIGHT = 1000   # この高さ以上の画面で、作業注意情報の下に1行分の余白を入れる
@@ -720,7 +720,11 @@ def draw_weather(
                     continue
 
             if row_idx != 2:
-                font_size = 26 if row_idx == 0 else 22
+                if row_idx == 0:
+                    # 日付（例 10/24）は大きめの太字（行の高さに収まる大きさまで。1920×1080 で 34）
+                    font_size, bold = min(DATE_FONT_SIZE, row_heights[0] - 4), True
+                else:
+                    font_size = 22
                 text_surf = get_font(base_font_path, font_size, bold=bold).render(text, True, color)
                 screen.blit(
                     text_surf,

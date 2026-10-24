@@ -446,7 +446,7 @@ def test_variable_wind_shows_dashes(w, h):
 
 @pytest.mark.parametrize("w, h", RESOLUTIONS)
 def test_weekly_reliability_badges_and_legend(w, h):
-    """降水確率の右に信頼度の札（緑の濃淡：A 濃い・B 中くらい・C 薄い）。題名の右に説明。信頼度の無い日は札なし。列からはみ出さない"""
+    """降水確率の右に信頼度の札（A 赤・B 黄・C 水色）。題名の右に説明。信頼度の無い日は札なし。列からはみ出さない"""
     import weather_draw
     daily = [dict(d, rel=r) for d, r in zip(_daily(), ["", "A", "B", "C", "A"])]
     screen = pygame.Surface((w, h))
@@ -489,15 +489,11 @@ def test_reliability_legend_fits_with_banners(w, h, banners):
     assert ys.max() < h - 1                                               # 画面の中
 
 
-def test_reliability_colors_get_lighter_from_a_to_c():
-    """信頼度の色は A → B → C とだんだん薄く（明るく）なる緑。赤・橙（注意の色）は使わない"""
+def test_reliability_colors_match_wind_legend():
+    """信頼度の色は風速の色の帯と同じ：A 赤・B 黄・C 水色"""
     import weather_draw
-    light = [sum(weather_draw.REL_COLORS[r]) for r in "ABC"]
-    assert light[0] < light[1] < light[2]
-    for r, (red, green, blue) in weather_draw.REL_COLORS.items():
-        assert green >= red and green >= blue, f"{r} が緑系でない"
-
-
+    assert weather_draw.REL_COLORS == {"A": weather_draw.wind_arrow_color(18), "B": weather_draw.wind_arrow_color(8),
+                                       "C": weather_draw.wind_arrow_color(1)}
 @pytest.mark.parametrize("w, h", RESOLUTIONS)
 def test_wind_color_legend_below_today_table(w, h):
     """今日の天気の表のすぐ下・右端に、風速の矢印の色の帯（6 区切り）。表の右端からはみ出さない"""
