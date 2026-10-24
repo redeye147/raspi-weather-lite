@@ -212,3 +212,24 @@ def test_headless_keeps_fetching_and_restarts_when_hdmi_attached(signage, monkey
     assert calls["thunder"]
     # WBGT は 0:00〜5:59 は取りに行かない決まり（その時間に試験すると呼ばれない）
     assert bool(calls["wbgt"]) == (main01.datetime.datetime.now(main01.JST).hour >= decisions.WBGT_START_HOUR)
+
+
+def test_aviation_band_hidden_but_metar_still_fetched(signage, monkeypatch):
+    """航空気象（METAR）の帯は画面に出さない（SHOW_AVIATION_BAND = False）。METAR の取得は続ける"""
+    run, snap_file, calls = signage
+    metar = aviation.parse_metar("RJGG 010000Z 07009KT 8000 -SHRA BKN050 19/15 Q1012",
+                                 datetime.datetime.now(datetime.timezone.utc))
+    fresh = dict(metar, obs_utc=datetime.datetime.now(datetime.timezone.utc))
+
+    def fetch(icao, state, expected_obs=None):
+        calls["aviation"].append(icao)
+        state.update({"metar": fresh, "raw": "RJGG"})
+    monkeypatch.setattr(aviation, "start_fetch_in_background", fetch)
+    monkeypatch.setattr(main01, "aviation_band_visible", lambda now: True)
+    shown = []
+    real = main01.draw_header
+    monkeypatch.setattr(main01, "draw_header", lambda *a, **k: (shown.append(k.get("aviation_metar")), real(*a, **k)))
+    assert main01.SHOW_AVIATION_BAND is False
+    run(loops=12)
+    assert shown and all(m is None for m in shown)                        # 帯は出さない
+    assert calls["aviation"]                                               # 取得はしている

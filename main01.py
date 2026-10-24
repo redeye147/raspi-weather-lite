@@ -163,10 +163,12 @@ def main():
     _cfg_path = os.path.join(os.path.dirname(__file__), "config.json")
     _default_airport = "centrair"
     _default_interval = 1.0
+    _show_aviation_band = SHOW_AVIATION_BAND
     try:
         _cfg = _json.load(open(_cfg_path))
         _default_airport = _cfg.get("airport", "centrair")
         _default_interval = float(_cfg.get("interval_hours", 1.0))
+        _show_aviation_band = bool(_cfg.get("show_aviation_band", SHOW_AVIATION_BAND))
     except Exception:
         pass
 
@@ -790,7 +792,7 @@ def main():
             screen, width, height, BASE_FONT,
             airport_label, sunrise_str, sunset_str, "", "",
             wbgt_level_info=(wbgt_level_info if _wbgt_today else None),
-            aviation_metar=(_metar if aviation_band_visible(now)
+            aviation_metar=(_metar if _show_aviation_band and aviation_band_visible(now)
                             and not aviation.is_stale(_metar, datetime.datetime.now(datetime.timezone.utc)) else None),
             fetch_error=not fetch_ok,
         )
@@ -854,6 +856,9 @@ def save_requested_screenshot(screen, request_path=None) -> None:
 
 
 DISPLAY_CHECK_S = 60
+# 航空気象（METAR）の帯を画面に出すか（2026-10 から出さない）。取得は続ける（今の時間帯の実況・予報の精度の記録に使う）。
+# 出すときは config.json に "show_aviation_band": true
+SHOW_AVIATION_BAND = False
 
 
 def write_status(cpu_samples, path=None):
