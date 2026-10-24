@@ -283,6 +283,40 @@ def _time_row_surface(hourly, col_w, row_h):
     return surf
 
 
+# 週間予報の信頼度（気象庁）：A 確度が高い・B やや高い・C やや低い
+REL_COLORS = {"A": (0, 140, 70), "B": (220, 130, 0), "C": (210, 40, 40)}
+REL_TEXT = {"A": "高い", "B": "やや高い", "C": "やや低い"}
+
+
+def _draw_rel_badge(screen, base_font_path, rel, right_x, center_y, size):
+    """信頼度の札（色の付いた四角に白い A・B・C）。right_x が右端、center_y が上下の真ん中"""
+    if size < 10:
+        return
+    rect = pygame.Rect(0, 0, size, size)
+    rect.midright = (right_x, center_y)
+    pygame.draw.rect(screen, REL_COLORS[rel], rect, border_radius=max(2, size // 5))
+    t = get_font(base_font_path, max(10, int(size * 0.75)), bold=True).render(rel, True, (255, 255, 255))
+    screen.blit(t, (rect.centerx - t.get_width() // 2, rect.centery - t.get_height() // 2))
+
+
+def _draw_rel_legend(screen, base_font_path, right_x, bottom_y):
+    """「信頼度 [A]高い [B]やや高い [C]やや低い」を、right_x を右端・bottom_y を下端にして描く"""
+    font = get_font(base_font_path, 16)
+    size = 18
+    parts = [("text", "信頼度")] + [p for r in ("A", "B", "C") for p in (("badge", r), ("text", REL_TEXT[r]))]
+    widths = [size if k == "badge" else font.size(v)[0] for k, v in parts]
+    gap = 5
+    x = right_x - sum(widths) - gap * (len(parts) - 1)
+    cy = bottom_y - 2 - size // 2
+    for (k, v), w in zip(parts, widths):
+        if k == "badge":
+            _draw_rel_badge(screen, base_font_path, v, x + w, cy, size)
+        else:
+            t = font.render(v, True, (80, 80, 80))
+            screen.blit(t, (x, cy - t.get_height() // 2))
+        x += w + gap
+
+
 def _is_night_item(item) -> bool:
     """18・21・00・03 時の列は夜（月アイコン）。日の出・日の入りの時刻では判断しない"""
     return item["hour"] in NIGHT_HOURS
@@ -693,6 +727,10 @@ def draw_weather(
 
     week_title_surf = get_font(base_font_path, 28, bold=True).render("１週間の天気", True, (0, 0, 0))
     screen.blit(week_title_surf, (margin_x, y_offset))
+    # 信頼度の説明（降水確率の右の A・B・C が何か）。週間予報の表の右端にそろえる
+    if any(d.get("rel") for d in daily[:5]):
+        _draw_rel_legend(screen, base_font_path, margin_x + col_w * (1 + min(5, len(daily))),
+                         y_offset + week_title_surf.get_height())
     y_offset += week_title_surf.get_height() + 4
 
     week_row_heights = [int(height * r) for r in [0.06, 0.08, 0.04, 0.06]]
@@ -742,6 +780,11 @@ def draw_weather(
                         get_font(base_font_path, 22).render(item["pop"], True, (0, 0, 0)),
                         (x + 5, y + 5)
                     )
+                    # 気象庁の週間予報の信頼度（A・B・C）を右端に小さな札で
+                    if item.get("rel") in REL_COLORS:
+                        _draw_rel_badge(screen, base_font_path, item["rel"],
+                                        x + col_w - 6, y + week_row_heights[row_idx] // 2,
+                                        min(26, week_row_heights[row_idx] - 6))
 
                 elif row_idx == 3:
                     text = item["temp"]

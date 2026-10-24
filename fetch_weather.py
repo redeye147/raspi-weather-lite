@@ -266,6 +266,7 @@ def fetch_weather_jma(office_code, target_area_codes):
     daily_codes = {}
     daily_pops = defaultdict(list)
     daily_temps = defaultdict(list)
+    daily_rels = {}
 
     def _pick_area_index(area_list):
         code_to_idx = {a["area"]["code"]: i for i, a in enumerate(area_list)}
@@ -298,6 +299,8 @@ def fetch_weather_jma(office_code, target_area_codes):
             for key in ("temps", "tempsMax", "tempsMin"):
                 for d, v in values(key):
                     daily_temps[d].append(int(v))
+            for d, v in values("reliabilities"):            # 週間予報の信頼度 A・B・C（2 日目以降）
+                daily_rels.setdefault(d, str(v))
 
     for block in arr:
         _collect(block)
@@ -341,7 +344,8 @@ def fetch_weather_jma(office_code, target_area_codes):
             "day": f"{d.day}（{weekday}）",
             "code": str(code),
             "pop": pop_str,
-            "temp": temp_str
+            "temp": temp_str,
+            "rel": daily_rels.get(d, ""),
         })
 
     return [], daily

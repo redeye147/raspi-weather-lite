@@ -433,3 +433,26 @@ def test_variable_wind_shows_dashes(w, h):
     vrb, normal = dashes[x:x + col_w].sum(), dashes[x - col_w:x].sum()
     # 2 列目（VRB）に「---」。1 列目（風向あり）は矢印の縁の点が数個まじるだけ
     assert vrb > 20 and vrb > normal * 4
+
+
+@pytest.mark.parametrize("w, h", RESOLUTIONS)
+def test_weekly_reliability_badges_and_legend(w, h):
+    """降水確率の右に信頼度の札（A 緑・B 橙・C 赤）。題名の右に説明。信頼度の無い日は札なし。列からはみ出さない"""
+    import weather_draw
+    daily = [dict(d, rel=r) for d, r in zip(_daily(), ["", "A", "B", "C", "A"])]
+    screen = pygame.Surface((w, h))
+    draw_weather(screen, w, h, _hourly(), daily, {}, BASE_FONT, "警報・注意報なし", "", "", "天気更新 10:24",
+                 "成田空港", "05:44", "17:09", "", "3%", now=datetime.datetime(2026, 10, 11, 5, 0, tzinfo=JST))
+    arr = pygame.surfarray.array3d(screen)
+    margin_x = int(w * 0.05)
+    col_w = int((w - margin_x * 2) // 11)
+    for i, rel in enumerate(["", "A", "B", "C", "A"]):
+        x = margin_x + (1 + i) * col_w
+        cells = {r: np.all(arr[x + 1:x + col_w - 1, int(h * 0.75):] == c, axis=2).sum()
+                 for r, c in weather_draw.REL_COLORS.items()}
+        if rel:
+            assert cells[rel] > 50, f"{w}×{h}: {i} 列目に {rel} の札が無い"
+        else:
+            assert sum(cells.values()) == 0
+    legend = np.all(arr[:, :int(h * 0.75)] == weather_draw.REL_COLORS["C"], axis=2)
+    assert legend.sum() > 50                                              # 題名の右の説明

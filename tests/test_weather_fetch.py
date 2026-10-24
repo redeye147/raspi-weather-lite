@@ -253,3 +253,28 @@ def test_wind_direction_missing_is_none(monkeypatch):
     om = _om_hours()
     del om["hourly"]["winddirection_10m"]
     assert _run(monkeypatch, om)["09"]["wind_dir"] is None
+
+
+def test_jma_weekly_reliability(monkeypatch):
+    """気象庁の週間予報の信頼度（A・B・C）を日ごとに読む。空（明日など）は ""（札を出さない）"""
+    import datetime as _dt
+    td = [f"2026-10-{d}T00:00:00+09:00" for d in range(23, 30)]
+    weekly = {"timeSeries": [{"timeDefines": td, "areas": [{"area": {"code": "230000"},
+              "weatherCodes": ["201", "302", "202", "203", "202", "101", "201"],
+              "pops": ["", "90", "70", "70", "60", "20", "30"], "reliabilities": ["", "", "A", "A", "B", "A", "C"]}]}]}
+
+    class R:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return [{"timeSeries": []}, weekly]
+    monkeypatch.setattr(fw.SESS, "get", lambda *a, **k: R())
+
+    class D(_dt.date):
+        @classmethod
+        def today(cls):
+            return _dt.date(2026, 10, 22)
+    monkeypatch.setattr(fw.datetime, "date", D)
+    daily = fw.fetch_weather_jma("230000", ["230010"])[1]
+    assert [d["rel"] for d in daily] == ["", "", "A", "A", "B"]
