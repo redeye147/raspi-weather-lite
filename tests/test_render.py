@@ -454,5 +454,27 @@ def test_weekly_reliability_badges_and_legend(w, h):
             assert cells[rel] > 50, f"{w}×{h}: {i} 列目に {rel} の札が無い"
         else:
             assert sum(cells.values()) == 0
-    legend = np.all(arr[:, :int(h * 0.75)] == weather_draw.REL_COLORS["C"], axis=2)
-    assert legend.sum() > 50                                              # 題名の右の説明
+    # 説明は表のすぐ下（表より下に C の色がある）
+    table_bottom = max(np.where(np.all(arr == (160, 160, 160), axis=2).any(axis=0))[0])
+    legend = np.all(arr[:, table_bottom:] == weather_draw.REL_COLORS["C"], axis=2)
+    assert legend.sum() > 30, f"{w}×{h}: 表の下に信頼度の説明が無い"
+
+
+@pytest.mark.parametrize("w, h", RESOLUTIONS)
+@pytest.mark.parametrize("banners", ["thunder", "heat", "both"])
+def test_reliability_legend_fits_with_banners(w, h, banners):
+    """雷・熱中症の帯で表が下にずれても、信頼度の説明が表の下に描かれ、画面からはみ出さない"""
+    import weather_draw
+    daily = [dict(d, rel=r) for d, r in zip(_daily(), ["", "A", "B", "C", "A"])]
+    thunder = {"kind": "near", "km": 6.0, "dir": "南西", "at": datetime.datetime(2026, 10, 11, 5, 0, tzinfo=JST)}
+    screen = pygame.Surface((w, h))
+    draw_weather(screen, w, h, _hourly(), daily, {}, BASE_FONT, "警報・注意報なし", "", "", "天気更新 10:24",
+                 "成田空港", "05:44", "17:09", "", "3%", wbgt_level_info=level_for(33.5),
+                 wbgt_alert=banners in ("heat", "both"), now=datetime.datetime(2026, 10, 11, 5, 0, tzinfo=JST),
+                 thunder=thunder if banners in ("thunder", "both") else None)
+    arr = pygame.surfarray.array3d(screen)
+    table_bottom = max(np.where(np.all(arr == (160, 160, 160), axis=2).any(axis=0))[0])
+    c = np.all(arr[:, table_bottom:] == weather_draw.REL_COLORS["C"], axis=2)
+    assert c.sum() > 30, f"{w}×{h} {banners}: 説明が無い"
+    ys = np.where(c.any(axis=0))[0] + table_bottom
+    assert ys.max() < h - 1                                               # 画面の中

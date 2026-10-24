@@ -299,15 +299,17 @@ def _draw_rel_badge(screen, base_font_path, rel, right_x, center_y, size):
     screen.blit(t, (rect.centerx - t.get_width() // 2, rect.centery - t.get_height() // 2))
 
 
-def _draw_rel_legend(screen, base_font_path, right_x, bottom_y):
-    """「信頼度 [A]高い [B]やや高い [C]やや低い」を、right_x を右端・bottom_y を下端にして描く"""
+def _draw_rel_legend(screen, base_font_path, right_x, top_y, screen_h):
+    """「信頼度 [A]高い [B]やや高い [C]やや低い」を、right_x を右端・top_y を上端にして描く（画面に入らなければ描かない）"""
     font = get_font(base_font_path, 16)
     size = 18
     parts = [("text", "信頼度")] + [p for r in ("A", "B", "C") for p in (("badge", r), ("text", REL_TEXT[r]))]
     widths = [size if k == "badge" else font.size(v)[0] for k, v in parts]
     gap = 5
     x = right_x - sum(widths) - gap * (len(parts) - 1)
-    cy = bottom_y - 2 - size // 2
+    if top_y + size > screen_h - 1:
+        return
+    cy = top_y + size // 2
     for (k, v), w in zip(parts, widths):
         if k == "badge":
             _draw_rel_badge(screen, base_font_path, v, x + w, cy, size)
@@ -727,10 +729,6 @@ def draw_weather(
 
     week_title_surf = get_font(base_font_path, 28, bold=True).render("１週間の天気", True, (0, 0, 0))
     screen.blit(week_title_surf, (margin_x, y_offset))
-    # 信頼度の説明（降水確率の右の A・B・C が何か）。週間予報の表の右端にそろえる
-    if any(d.get("rel") for d in daily[:5]):
-        _draw_rel_legend(screen, base_font_path, margin_x + col_w * (1 + min(5, len(daily))),
-                         y_offset + week_title_surf.get_height())
     y_offset += week_title_surf.get_height() + 4
 
     week_row_heights = [int(height * r) for r in [0.06, 0.08, 0.04, 0.06]]
@@ -817,6 +815,12 @@ def draw_weather(
                             get_font(base_font_path, 22).render(text, True, (0, 0, 0)),
                             (x + 5, y + 5)
                         )
+
+    # 信頼度の説明（降水確率の右の A・B・C が何か）。週間予報の表のすぐ下・右端にそろえる
+    # （雷・熱中症の帯で表が下にずれても画面に入るよう、入らないときは描かない）
+    if any(d.get("rel") for d in daily[:5]):
+        _draw_rel_legend(screen, base_font_path, margin_x + col_w * (1 + min(5, len(daily))),
+                         y_offset + sum(week_row_heights) + 3, height)
 
     used_w = (len(daily) + 1) * col_w
     remain_w = (width - margin_x * 2) - used_w
