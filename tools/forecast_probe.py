@@ -51,7 +51,7 @@ def rain_forecast(lat, lon, km):
         return
     base, member, element = latest
     print(f"使う発表: {ft.jst_of(base):%m/%d %H:%M} JST・member {member}・要素 {element}")
-    print(f"予報の時刻（毎正時）: {[f'{ft.jst_of(v):%H:%M}' for v in valids]}")
+    print(f"予報の時刻（発表から 1 時間おき）: {[f'{ft.jst_of(v):%H:%M}' for v in valids]}")
     if valids:
         for z in rf.ZOOMS:
             for tx, ty in ft.tiles_for(lat, lon, fr.RADIUS_KM, z):
