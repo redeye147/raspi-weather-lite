@@ -450,6 +450,55 @@ def _rain_item(now, snap):
     return _item("RAD", "降水ナウキャスト", level, value, detail)
 
 
+def _rainfc_item(now, snap):
+    """降水短時間予報（6 時間先までの列の降水量）"""
+    snap = snap or {}
+    ok_at, err = snap.get("rainfc_ok_at"), snap.get("rainfc_error")
+    if not ok_at:
+        return _item("RSF", "降水短時間予報", WARN, "データなし",
+                     f"まだ取得できていません（{short_error(err)}）" if err else "まだ取得していません（起動直後は約20秒後）")
+    age = now.timestamp() - ok_at
+    data_at = snap.get("rainfc_data_at")
+    at = f"{_hm(data_at)[-5:]} 発表" if data_at else "発表時刻不明"
+    hours = snap.get("rainfc_hours") or {}
+    if not hours:
+        value = f"空港の予報を読めず（{at}）"
+    else:
+        mx = max(hours.values())
+        value = (f"{len(hours)}時間先まで雨なし（{at}）" if not mx
+                 else f"{len(hours)}時間先まで最大 {mx:g}mm/h（{at}）")
+    level = OK if age <= 75 * 60 else (WARN if age <= 3 * 3600 else BAD)
+    detail = "" if level == OK else (f"{_ago(age)}から取得できていません" + (f"（{short_error(err)}）" if err else "")
+                                     + "。先の列の降水量は数値予報のまま")
+    return _item("RSF", "降水短時間予報", level, value, detail)
+
+
+def _taf_item(now, snap, icao):
+    """TAF（空港の予報。列の風と天気）"""
+    snap = snap or {}
+    if not icao:
+        return _item("TAF", "空港の予報", INFO, "空港の設定なし")
+    raw, ok_at, err = snap.get("taf_raw"), snap.get("taf_ok_at"), snap.get("taf_error")
+    if not raw or not ok_at:
+        return _item("TAF", "空港の予報", WARN, "データなし",
+                     f"まだ取得できていません（{short_error(err)}）" if err else "まだ取得していません（起動直後は約20秒後）")
+    try:
+        import taf as taf_mod
+        t = taf_mod.parse_taf(raw, now.astimezone(datetime.timezone.utc))
+    except Exception:
+        t = None
+    if t is None:
+        return _item("TAF", "空港の予報", WARN, "電文を読めません", raw[:60])
+    age = now.timestamp() - ok_at
+    span = f"{t['issued'].astimezone(JST):%H:%M} 発表・{t['end'].astimezone(JST):%d日%H時}まで"
+    valid = now.astimezone(datetime.timezone.utc) < t["end"]
+    level = OK if age <= 75 * 60 and valid else (WARN if valid else BAD)
+    detail = "" if level == OK else (("予報の期間が終わっています。列の風は数値予報のまま" if not valid
+                                      else f"{_ago(age)}から取得できていません")
+                                     + (f"（{short_error(err)}）" if err else ""))
+    return _item("TAF", "空港の予報", level, f"{icao} {span}", detail)
+
+
 def evaluate(info: dict, now: datetime.datetime) -> dict:
     """集めた情報から、項目ごとの判定と総合判定を返す"""
     items = []
@@ -510,6 +559,8 @@ def evaluate(info: dict, now: datetime.datetime) -> dict:
     items.append(_aviation_item(now, snap, info.get("icao")))
     items.append(_thunder_item(now, snap))
     items.append(_rain_item(now, snap))
+    items.append(_rainfc_item(now, snap))
+    items.append(_taf_item(now, snap, info.get("icao")))
 
     t = info.get("temp")
     if t is None:

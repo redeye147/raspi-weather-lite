@@ -90,10 +90,10 @@ def max_mmh_near(lat, lon, tiles, z=ZOOM, km=RADIUS_KM):
     return best
 
 
-def _tiles_at(base, valid, lat, lon, session, z=ZOOM):
+def _tiles_at(base, valid, lat, lon, session, z=ZOOM, url=TILE_URL, **fmt):
     tiles = {}
     for tx, ty in ft.tiles_for(lat, lon, RADIUS_KM, z):
-        tr = get_with_retry(TILE_URL.format(base=base, valid=valid, z=z, x=tx, y=ty),
+        tr = get_with_retry(url.format(base=base, valid=valid, z=z, x=tx, y=ty, **fmt),
                             session=session, headers=_HEADERS, timeout=TIMEOUT)
         if tr.status_code == 404:                   # 雨の無い範囲はタイルが無いことがある
             continue

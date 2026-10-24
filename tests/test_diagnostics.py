@@ -27,7 +27,11 @@ def healthy(**over):
                  "thunder_status": "ok", "thunder_ok_at": ts(12, 17), "thunder_data_at": ts(12, 10),
                  "thunder_error": None, "thunder_shown": None,
                  "rain_status": "ok", "rain_ok_at": ts(12, 15), "rain_data_at": ts(12, 10),
-                 "rain_error": None, "rain_now_mmh": 0, "rain_max_mmh": 0},
+                 "rain_error": None, "rain_now_mmh": 0, "rain_max_mmh": 0,
+                 "rainfc_status": "ok", "rainfc_ok_at": ts(12, 5), "rainfc_data_at": ts(12, 0),
+                 "rainfc_error": None, "rainfc_hours": {f"2026-10-05T{h:02d}:00": 0 for h in range(13, 19)},
+                 "taf_raw": "TAF RJAA 042305Z 0500/0606 02008KT 9999 FEW020", "taf_status": "ok",
+                 "taf_ok_at": ts(12, 0), "taf_error": None},
         "display": {"fb0": "1920×1080", "hdmi": {"HDMI-A-1": "connected"}}, "recent_starts": 1,
         "version": "main 9ce2603", "problems": [],
     }
@@ -42,7 +46,7 @@ def item(result, code):
 def test_all_ok():
     r = dg.evaluate(healthy(), NOW)
     assert r["overall"] == "ok" and r["codes"] == []
-    assert [i["code"] for i in r["items"]] == ["SVC", "DSP", "NET", "NTP", "WX", "JMA", "WBGT", "AVI", "THN", "RAD", "TMP", "PWR", "SYS"]
+    assert [i["code"] for i in r["items"]] == ["SVC", "DSP", "NET", "NTP", "WX", "JMA", "WBGT", "AVI", "THN", "RAD", "RSF", "TAF", "TMP", "PWR", "SYS"]
     assert item(r, "AVI")["value"].startswith("RJAA 12:00 観測")
     assert "注意 26.1℃" in item(r, "WBGT")["value"]
 
@@ -316,3 +320,19 @@ def test_cpu_from_display_program_status(tmp_path, monkeypatch):
     assert dg._read_status(str(tmp_path / "none.json")) is None
     it = item(dg.evaluate(healthy(cpu=6.0, cpu_avg=True), NOW), "SYS")
     assert it["value"].startswith("CPU 6%（1分平均）")
+
+
+def test_rainfc_item():
+    assert item(dg.evaluate(healthy(), NOW), "RSF")["value"] == "6時間先まで雨なし（12:00 発表）"
+    snap = dict(healthy()["snap"], rainfc_hours={"2026-10-05T13:00": 3.0, "2026-10-05T14:00": 7.5})
+    assert item(dg.evaluate(healthy(snap=snap), NOW), "RSF")["value"] == "2時間先まで最大 7.5mm/h（12:00 発表）"
+    snap = dict(healthy()["snap"], rainfc_ok_at=None, rainfc_error="timed out")
+    assert item(dg.evaluate(healthy(snap=snap), NOW), "RSF")["level"] == "warn"
+
+
+def test_taf_item():
+    it = item(dg.evaluate(healthy(), NOW), "TAF")
+    assert it["level"] == "ok" and it["value"] == "RJAA 08:05 発表・06日15時まで"
+    snap = dict(healthy()["snap"], taf_raw="TAF RJAA 022305Z 0300/0406 02008KT 9999 FEW020")
+    it = item(dg.evaluate(healthy(snap=snap), NOW), "TAF")
+    assert it["level"] == "bad" and "期間が終わっています" in it["detail"]

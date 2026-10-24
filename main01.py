@@ -37,6 +37,9 @@ from netretry import get_with_retry
 from fb_display import init_display, present, present_rect
 import anim_icons
 import fetch_rainnow
+import fetch_rainfcst
+import fc_blend
+import taf as taf_mod
 import obs_now
 import verify
 import weather_draw
@@ -476,6 +479,11 @@ def main():
             "rain_data_at": rain_result["at"].timestamp() if rain_result else 0.0,
             "rain_now_mmh": rain_result["now_mmh"] if rain_result else None,
             "rain_max_mmh": rain_result["max_mmh"] if rain_result else None,
+            "rainfc_status": rainfc_status, "rainfc_error": rainfc_error, "rainfc_ok_at": rainfc_ok_at,
+            "rainfc_data_at": rainfc_result["at"].timestamp() if rainfc_result else 0.0,
+            "rainfc_hours": rainfc_result["hours"] if rainfc_result else None,
+            "taf_raw": taf_state.get("raw"), "taf_status": taf_state.get("status"),
+            "taf_error": taf_state.get("error"), "taf_ok_at": taf_state.get("ok_at", 0.0),
         })
 
     # 雷ナウキャスト：5 分ごとに裏で取得。空港から 20km 以内の雷を帯で出す（範囲外になっても 20 分は保持）
@@ -493,6 +501,21 @@ def main():
     rain_status = rain_error = None
     rain_ok_at = 0.0
     last_rain_attempt = 0.0
+    # 降水短時間予報：30 分ごとに裏で取得。6 時間先までの列の降水量（と雨のアイコン）に
+    rainfc_holder = {}
+    rainfc_result = None
+    rainfc_status = rainfc_error = None
+    rainfc_ok_at = 0.0
+    last_rainfc_attempt = 0.0
+    # TAF（空港の予報官の予報）：30 分ごとに裏で取得。予報の出ている時間の列の風と天気に
+    taf_state = {}
+    if synced and snap and snap.get("taf_raw"):
+        _t = taf_mod.parse_taf(snap["taf_raw"], datetime.datetime.now(datetime.timezone.utc))
+        if _t:
+            taf_state.update({"taf": _t, "raw": snap["taf_raw"], "status": snap.get("taf_status"),
+                              "ok_at": snap.get("taf_ok_at", 0.0)})
+    taf_holder = {}
+    last_taf_attempt = 0.0
 
     if fetch_ok and not weather_fresh:
         _save_state()
@@ -659,6 +682,38 @@ def main():
                 rain_result, rain_ok_at = _res, time.time()
             _save_state()
 
+        # 降水短時間予報（30 分ごと。裏で取得）
+        if ("pending" not in rainfc_holder and time.time() >= thunder_not_before
+                and time.time() - last_rainfc_attempt >= fetch_rainfcst.FETCH_INTERVAL_MIN * 60):
+            last_rainfc_attempt = time.time()
+            rainfc_holder["pending"] = True
+            fetch_rainfcst.start_fetch_in_background(cfg["latitude"], cfg["longitude"], rainfc_holder)
+        if "result" in rainfc_holder:
+            _res = rainfc_holder.pop("result")
+            rainfc_holder.pop("pending", None)
+            rainfc_status, rainfc_error = _res.get("status"), _res.get("error")
+            if rainfc_status == "ok":
+                if rainfc_result is None or _res["hours"] != rainfc_result["hours"]:
+                    needs_redraw = True
+                rainfc_result, rainfc_ok_at = _res, time.time()
+            _save_state()
+
+        # TAF（30 分ごと。裏で取得）
+        if (cfg.get("icao") and "pending" not in taf_holder and time.time() >= thunder_not_before
+                and time.time() - last_taf_attempt >= taf_mod.FETCH_INTERVAL_MIN * 60):
+            last_taf_attempt = time.time()
+            taf_holder["pending"] = True
+            taf_mod.start_fetch_in_background(cfg["icao"], taf_holder)
+        if "result" in taf_holder:
+            _res = taf_holder.pop("result")
+            taf_holder.pop("pending", None)
+            taf_state.update(status=_res.get("status"), error=_res.get("error"))
+            if _res.get("status") == "ok":
+                if _res["raw"] != taf_state.get("raw"):
+                    needs_redraw = True
+                taf_state.update(taf=_res["taf"], raw=_res["raw"], ok_at=time.time())
+            _save_state()
+
         # 雷ナウキャスト（5 分ごと。裏で取得）
         if (args.thunder_test is None and "pending" not in thunder_holder and time.time() >= thunder_not_before
                 and time.time() - last_thunder_attempt >= THUNDER_INTERVAL_MIN * 60):
@@ -773,8 +828,11 @@ def main():
         _wbgt_today = args.wbgt_test is not None or wbgt_badge_visible(now, _ts_to_dt(wbgt_data_at))
         draw_weather(
             screen, width, height,
-            _with_observation(hourly, now, aviation_state.get("metar"),
-                              rain_result if fetch_rainnow.is_fresh(rain_result, now) else None),
+            _with_observation(
+                _with_forecasts(hourly, now, taf_state.get("taf"),
+                                rainfc_result if fetch_rainfcst.is_fresh(rainfc_result, now) else None),
+                now, aviation_state.get("metar"),
+                rain_result if fetch_rainnow.is_fresh(rain_result, now) else None),
             daily, icon_cache, BASE_FONT,
             warning_text, headline_text, updated_text,
             weather_updated_text, airport_label,
@@ -871,6 +929,17 @@ def write_status(cpu_samples, path=None):
             json.dump({"cpu_1min": round(sum(cpu_samples) / len(cpu_samples), 1), "at": time.time()}, f)
     except (OSError, ZeroDivisionError):
         pass
+
+
+def _with_forecasts(hourly, now, taf, rainfc=None):
+    """列を、TAF（風・天気）と降水短時間予報（降水量）で直した表示用の写し（無い・古いときは今までの予報のまま）"""
+    try:
+        now_utc = now.astimezone(datetime.timezone.utc)
+        return fc_blend.blend(hourly, taf if taf_mod.is_valid(taf, now_utc) else None,
+                              rainfc["hours"] if rainfc else None)
+    except Exception as e:                       # 直せなくても、今までの予報のまま表示を続ける
+        logging.warning(f"TAF・降水短時間予報での直し失敗: {e}")
+        return hourly
 
 
 def _with_observation(hourly, now, metar, rain=None):

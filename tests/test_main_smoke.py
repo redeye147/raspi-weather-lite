@@ -233,3 +233,33 @@ def test_aviation_band_hidden_but_metar_still_fetched(signage, monkeypatch):
     run(loops=12)
     assert shown and all(m is None for m in shown)                        # 帯は出さない
     assert calls["aviation"]                                               # 取得はしている
+
+
+def test_taf_and_rain_forecast_shown_in_table(signage, monkeypatch):
+    """TAF の風と降水短時間予報の雨が、今日の天気の列に入る（元の予報・保存する予報は変えない）"""
+    import fetch_rainfcst
+    import taf as taf_mod
+    run, snap_file, calls = signage
+    now = datetime.datetime.now(datetime.timezone.utc)
+    s, e = now - datetime.timedelta(hours=2), now + datetime.timedelta(hours=28)
+    raw = f"TAF RJGG {s:%d%H}00Z {s:%d%H}/{e:%d%H} 27040KT 9999 FEW030"
+
+    def fetch_taf(icao, holder):
+        holder["result"] = {"status": "ok", "taf": taf_mod.parse_taf(raw, now), "raw": raw, "fetched_at": time.time()}
+    monkeypatch.setattr(taf_mod, "start_fetch_in_background", fetch_taf)
+    jst = datetime.datetime.now(JST).replace(minute=0, second=0, microsecond=0)
+    hours = {(jst + datetime.timedelta(hours=h)).strftime("%Y-%m-%dT%H:00"): 65.0 for h in range(1, 7)}
+    monkeypatch.setattr(fetch_rainfcst, "start_fetch_in_background",
+                        lambda lat, lon, holder: holder.update(result={"status": "ok", "at": datetime.datetime.now(JST),
+                                                                       "hours": hours}))
+    drawn = []
+    real = main01.draw_weather
+    monkeypatch.setattr(main01, "draw_weather", lambda screen, w, h, hourly, *a, **k: (drawn.append(hourly), real(screen, w, h, hourly, *a, **k)))
+    run(loops=12)
+    last = drawn[-1]
+    assert any(it.get("taf") and it["wind_val"] == 21 for it in last)            # 40kt → 21m/s
+    assert any(it.get("rainfc") and it["pop"] == "65.0mm" for it in last)
+    with open(snap_file, encoding="utf-8") as f:
+        snap = json.load(f)
+    assert snap["taf_raw"] == raw and snap["rainfc_hours"] == hours
+    assert all(not it.get("taf") for it in snap["hourly"])                       # 保存する予報はそのまま
