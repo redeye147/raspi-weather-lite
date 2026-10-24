@@ -241,6 +241,19 @@ def recent_problems(log_path=LOG_FILE, limit=PROBLEM_LIMIT, max_days=PROBLEM_MAX
     return out
 
 
+def _read_status(path=None, max_age_s=90):
+    """表示プログラムが書いた直近 1 分の CPU 使用率の平均（古い・無いときは None）"""
+    from config import STATUS_FILE
+    try:
+        with open(path or STATUS_FILE) as f:
+            st = json.load(f)
+        if time.time() - st["at"] <= max_age_s:
+            return float(st["cpu_1min"])
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    return None
+
+
 def collect() -> dict:
     """診断に使う情報をまとめて集める（数秒以内）"""
     try:
@@ -254,12 +267,17 @@ def collect() -> dict:
     except Exception:
         cfg = {}
     ssid, signal = _wifi_signal()
+    cpu, cpu_avg = None, False
+    status = _read_status()
+    if status is not None:
+        cpu, cpu_avg = status, True                  # 表示プログラムが測った直近 1 分の平均
     try:
         import psutil
-        cpu = psutil.cpu_percent(interval=0.5)
+        if cpu is None:
+            cpu = psutil.cpu_percent(interval=0.5)   # 表示プログラムが止まっているときだけ、その場で測る
         mem = psutil.virtual_memory().percent
     except Exception:
-        cpu = mem = None
+        mem = None
     try:
         free_gb = shutil.disk_usage("/").free / 1e9
     except Exception:
@@ -281,7 +299,7 @@ def collect() -> dict:
         "ssid": ssid, "signal": signal, "ip": _local_ip(),
         "ntp_synced": _run(["timedatectl", "show", "-p", "NTPSynchronized", "--value"]),
         "temp": _cpu_temp(), "throttled": _throttled(),
-        "cpu": cpu, "mem": mem, "load1": load1, "disk_free_gb": free_gb,
+        "cpu": cpu, "cpu_avg": cpu_avg, "mem": mem, "load1": load1, "disk_free_gb": free_gb,
         "snap": snap,
         "version": _git_version(),
         "problems": recent_problems(),
@@ -519,7 +537,7 @@ def evaluate(info: dict, now: datetime.datetime) -> dict:
     free = info.get("disk_free_gb")
     parts = []
     if info.get("cpu") is not None:
-        parts.append(f"CPU {info['cpu']:.0f}%")
+        parts.append(f"CPU {info['cpu']:.0f}%" + ("（1分平均）" if info.get("cpu_avg") else ""))
     if info.get("mem") is not None:
         parts.append(f"メモリ {info['mem']:.0f}%")
     if free is not None:

@@ -95,6 +95,9 @@ JST = pytz.timezone("Asia/Tokyo")
 AIRPORT_NAME = "中部国際空港"
 
 # Open-Meteo（WMO）の天気コード → 気象庁の天気コード（アイコン weather_icons/{コード}.png）
+# 表示プログラムの CPU 使用率（直近 1 分の平均）を診断ページへ渡すファイル。/run はメモリ上（SD に書かない・再起動で消える）
+STATUS_FILE = "/run/raspi-weather/status.json"
+
 CODE_MAPPING = {
     0: "100", 1: "100", 2: "101", 3: "200",       # 快晴・晴れ・晴れ時々曇り・曇り
     45: "209", 48: "209",                         # 霧

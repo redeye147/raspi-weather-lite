@@ -301,3 +301,18 @@ def test_rain_item():
     snap = dict(healthy()["snap"], rain_ok_at=ts(11, 0), rain_error="timed out")
     it = item(dg.evaluate(healthy(snap=snap), NOW), "RAD")
     assert it["level"] == "warn" and "タイムアウト" in it["detail"]
+
+
+def test_cpu_from_display_program_status(tmp_path, monkeypatch):
+    """CPU は表示プログラムが測った直近 1 分の平均を使う（診断を作る処理の負荷で 100% 近くに出ていた）"""
+    import json
+    import time
+    import main01
+    p = str(tmp_path / "status.json")
+    main01.write_status([4.0, 6.0, 8.0], p)
+    assert dg._read_status(p) == 6.0
+    json.dump({"cpu_1min": 6.0, "at": time.time() - 200}, open(p, "w"))
+    assert dg._read_status(p) is None                                     # 古い（表示プログラムが止まっている）
+    assert dg._read_status(str(tmp_path / "none.json")) is None
+    it = item(dg.evaluate(healthy(cpu=6.0, cpu_avg=True), NOW), "SYS")
+    assert it["value"].startswith("CPU 6%（1分平均）")

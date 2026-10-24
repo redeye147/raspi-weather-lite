@@ -55,7 +55,8 @@ def signage(tmp_path, monkeypatch):
     monkeypatch.setattr(main01, "DEFER_INITIAL_FETCH_S", 0)
     monkeypatch.setattr(main01, "ANIMATE", False)
     import verify
-    monkeypatch.setattr(verify, "BASE_DIR", str(tmp_path / "verify"))   # 予報の精度の記録はテスト用の場所に    # アイコンを動かすと待ちの回数が増えて、ループの周回の数え方が変わる
+    monkeypatch.setattr(verify, "BASE_DIR", str(tmp_path / "verify"))   # 予報の精度の記録はテスト用の場所に
+    monkeypatch.setattr(main01, "STATUS_FILE", str(tmp_path / "status.json"))    # アイコンを動かすと待ちの回数が増えて、ループの周回の数え方が変わる
     # 通信はすべて止める（裏で取得するスレッドもテスト後に本物の通信をしないように）
     monkeypatch.setattr(requests, "get", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("offline")))
     aviation_calls, wbgt_calls, thunder_calls = [], [], []

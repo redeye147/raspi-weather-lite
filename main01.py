@@ -21,6 +21,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 import pygame
 import argparse
 import datetime
+import json
 import time
 import shutil
 import logging
@@ -71,7 +72,7 @@ from utils import get_cpu_temp, format_cpu_status, clear_font_cache
 from header import _plane_cache
 from jma_alerts import get_overview_and_warning, active_warning_names
 
-from config import AIRPORT_CONFIG, LOG_FILE, ICON_DIR, BASE_FONT, SCREENSHOT_REQUEST
+from config import AIRPORT_CONFIG, LOG_FILE, ICON_DIR, BASE_FONT, SCREENSHOT_REQUEST, STATUS_FILE
 
 from fetch_weather import (
     load_cached_weather,
@@ -303,6 +304,7 @@ def main():
                     pygame.quit(); return
 
     cpu_text = "--"
+    cpu_samples = []
     last_cpu_update = 0
     psutil.cpu_percent(interval=None)
     icon_cache = {}
@@ -565,6 +567,8 @@ def main():
             cpu = psutil.cpu_percent(interval=None)
             cpu_text = format_cpu_status(cpu, get_cpu_temp())   # CPU 使用率と本体温度
             last_cpu_update = time.time()
+            cpu_samples = (cpu_samples + [cpu])[-6:]             # 10 秒ごと × 6 = 直近 1 分
+            write_status(cpu_samples)
             # CPU 表示のためだけに再描画しない（全面再描画は Pi Zero W で重い）。次の分替わりで反映
 
         if now.minute != last_drawn_minute:
@@ -850,6 +854,18 @@ def save_requested_screenshot(screen, request_path=None) -> None:
 
 
 DISPLAY_CHECK_S = 60
+
+
+def write_status(cpu_samples, path=None):
+    """診断ページ用に、直近 1 分の CPU 使用率の平均を書く（メモリ上の /run。SD には書かない）。
+    診断ページがその場で測ると、診断を作る処理（git・nmcli など）自体の負荷で Pi Zero では 100% 近くに出ていた"""
+    path = path or STATUS_FILE
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as f:
+            json.dump({"cpu_1min": round(sum(cpu_samples) / len(cpu_samples), 1), "at": time.time()}, f)
+    except (OSError, ZeroDivisionError):
+        pass
 
 
 def _with_observation(hourly, now, metar, rain=None):
