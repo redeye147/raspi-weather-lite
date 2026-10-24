@@ -9,6 +9,10 @@ verify.py
      雨の観測は METAR の天気（雨・雪・霧雨・雷雨など。周辺 VC は除く）か、雨雲レーダー（降水ナウキャスト）で 0.5mm/h 以上
   3. 診断ページで、過去 30 日の「ずれ」を見せる（summarize）
 
+元の予報（Open-Meteo）とは別に、TAF・降水短時間予報で直した「表示した予報」も記録して比べる（record_blended）
+       cache/verify/bl_YYYYMMDD.jsonl  1 行 = TAF・降水短時間予報が届いたとき  {"at": ..., "hours": {"…T10:00": {"wind": .., "prec": ..}}}
+     直した値だけを持つ（TAF の期間外の風・6 時間より先の雨は無い）。無い値は元の予報と同じとみなす
+
 SD カードへの書き込みは 1 時間に数 KB。予報の記録は 3 日分、比べた記録は 4 か月分（月ごとのファイル）残す。
 """
 
@@ -32,6 +36,8 @@ _PRECIP = ("RA", "DZ", "SN", "SG", "PL", "GR", "GS", "TS", "UP")
 FIELDS = ["obs_time", "icao", "temp", "wind", "code", "rain", "radar_mmh"]
 for _L in LEADS_H:
     FIELDS += [f"fc{_L}_temp", f"fc{_L}_wind", f"fc{_L}_code", f"fc{_L}_prec"]
+for _L in LEADS_H:
+    FIELDS += [f"bl{_L}_wind", f"bl{_L}_prec"]          # 表示した予報（TAF・降水短時間予報で直した値。2026-10 追加）
 
 
 def _hour_key(dt):
@@ -57,13 +63,43 @@ def record_forecast(hourly, fetched_at, base_dir=None):
     return True
 
 
-def _forecast_records(base_dir, obs_dt):
+def record_blended(taf=None, rain_hours=None, at=None, base_dir=None, ahead_h=30):
+    """TAF・降水短時間予報が届いたときに呼ぶ。この先 ahead_h 時間の「直した値」を 1 行に。
+    風：その時刻の TAF の風（ふだんの風と「ときどき」のうち強い方。m/s）
+    雨：その時刻からの 1 時間の降水短時間予報（mm/h。rain_hours はその 1 時間の終わりの時刻で引く）"""
+    import taf as taf_mod
+    at = (at or datetime.datetime.now(JST)).astimezone(JST)
+    start = at.replace(minute=0, second=0, microsecond=0)
+    hours = {}
+    for h in range(ahead_h + 1):
+        t = start + datetime.timedelta(hours=h)
+        v = {}
+        if taf is not None:
+            s = taf_mod.slot_summary(taf, t, hours=1)
+            if s and s["wind_kt"] is not None:
+                v["wind"] = round(s["wind_kt"] * obs_now.KT_TO_MS, 1)
+        if rain_hours:
+            p = rain_hours.get(_hour_key(t + datetime.timedelta(hours=1)))
+            if p is not None:
+                v["prec"] = p
+        if v:
+            hours[_hour_key(t)] = v
+    if not hours:
+        return False
+    base_dir = base_dir or BASE_DIR
+    os.makedirs(base_dir, exist_ok=True)
+    with open(os.path.join(base_dir, f"bl_{at:%Y%m%d}.jsonl"), "a", encoding="utf-8") as f:
+        f.write(json.dumps({"at": at.isoformat(), "hours": hours}, ensure_ascii=False) + "\n")
+    return True
+
+
+def _forecast_records(base_dir, obs_dt, prefix="fc"):
     """obs_dt の前の数日分の予報の記録（古い順）"""
     recs = []
     for d in range(FC_KEEP_DAYS, -1, -1):
         day = (obs_dt.astimezone(JST) - datetime.timedelta(days=d)).strftime("%Y%m%d")
         try:
-            with open(os.path.join(base_dir, f"fc_{day}.jsonl"), encoding="utf-8") as f:
+            with open(os.path.join(base_dir, f"{prefix}_{day}.jsonl"), encoding="utf-8") as f:
                 for line in f:
                     try:
                         r = json.loads(line)
@@ -106,6 +142,7 @@ def record_observation(metar, radar_mmh=None, base_dir=None):
     except OSError:
         pass
     records = _forecast_records(base_dir, obs_jst)
+    blended = _forecast_records(base_dir, obs_jst, "bl")
     rain = is_raining(metar) or (radar_mmh is not None and radar_mmh >= RAIN_MM)
     wind = round(metar["wind_kt"] * obs_now.KT_TO_MS, 1) if metar.get("wind_kt") is not None else ""
     row = {"obs_time": obs_jst.strftime("%Y-%m-%d %H:%M"), "icao": metar.get("icao", ""),
@@ -118,7 +155,13 @@ def record_observation(metar, radar_mmh=None, base_dir=None):
         row[f"fc{L}_wind"] = "" if fc.get("wind") is None else fc["wind"]
         row[f"fc{L}_code"] = "" if fc.get("wmo") is None else CODE_MAPPING.get(fc["wmo"], "999")
         row[f"fc{L}_prec"] = "" if fc.get("prec") is None else fc["prec"]
+        # 表示した予報：直した値があればそれ、無ければ元の予報（元の予報も無ければ空）
+        bl = forecast_for(obs_jst, L, blended) or {}
+        for k in ("wind", "prec"):
+            v = bl.get(k, fc.get(k))
+            row[f"bl{L}_{k}"] = "" if v is None else v
     path = os.path.join(base_dir, f"vf_{obs_jst:%Y%m}.csv")
+    _upgrade_header(path)
     new = not os.path.exists(path)
     with open(path, "a", encoding="utf-8", newline="") as f:
         w = csv.DictWriter(f, fieldnames=FIELDS)
@@ -130,10 +173,28 @@ def record_observation(metar, radar_mmh=None, base_dir=None):
     return True
 
 
+def _upgrade_header(path):
+    """項目が増える前の CSV なら、今の項目で書き直す（足りない項目は空）"""
+    try:
+        with open(path, encoding="utf-8") as f:
+            rows = list(csv.DictReader(f))
+            f.seek(0)
+            header = f.readline().strip().split(",")
+    except OSError:
+        return
+    if header == FIELDS:
+        return
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=FIELDS, extrasaction="ignore")
+        w.writeheader()
+        for r in rows:
+            w.writerow({k: r.get(k) or "" for k in FIELDS})
+
+
 def _prune(base_dir, now):
     """古い記録を消す（予報 3 日・比べた記録 4 か月）"""
     now = now.astimezone(JST)
-    for p in glob.glob(os.path.join(base_dir, "fc_*.jsonl")):
+    for p in glob.glob(os.path.join(base_dir, "fc_*.jsonl")) + glob.glob(os.path.join(base_dir, "bl_*.jsonl")):
         try:
             d = datetime.datetime.strptime(os.path.basename(p)[3:11], "%Y%m%d").replace(tzinfo=JST)
             if now - d > datetime.timedelta(days=FC_KEEP_DAYS + 1):
@@ -154,6 +215,37 @@ def _num(v):
         return float(v)
     except (TypeError, ValueError):
         return None
+
+
+def _wind_rain(rows, prefix, L):
+    """(風速の [(予報, 観測)], 雨の [(予報で雨, 観測で雨)])"""
+    w = [(_num(r.get(f"{prefix}{L}_wind")), _num(r["wind"])) for r in rows]
+    w = [(f, o) for f, o in w if f is not None and o is not None]
+    rr = [(_num(r.get(f"{prefix}{L}_prec")), r["rain"] == "1") for r in rows]
+    rr = [(f >= RAIN_MM, o) for f, o in rr if f is not None]
+    return w, rr
+
+
+def _hit(rr):
+    return sum(1 for f, o in rr if f == o) / len(rr) * 100
+
+
+def _blended_line(rows, L):
+    """表示した予報と、同じ時間の元の予報を比べた 1 行（表示した予報を記録する前の時間しか無ければ None）"""
+    rows = [r for r in rows if r.get(f"bl{L}_wind", "") != "" or r.get(f"bl{L}_prec", "") != ""]
+    if not rows:
+        return None
+    bw, brr = _wind_rain(rows, "bl", L)
+    fw, frr = _wind_rain(rows, "fc", L)
+    parts = []
+    if bw and fw:
+        parts.append(f"風速のずれ平均 {sum(abs(f - o) for f, o in bw) / len(bw):.1f}m/s"
+                     f"（元の予報 {sum(abs(f - o) for f, o in fw) / len(fw):.1f}m/s）")
+    if brr and frr:
+        parts.append(f"雨の有無の的中 {_hit(brr):.0f}%（元の予報 {_hit(frr):.0f}%）")
+    if not parts:
+        return None
+    return f"　└ 表示した予報（TAF・降水短時間予報で直した値、{len(rows)}件）：" + "・".join(parts)
 
 
 def summarize(base_dir=None, now=None, days=30, leads=(3, 24)):
@@ -196,5 +288,8 @@ def summarize(base_dir=None, now=None, days=30, leads=(3, 24)):
             parts.append(f"雨の有無の的中 {hit * 100:.0f}%{caught}")
         n = max(len(t), len(w), len(rr))
         out.append(f"{L}時間前の予報（{n}件）：" + "・".join(parts))
+        bl = _blended_line(rows, L)
+        if bl:
+            out.append(bl)
     out.append("＋は予報が高い（強い）、−は低い（弱い）")
     return out

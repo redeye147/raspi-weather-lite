@@ -74,3 +74,37 @@ def test_prune_old_forecasts(tmp_path):
     verify.record_forecast(_hourly(0, 1, 1, 0, 0), datetime.datetime(2026, 10, 24, 7, 0, tzinfo=JST), d)
     names = sorted(os.listdir(d))
     assert "fc_20261001.jsonl" not in names and "fc_20261023.jsonl" in names
+
+
+def test_blended_recorded_and_compared(tmp_path):
+    """TAF・降水短時間予報で直した「表示した予報」も記録し、元の予報と並べて比べる"""
+    import taf
+    d = str(tmp_path)
+    # 元の予報：10〜12 時は風 2m/s・雨なし
+    verify.record_forecast(_hourly(0, 18.0, 2.0, 0, 0.0), datetime.datetime(2026, 10, 24, 6, 0, tzinfo=JST), d)
+    # 6:30 に TAF（33012KT ≒ 6.2m/s）と降水短時間予報（10〜11 時に 3mm/h）が届いた
+    t = taf.parse_taf("TAF RJGG 232305Z 2400/2506 33012KT 9999 FEW030", datetime.datetime(2026, 10, 23, 23, 5, tzinfo=UTC))
+    assert verify.record_blended(t, {"2026-10-24T11:00": 3.0}, datetime.datetime(2026, 10, 24, 6, 30, tzinfo=JST), d)
+    verify.record_observation(metar("RJGG 240100Z 33012KT 9999 -RA BKN020 19/15 Q1012"), None, d)   # 10 時：雨・6.2m/s
+    with open(os.path.join(d, "vf_202610.csv"), encoding="utf-8") as f:
+        r = list(csv.DictReader(f))[0]
+    assert r["fc3_wind"] == "2.0" and r["bl3_wind"] == "6.2"
+    assert r["fc3_prec"] == "0.0" and r["bl3_prec"] == "3.0"
+    lines = verify.summarize(d, now=datetime.datetime(2026, 10, 24, 13, 0, tzinfo=JST))
+    bl = next(l for l in lines if "表示した予報" in l and "1件" in l)
+    assert "風速のずれ平均 0.0m/s（元の予報 4.2m/s）" in bl and "雨の有無の的中 100%（元の予報 0%）" in bl
+
+
+def test_old_csv_header_upgraded(tmp_path):
+    """表示した予報の項目を足す前の CSV でも、書き足して読める"""
+    d = str(tmp_path)
+    old = [f for f in verify.FIELDS if not f.startswith("bl")]
+    with open(os.path.join(d, "vf_202610.csv"), "w", encoding="utf-8", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=old)
+        w.writeheader()
+        w.writerow({k: "" for k in old} | {"obs_time": "2026-10-24 09:00", "temp": "18", "wind": "3", "rain": "0"})
+    verify.record_observation(metar("RJGG 240100Z 33012KT 9999 FEW020 19/15 Q1012"), None, d)
+    with open(os.path.join(d, "vf_202610.csv"), encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+    assert [r["obs_time"] for r in rows] == ["2026-10-24 09:00", "2026-10-24 10:00"]
+    assert rows[0]["temp"] == "18" and rows[1]["temp"] == "19" and None not in rows[1]
