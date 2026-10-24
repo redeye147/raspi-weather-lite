@@ -48,9 +48,10 @@ def _hour_key(dt):
 def record_forecast(hourly, fetched_at, base_dir=None):
     """天気を取ったときに呼ぶ。hourly の各列の "hours"（1 時間ごとの元の値）をまとめて 1 行に"""
     hours = {}
+    since = _hour_key(fetched_at)                    # 過ぎた時間（前の日の列など）は予報ではないので記録しない
     for item in hourly or []:
         for h in item.get("hours") or []:
-            if h.get("t"):
+            if h.get("t") and h["t"] >= since:
                 hours[h["t"]] = {k: h.get(k) for k in ("temp", "wind", "wmo", "prec")}
     if not hours:
         return False

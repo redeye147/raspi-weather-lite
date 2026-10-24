@@ -69,7 +69,7 @@ def test_jma_weekly_pops_and_temps_are_read(monkeypatch, today_1013):
     assert daily[0]["code"] == "101"                      # 短期予報の天気を優先
 
 
-def test_openmeteo_fills_6th_day_from_today(monkeypatch):
+def test_openmeteo_fills_6th_day_from_today(monkeypatch, today_1013):
     """気象庁に値が無い日は Open-Meteo で補う。気象庁は明日から 5 日＝今日から 6 日目まで要るので、
     Open-Meteo は 7 日分返す（以前は今日から 5 日で切っていて、最後の日を補えなかった）。画面・キャッシュは 5 日"""
     days = [f"2026-10-{d}" for d in range(13, 20)]
@@ -114,7 +114,7 @@ def test_openmeteo_uses_jma_model(monkeypatch):
     assert len(urls) == 1 and "&models=jma_seamless" in urls[0]
 
 
-def test_openmeteo_jma_model_has_no_pop(monkeypatch):
+def test_openmeteo_jma_model_has_no_pop(monkeypatch, today_1013):
     """気象庁モデルは降水確率を出さない（null）→「None%」ではなく「-%」。その日も捨てない"""
     monkeypatch.setattr(fw.SESS, "get", lambda url, timeout=10: _Resp(_om()))
     monkeypatch.setattr(fw, "CACHE_FILE", "/nonexistent-dir/x/cache.json")
@@ -122,7 +122,7 @@ def test_openmeteo_jma_model_has_no_pop(monkeypatch):
     assert len(daily) == 7 and daily[0]["pop"] == "-%" and daily[0]["temp"] == "25/16"
 
 
-def test_openmeteo_falls_back_when_jma_model_fails(monkeypatch, caplog):
+def test_openmeteo_falls_back_when_jma_model_fails(monkeypatch, caplog, today_1013):
     """気象庁モデルで取れなければ、指定なし（Open-Meteo の自動選択）で取り直す"""
     urls = []
 
@@ -278,3 +278,29 @@ def test_jma_weekly_reliability(monkeypatch):
     monkeypatch.setattr(fw.datetime, "date", D)
     daily = fw.fetch_weather_jma("230000", ["230010"])[1]
     assert [d["rel"] for d in daily] == ["", "", "A", "A", "B"]
+
+
+def test_openmeteo_past_day_fills_yesterday_columns(monkeypatch):
+    """past_days=1：前の日の分も受け取り、0〜6 時に出す前の日の列が「？」にならない。
+    １週間の天気は今日から（前の日の分は使わない）"""
+    class D(datetime.date):
+        @classmethod
+        def today(cls):
+            return datetime.date(2026, 10, 25)
+    monkeypatch.setattr(fw.datetime, "date", D)
+    times = [f"2026-10-24T{h:02d}:00" for h in range(0, 24)] + [f"2026-10-25T{h:02d}:00" for h in range(0, 24)]
+    om = {"hourly": {"time": times, "weathercode": [3] * 48, "precipitation": [0.0] * 48,
+                     "temperature_2m": [15.0] * 48, "windspeed_10m": [10.8] * 48, "winddirection_10m": [90] * 48},
+          "daily": {"time": [f"2026-10-{d}" for d in range(24, 32)], "weathercode": [1] * 8,
+                    "precipitation_probability_max": [None] * 8,
+                    "temperature_2m_max": [20.0] * 8, "temperature_2m_min": [10.0] * 8}}
+    urls = []
+    monkeypatch.setattr(fw.SESS, "get", lambda url, timeout=10: (urls.append(url), _Resp(om))[1])
+    monkeypatch.setattr(fw, "CACHE_FILE", "/nonexistent-dir/x/cache.json")
+    targets = [datetime.datetime(2026, 10, 24, h, tzinfo=fw.JST) for h in (6, 9, 12, 15, 18, 21)] + \
+              [datetime.datetime(2026, 10, 25, h, tzinfo=fw.JST) for h in (0, 3, 6, 9)]
+    monkeypatch.setattr(fw, "get_target_datetimes", lambda: targets)
+    hourly, daily = fw.fetch_weather_openmeteo(35.7, 140.4)
+    assert "past_days=1" in urls[0]
+    assert all(h["code"] == "200" and h["temp"] == "15℃" for h in hourly)      # 前の日の列も埋まる
+    assert daily[0]["date"] == "2026-10-25" and len(daily) == 7

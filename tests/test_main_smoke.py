@@ -226,6 +226,8 @@ def test_aviation_band_hidden_but_metar_still_fetched(signage, monkeypatch):
         state.update({"metar": fresh, "raw": "RJGG"})
     monkeypatch.setattr(aviation, "start_fetch_in_background", fetch)
     monkeypatch.setattr(main01, "aviation_band_visible", lambda now: True)
+    # 夜間（0:00〜6:06）は取りに行かない決まりなので、試験する時刻によらず「取りに行く時刻」とみなす
+    monkeypatch.setattr(main01, "aviation_fetch_due", lambda now, latest, last: None if latest else (now, 0))
     shown = []
     real = main01.draw_header
     monkeypatch.setattr(main01, "draw_header", lambda *a, **k: (shown.append(k.get("aviation_metar")), real(*a, **k)))

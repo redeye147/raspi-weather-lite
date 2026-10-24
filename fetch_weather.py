@@ -64,6 +64,7 @@ def weather_severity(code):
     return (rank, _INTENSITY.get(code, 0), code)
 
 
+PAST_DAYS = 1
 OPENMETEO_MODEL = "jma_seamless"   # 今日の天気（3 時間ごと）は気象庁の数値予報モデルを使う
 def fetch_weather_openmeteo(latitude=LATITUDE, longitude=LONGITUDE):
 
@@ -88,6 +89,9 @@ def fetch_weather_openmeteo(latitude=LATITUDE, longitude=LONGITUDE):
         "&hourly=weathercode,precipitation,temperature_2m,windspeed_10m,winddirection_10m"
         "&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weathercode"
         "&timezone=Asia/Tokyo"
+        # 前の日の分も受け取る。今日の天気の表は朝 6 時始まりなので 0〜6 時は前の日の列を出す。
+        # 取っておいた予報が古い（電源が切れていた・夜中に再起動）と、前の日の列が「？」になっていた
+        f"&past_days={PAST_DAYS}"
     )
 
     # 気象庁の数値予報モデル（日本付近は約 5km・1 時間ごとの MSM、その先は GSM）を指定して取得。
@@ -210,7 +214,10 @@ def fetch_weather_openmeteo(latitude=LATITUDE, longitude=LONGITUDE):
 
     daily = []
 
+    today = datetime.date.today().isoformat()
     for i, t in enumerate(d_times):
+        if t < today:            # past_days で付いてくる前の日の分は、１週間の天気には使わない
+            continue
 
         def val(key):
             v = dd.get(key) or []

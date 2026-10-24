@@ -108,3 +108,12 @@ def test_old_csv_header_upgraded(tmp_path):
         rows = list(csv.DictReader(f))
     assert [r["obs_time"] for r in rows] == ["2026-10-24 09:00", "2026-10-24 10:00"]
     assert rows[0]["temp"] == "18" and rows[1]["temp"] == "19" and None not in rows[1]
+
+
+def test_past_hours_not_recorded(tmp_path):
+    """過ぎた時間（past_days で付いてくる前の日の列）は予報として記録しない"""
+    import json
+    d = str(tmp_path)
+    verify.record_forecast(_hourly(0, 15.0, 2.0, 0, 0.0), datetime.datetime(2026, 10, 24, 11, 0, tzinfo=JST), d)
+    with open(os.path.join(d, "fc_20261024.jsonl"), encoding="utf-8") as f:
+        assert sorted(json.loads(f.readline())["hours"]) == ["2026-10-24T11:00", "2026-10-24T12:00"]
