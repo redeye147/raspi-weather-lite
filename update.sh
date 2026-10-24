@@ -105,10 +105,11 @@ if [ "$PULL_OUT" = "__fail__" ]; then
     exit 1
 fi
 [ -f "$CFG_BAK" ] && cp "$CFG_BAK" "$CFG"
+sync    # 取ってきたコードと戻した設定を SD に書き込む（自動更新の直後に電源が切れても壊れないように）
 # 天気の取得間隔：以前の既定（2 時間）のままの Pi は 1 時間に（2026-10。気象庁モデルの新しい計算を早く反映）。
 # 2 時間以外に変えてある Pi はそのまま
 python3 - "$CFG" <<'PYEOF' || true
-import json, sys
+import json, os, sys
 p = sys.argv[1]
 try:
     c = json.load(open(p))
@@ -116,7 +117,10 @@ except Exception:
     sys.exit(0)
 if float(c.get("interval_hours", 2.0)) == 2.0:
     c["interval_hours"] = 1.0
-    json.dump(c, open(p, "w"), ensure_ascii=False, indent=2)
+    with open(p + ".tmp", "w") as f:
+        json.dump(c, f, ensure_ascii=False, indent=2)
+        f.flush(); os.fsync(f.fileno())
+    os.replace(p + ".tmp", p)
     print("  天気の取得間隔を 2 時間 → 1 時間に変更")
 PYEOF
 echo -e "  ${GREEN}完了${NC}"
@@ -232,6 +236,7 @@ if [ "$AUTO" = 0 ] && command -v nmcli >/dev/null && ! nmcli -g NAME connection 
 fi
 
 # ── [5/5] 完了 ──────────────────────────────────────────
+sync
 echo -e "\n${GREEN}✓ 更新完了！${NC}"
 [ "$AUTO" = 1 ] && exit 0
 echo ""

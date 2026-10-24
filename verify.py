@@ -19,10 +19,12 @@ SD カードへの書き込みは 1 時間に数 KB。予報の記録は 3 日�
 import csv
 import datetime
 import glob
+import io
 import json
 import os
 
 import obs_now
+import safe_write
 from config import CODE_MAPPING
 
 BASE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache", "verify")
@@ -169,8 +171,7 @@ def record_observation(metar, radar_mmh=None, base_dir=None):
         if new:
             w.writeheader()
         w.writerow(row)
-    with open(state, "w") as f:
-        f.write(obs_jst.isoformat())
+    safe_write.write_text(state, obs_jst.isoformat())
     return True
 
 
@@ -185,11 +186,12 @@ def _upgrade_header(path):
         return
     if header == FIELDS:
         return
-    with open(path, "w", encoding="utf-8", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=FIELDS, extrasaction="ignore")
-        w.writeheader()
-        for r in rows:
-            w.writerow({k: r.get(k) or "" for k in FIELDS})
+    buf = io.StringIO()
+    w = csv.DictWriter(buf, fieldnames=FIELDS, extrasaction="ignore")
+    w.writeheader()
+    for r in rows:
+        w.writerow({k: r.get(k) or "" for k in FIELDS})
+    safe_write.write_text(path, buf.getvalue())                # 書き直しの途中で電源が切れても記録が消えないように
 
 
 def _prune(base_dir, now):

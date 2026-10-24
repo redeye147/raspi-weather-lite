@@ -13,6 +13,8 @@ import json
 import os
 import subprocess
 
+import safe_write
+
 app = Flask(__name__)
 # セッション鍵は起動ごとに作り直す（再起動するとパスワードの入力し直しになる）
 app.secret_key = secrets.token_bytes(32)
@@ -39,8 +41,7 @@ def _load_config() -> dict:
 def _save_config(updates: dict) -> None:
     cfg = _load_config()
     cfg.update(updates)
-    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-        json.dump(cfg, f, indent=2, ensure_ascii=False)
+    safe_write.write_json(CONFIG_PATH, cfg, indent=2)    # 電源が突然切れても設定が消えないように
 
 
 def _admin_password() -> str:

@@ -12,6 +12,8 @@ import threading
 import time
 from collections import defaultdict
 
+import safe_write
+
 from config import (
     LATITUDE,
     LONGITUDE,
@@ -244,15 +246,8 @@ def fetch_weather_openmeteo(latitude=LATITUDE, longitude=LONGITUDE):
 
     # -------- キャッシュ保存 ----------
     try:
-        os.makedirs(os.path.dirname(CACHE_FILE), exist_ok=True)
-
-        with open(CACHE_FILE, "w") as f:
-            json.dump(
-                {"hourly": hourly, "daily": daily[:5]},
-                f,
-                default=iso_dump_default,
-                ensure_ascii=False
-            )
+        # 電源が突然切れても前の予報が残るように（safe_write）
+        safe_write.write_json(CACHE_FILE, {"hourly": hourly, "daily": daily[:5]}, default=iso_dump_default)
     except:
         pass
     return hourly, daily

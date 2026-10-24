@@ -11,6 +11,7 @@ import os
 import subprocess
 import time
 
+import safe_write
 from utils import JST
 
 
@@ -55,11 +56,9 @@ def _json_default(o):
 def save_snapshot(state: dict) -> None:
     """表示に必要なデータ一式を保存（取得・更新が成功したときだけ呼ぶ。SD 書込みを減らすため）"""
     try:
-        os.makedirs(os.path.dirname(SNAPSHOT_FILE), exist_ok=True)
-        tmp = SNAPSHOT_FILE + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(state, f, default=_json_default, ensure_ascii=False)
-        os.replace(tmp, SNAPSHOT_FILE)
+        # 電源が突然切れても前のスナップショットが残るように（safe_write）。
+        # 一時ファイルの名前をスレッドごとに分け、同時に保存したときの「.tmp が無い」失敗も起きない
+        safe_write.write_json(SNAPSHOT_FILE, state, default=_json_default)
     except Exception as e:
         logging.warning(f"スナップショット保存失敗: {e}")
 

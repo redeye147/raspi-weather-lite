@@ -12,6 +12,8 @@ import datetime
 from typing import Dict, Tuple, Any, List
 
 import requests
+
+import safe_write
 from requests.adapters import HTTPAdapter, Retry
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -47,9 +49,7 @@ def _load_cache(path: str) -> Dict[str, Any]:
 
 def _save_cache(path: str, data: Dict[str, Any]) -> None:
     try:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        safe_write.write_json(path, data, indent=2)       # 電源が突然切れても前の内容が残るように
     except Exception:
         pass
 
