@@ -284,7 +284,10 @@ def _time_row_surface(hourly, col_w, row_h):
 
 
 # 週間予報の信頼度（気象庁）：A 確度が高い・B やや高い・C やや低い
-REL_COLORS = {"A": (0, 140, 70), "B": (220, 130, 0), "C": (210, 40, 40)}
+# 緑の濃淡で「濃い＝確か・薄い＝あまり確かでない」。赤・橙は警報・高温など注意の意味に使うので避ける
+# （A の緑に白を B 30%・C 82% 混ぜた色。C は地が薄いので文字を濃い緑に）
+REL_COLORS = {"A": (0, 140, 70), "B": (76, 174, 126), "C": (209, 234, 222)}
+REL_TEXT_COLORS = {"A": (255, 255, 255), "B": (255, 255, 255), "C": (0, 110, 55)}
 REL_TEXT = {"A": "高い", "B": "やや高い", "C": "やや低い"}
 
 
@@ -295,7 +298,7 @@ def _draw_rel_badge(screen, base_font_path, rel, right_x, center_y, size):
     rect = pygame.Rect(0, 0, size, size)
     rect.midright = (right_x, center_y)
     pygame.draw.rect(screen, REL_COLORS[rel], rect, border_radius=max(2, size // 5))
-    t = get_font(base_font_path, max(10, int(size * 0.75)), bold=True).render(rel, True, (255, 255, 255))
+    t = get_font(base_font_path, max(10, int(size * 0.75)), bold=True).render(rel, True, REL_TEXT_COLORS[rel])
     screen.blit(t, (rect.centerx - t.get_width() // 2, rect.centery - t.get_height() // 2))
 
 
