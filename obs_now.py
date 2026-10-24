@@ -56,8 +56,10 @@ def apply_observation(hourly, cur, metar, now_utc=None):
         ms = round(metar["wind_kt"] * KT_TO_MS)
         item["wind_val"] = ms
         item["wind"] = f"{ms} m/s"
-        item["wind_dir"] = metar.get("wind_dir")      # 変動（VRB）は None → 矢印なし
-    item["obs_label"] = f"実況{obs.astimezone(datetime.timezone(datetime.timedelta(hours=9))):%H:%M}"
+        item["wind_dir"] = metar.get("wind_dir")
+        # 風向が変動（VRB）：向きが無いので、矢印の代わりに「---」（無風と同じ印）
+        item["wind_variable"] = metar.get("wind_dir") is None and ms > 0
+    item["observed"] = True                           # 実況で置き換えた列（画面には何も足さない）
     out = list(hourly)
     out[cur] = item
     return out

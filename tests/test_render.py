@@ -417,19 +417,19 @@ def test_header_sun_icons_instead_of_text(w, h):
 
 
 @pytest.mark.parametrize("w, h", RESOLUTIONS)
-def test_observation_label_in_temperature_cell(w, h):
-    """実況で置き換えた列は、気温の右に「実況10:00」（狭い画面は「実況」）を青で書き、列からはみ出さない"""
+def test_variable_wind_shows_dashes(w, h):
+    """実況で風向が変動（VRB）のときは、矢印の代わりに「---」（向きなし）。ほかの列は矢印"""
     import weather_draw
     hourly = _hourly()
-    hourly[1] = dict(hourly[1], obs_label="実況10:00", temp="19℃", temp_val=19)
+    hourly[1] = dict(hourly[1], wind_val=1, wind="1 m/s", wind_dir=None, wind_variable=True, observed=True)
     screen = pygame.Surface((w, h))
     draw_weather(screen, w, h, hourly, _daily(), {}, BASE_FONT, "警報・注意報なし", "", "", "天気更新 10:24",
                  "成田空港", "05:44", "17:09", "", "3%", now=datetime.datetime(2026, 10, 11, 5, 0, tzinfo=JST))
     arr = pygame.surfarray.array3d(screen)
-    blue = np.all(arr == weather_draw.OBS_LABEL_COLOR, axis=2)
+    dashes = np.all(arr == weather_draw.CALM_MARK_COLOR, axis=2)
     margin_x = int(w * 0.05)
     col_w = int((w - margin_x * 2) // 11)
     x = margin_x + 2 * col_w
-    assert blue[x:x + col_w].sum() > 10
-    xs = np.where(blue.any(axis=1))[0]
-    assert xs.min() >= x and xs.max() < x + col_w
+    vrb, normal = dashes[x:x + col_w].sum(), dashes[x - col_w:x].sum()
+    # 2 列目（VRB）に「---」。1 列目（風向あり）は矢印の縁の点が数個まじるだけ
+    assert vrb > 20 and vrb > normal * 4
