@@ -670,10 +670,20 @@ def draw_weather(
                 text = item["pop"]
                 try:
                     v = float(str(text).replace("mm", ""))
+                except Exception:
+                    v = None
+                if v is not None:
+                    # 1 時間あたりの雨の量（列の 3 時間のうち、いちばん多い 1 時間）なので「mm/h」。単位は風速と同じく小さめ
                     if v >= 3.0:
                         color, bold = (0, 0, 255), True
-                except Exception:
-                    pass
+                    val_surf = get_font(base_font_path, 22, bold=bold).render(f"{v:.1f}", True, color)
+                    unit_surf = (get_font(base_font_path, 20).render(" mm/h", True, color) if col_w >= 140
+                                 else get_font(base_font_path, 15).render("mm/h", True, color))
+                    y_pos = y + (row_heights[row_idx] - val_surf.get_height()) // 2
+                    screen.blit(val_surf, (x + 5, y_pos))
+                    screen.blit(unit_surf, (x + 5 + val_surf.get_width(),
+                                            y_pos + val_surf.get_height() - unit_surf.get_height() - (1 if col_w >= 140 else 3)))
+                    continue
 
             elif row_idx == 4:
                 text = item["temp"]
