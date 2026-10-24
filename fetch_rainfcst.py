@@ -42,21 +42,28 @@ def hour_key(dt):
 
 
 def forecast_targets(times):
-    """時刻一覧から、最新の発表 (basetime, member, element) と、その予報の時刻（毎正時・AHEAD_H 時間先まで）の並び。
-    一覧には別の要素（slmcs など）や、毎正時でない時刻の発表（速報版 immed）も混ざっているので、
-    rasrf があって毎正時の予報がある発表のうち、いちばん新しいものを使う"""
+    """時刻一覧から、最新の発表 (basetime, member, element) と、その予報の時刻（AHEAD_H 時間先まで）の並び。
+    一覧には別の要素（slmcs など）や、15 時間先まで（7 時間先から）の発表も混ざっているので、
+    rasrf があって AHEAD_H 時間先までの予報がある発表のうち、いちばん新しいものを使う。
+    速報版（immed）は 10 分ごとの発表で、予報の時刻も 13:10・14:10 のように正時からずれる"""
     by_base = {}
     for t in times:
         b, v = t.get("basetime"), t.get("validtime")
         if not b or not v or v <= b or ELEMENT not in (t.get("elements") or []):
             continue
-        if v[10:14] != "0000" or v > (_utc(b) + datetime.timedelta(hours=AHEAD_H)).strftime("%Y%m%d%H%M%S"):
+        lead = (_utc(v) - _utc(b)).total_seconds()
+        if lead > AHEAD_H * 3600 or lead % 3600:          # 発表から 1 時間おきの時刻だけ（1 時間の雨の区切り）
             continue
         by_base.setdefault((b, t.get("member") or "none"), set()).add(v)
     if not by_base:
         return None, []
     base, member = max(by_base, key=lambda k: (k[0], k[1] == "none"))   # 同じ時刻なら none（ふつうの発表）を
     return (base, member, ELEMENT), sorted(by_base[(base, member)])
+
+
+def nearest_hour(dt):
+    """13:10 → 13:00・13:40 → 14:00（その時刻までの 1 時間の雨を、いちばん重なる「正時までの 1 時間」とみなす）"""
+    return (dt + datetime.timedelta(minutes=30)).replace(minute=0, second=0, microsecond=0)
 
 
 def fetch_rainfcst(lat, lon, session=requests):
@@ -76,7 +83,7 @@ def fetch_rainfcst(lat, lon, session=requests):
             tiles = fr._tiles_at(base, v, lat, lon, session, z=z, url=TILE_URL, member=member, element=element)
             if tiles:
                 zooms = [z]                       # 取れた細かさを、あとの時刻にも使う
-                hours[hour_key(_utc(v))] = fr.max_mmh_near(lat, lon, tiles, z=z)
+                hours[hour_key(nearest_hour(_utc(v)))] = fr.max_mmh_near(lat, lon, tiles, z=z)
                 break
     return {"status": "ok", "at": _utc(base).astimezone(JST), "hours": hours}
 
