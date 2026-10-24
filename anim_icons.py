@@ -3,6 +3,8 @@ anim_icons.py
 今の時間帯（今日の天気の青い枠の列）の天気アイコンだけを動かす。
 
   晴れ（100）        太陽の光がなめらかに回る（光 1 本分を 2 秒で回るとつなぎ目なく元に戻る）
+  晴れ時々曇り（101）・晴れ一時雨（102）・晴れ一時雪（104）
+                     左の太陽だけ回り、右の雲・傘・雪の結晶は動かさない（雲などは太陽の上に重ねる）
   夜の晴れ（700・701） 月は動かさず、まわりの小さな星が 1 つずつ、ふわっと明るくなって消える
   雨（202・300・302） 雨粒が落ちる       大雨（306） 雨粒が多く・速く・太く・斜め
   雪（400）          雪がゆらゆら舞う   大雪（405） 雪が多く・速く・風で横に流れる
@@ -24,6 +26,7 @@ FPS = 6
 
 KINDS = {
     "100": "sun",
+    "101": "sunpart", "102": "sunpart", "104": "sunpart",
     "700": "stars", "701": "stars",
     "202": "rain", "300": "rain", "302": "rain",
     "306": "heavyrain",
@@ -60,7 +63,41 @@ def _scaled(code, w, h):
     return pygame.transform.smoothscale(_raw(code), (w, h))
 
 
-def _sun_frames(code, w, h):
+def _is_sun_color(c):
+    """太陽の光・円の色（赤〜だいだい〜黄）"""
+    return c.a > 0 and c.r > 180 and c.g < 200 and c.b < 110
+
+
+def _foreground(code, src, dx):
+    """code の絵のうち、太陽（100.png を dx ずらしたもの）と違う所＝右の雲・傘・雪の結晶だけを抜き出す"""
+    img = _raw(code)
+    w, h = img.get_size()
+    fg = pygame.Surface((w, h), pygame.SRCALPHA)
+    fg.fill((0, 0, 0, 0))
+    for y in range(h):
+        for x in range(w):
+            p = img.get_at((x, y))
+            if p.a == 0 or _is_sun_color(p):
+                continue
+            q = src.get_at((x - dx, y)) if 0 <= x - dx < src.get_width() else pygame.Color(0, 0, 0, 0)
+            if abs(p.r - q.r) + abs(p.g - q.g) + abs(p.b - q.b) + abs(p.a - q.a) > 40:
+                fg.set_at((x, y), p)
+    return fg
+
+
+def _sun_left(img):
+    xs = [x for x in range(img.get_width()) for y in range(0, img.get_height(), 2) if _is_sun_color(img.get_at((x, y)))]
+    return min(xs) if xs else 0
+
+
+def _sunpart_frames(code, w, h):
+    """晴れ時々曇りなど：左の太陽（100.png と同じ大きさ）だけを回し、右の雲などは止めたまま上に重ねる"""
+    src = _raw("100")
+    dx = _sun_left(_raw(code)) - _sun_left(src)              # 太陽の位置のずれ（101 は 100 より 30 左）
+    return _sun_frames("100", w, h, dx=dx, overlay=_foreground(code, src, dx))
+
+
+def _sun_frames(code, w, h, dx=0, overlay=None):
     """元の絵（150×90）の中で太陽だけを回してから縮める（縮めたあとに回すと形がゆがんでガタつく）"""
     src = _raw(code)
     r = src.get_bounding_rect(min_alpha=40)
@@ -75,7 +112,9 @@ def _sun_frames(code, w, h):
         # 半コマずらして回す：0 度の絵だけ回転のなめらか処理を通らず形がくっきりして、くり返しの切れ目が目立つのを防ぐ
         rot = pygame.transform.rotozoom(part, -(k + 0.5) * (360 / SUN_SYMMETRY) / n, 1.0)
         out = pygame.Surface(src.get_size(), pygame.SRCALPHA)
-        out.blit(rot, (sq.centerx - rot.get_width() // 2, sq.centery - rot.get_height() // 2))
+        out.blit(rot, (sq.centerx + dx - rot.get_width() // 2, sq.centery - rot.get_height() // 2))
+        if overlay is not None:
+            out.blit(overlay, (0, 0))
         frames.append(pygame.transform.smoothscale(out, (w, h)))
     return frames
 
@@ -164,6 +203,8 @@ def frames_for(icon_code, w, h):
         try:
             if kind == "sun":
                 frames = _sun_frames(icon_code, w, h)
+            elif kind == "sunpart":
+                frames = _sunpart_frames(str(icon_code), w, h)
             elif kind == "stars":
                 frames = _star_frames(icon_code, w, h)
             elif kind in ("rain", "heavyrain"):

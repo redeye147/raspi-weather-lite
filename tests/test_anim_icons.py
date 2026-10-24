@@ -17,7 +17,8 @@ def display():
 
 
 @pytest.mark.parametrize("code, kind, n", [
-    ("100", "sun", 12), ("700", "stars", 36), ("701", "stars", 24),
+    ("100", "sun", 12), ("101", "sunpart", 12), ("102", "sunpart", 12), ("104", "sunpart", 12),
+    ("700", "stars", 36), ("701", "stars", 24),
     ("300", "rain", 12), ("302", "rain", 12), ("306", "heavyrain", 12),
     ("400", "snow", 12), ("405", "heavysnow", 12),
 ])
@@ -28,9 +29,9 @@ def test_frames_for_animated_icons(code, kind, n):
     assert pygame.image.tobytes(frames[0], "RGBA") != pygame.image.tobytes(frames[1], "RGBA")
 
 
-@pytest.mark.parametrize("code", ["101", "200", "350", "1000", "1000A", "999", "209"])
+@pytest.mark.parametrize("code", ["200", "350", "1000", "1000A", "999", "209"])
 def test_other_icons_stay_still(code):
-    """曇り・晴れ時々曇り（昼）・雷・高温の晴れなどは動かさない"""
+    """曇り・雷・高温の晴れなどは動かさない"""
     assert anim_icons.frames_for(code, 147, 71) is None
 
 
@@ -101,3 +102,21 @@ def test_wait_animating_just_waits_when_nothing_to_animate(monkeypatch):
     monkeypatch.setattr(main01, "_wait_ms", waits.append)
     main01._wait_animating(pygame.Surface((10, 10)), 5000)
     assert waits == [5000]
+
+
+@pytest.mark.parametrize("code", ["101", "102", "104"])
+def test_sunpart_rotates_sun_only(code):
+    """晴れ時々曇りなど：左の太陽は回り、右の雲・傘・雪の結晶は動かない。止まった絵ともほぼ同じ"""
+    import numpy as np
+    def arr(x):
+        s = pygame.Surface(x.get_size())
+        s.fill((255, 255, 255))
+        s.blit(x, (0, 0))
+        return pygame.surfarray.array3d(s).astype(int)
+    f = [arr(x) for x in anim_icons.frames_for(code, 150, 90)]
+    still = arr(pygame.image.load(os.path.join(anim_icons.ICON_DIR, f"{code}.png")).convert_alpha())
+    left = slice(0, 60)                                    # 太陽の円の所
+    right = slice(100, 150)                                # 雲・傘・雪の結晶の所（太陽の光は届かない）
+    assert np.abs(f[0][left] - f[3][left]).mean() > 1     # 太陽は回る
+    assert np.abs(f[0][right] - f[3][right]).mean() < 0.5  # 右側は動かない
+    assert np.abs(f[0][right] - still[right]).mean() < 2   # 右側は元の絵のまま
