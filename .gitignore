@@ -19,3 +19,6 @@ screenshots/
 
 # 起動時の自動更新の対象 WiFi（Pi ごとに作る）
 auto_update_ssids.txt
+
+# Pi ごとの設定（空港・取得間隔・管理者パスワードなど。setup.sh が作る。見本は config.example.json）
+config.json

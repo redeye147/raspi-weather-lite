@@ -313,8 +313,9 @@ def test_cpu_from_display_program_status(tmp_path, monkeypatch):
     import time
     import main01
     p = str(tmp_path / "status.json")
-    main01.write_status([4.0, 6.0, 8.0], p)
+    main01.write_status([4.0, 6.0, 8.0], p, airport="haneda")
     assert dg._read_status(p) == 6.0
+    assert json.load(open(p))["airport"] == "haneda"                       # 自動更新のあとの食い違いの確認用
     json.dump({"cpu_1min": 6.0, "at": time.time() - 200}, open(p, "w"))
     assert dg._read_status(p) is None                                     # 古い（表示プログラムが止まっている）
     assert dg._read_status(str(tmp_path / "none.json")) is None

@@ -67,11 +67,14 @@ CFG="$REPO_DIR/config.json"
 CFG_BAK="$HOME/.raspi-weather-config.json.bak"
 [ -f "$CFG" ] && cp "$CFG" "$CFG_BAK"
 
-# config.json は Pi ごとに書き換わるが pull の妨げになるので一旦 HEAD に戻し、pull 後に復元する
+# config.json（Pi ごとの設定）は 2026-10-25 から git で管理しない（.gitignore）。管理していないので、更新では触らない。
+# まだ git で管理していた古い版からの更新のときだけ、pull の妨げにならないよう一旦 HEAD に戻し、pull 後に復元する。
+# （以前は管理していなくても消してから復元していた。表示プログラムを先に起動する自動更新では、その間に
+#   設定を読むと既定の中部国際空港になってしまう。2026-10-25 の 112（羽田）が再起動後に中部になった）
+CFG_TRACKED=0
 if git ls-files --error-unmatch config.json &>/dev/null; then
+    CFG_TRACKED=1
     git checkout HEAD -- config.json
-else
-    rm -f "$CFG"
 fi
 # 実行権限だけの差分（chmod +x）も pull の妨げになるので戻す
 git diff HEAD --numstat | awk '$1=="0" && $2=="0" {print $3}' | while read -r f; do
@@ -88,7 +91,7 @@ for i in 1 2 3; do
     echo "$PULL_OUT"
     if echo "$PULL_OUT" | grep -qiE "could not resolve host|unable to access|failed to connect|timed out|connection reset"; then
         [ "$i" -lt 3 ] && { echo "  ネット接続エラー。10 秒後に再試行します（${i}/3）"; sleep 10; continue; }
-        [ -f "$CFG_BAK" ] && cp "$CFG_BAK" "$CFG"
+        [ "$CFG_TRACKED" = 1 ] && [ -f "$CFG_BAK" ] && cp "$CFG_BAK" "$CFG"
         echo -e "\n\033[0;31m✗ GitHub に接続できませんでした（ネット・DNS の不調）。${NC}"
         echo "  確認: ping -c 3 8.8.8.8 && getent hosts github.com"
         echo "  少し待ってから、もう一度 bash update.sh を実行してください。"
@@ -98,13 +101,13 @@ for i in 1 2 3; do
     break
 done
 if [ "$PULL_OUT" = "__fail__" ]; then
-    [ -f "$CFG_BAK" ] && cp "$CFG_BAK" "$CFG"
+    [ "$CFG_TRACKED" = 1 ] && [ -f "$CFG_BAK" ] && cp "$CFG_BAK" "$CFG"
     echo -e "\n\033[0;31m✗ git pull に失敗しました。Pi 上に GitHub に無い変更があります。${NC}"
     echo "  確認: git -C $REPO_DIR status && git -C $REPO_DIR log --oneline origin/main..HEAD"
     echo "  README の「トラブルシューティング」を参照してください。"
     exit 1
 fi
-[ -f "$CFG_BAK" ] && cp "$CFG_BAK" "$CFG"
+[ "$CFG_TRACKED" = 1 ] && [ -f "$CFG_BAK" ] && cp "$CFG_BAK" "$CFG"
 sync    # 取ってきたコードと戻した設定を SD に書き込む（自動更新の直後に電源が切れても壊れないように）
 # 天気の取得間隔：以前の既定（2 時間）のままの Pi は 1 時間に（2026-10。気象庁モデルの新しい計算を早く反映）。
 # 2 時間以外に変えてある Pi はそのまま

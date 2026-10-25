@@ -597,7 +597,7 @@ def main():
             cpu_text = format_cpu_status(cpu, get_cpu_temp())   # CPU 使用率と本体温度
             last_cpu_update = time.time()
             cpu_samples = (cpu_samples + [cpu])[-6:]             # 10 秒ごと × 6 = 直近 1 分
-            write_status(cpu_samples)
+            write_status(cpu_samples, airport=airport)
             # CPU 表示のためだけに再描画しない（全面再描画は Pi Zero W で重い）。次の分替わりで反映
 
         if now.minute != last_drawn_minute:
@@ -944,14 +944,16 @@ DISPLAY_CHECK_S = 60
 SHOW_AVIATION_BAND = False
 
 
-def write_status(cpu_samples, path=None):
+def write_status(cpu_samples, path=None, airport=None):
     """診断ページ用に、直近 1 分の CPU 使用率の平均を書く（メモリ上の /run。SD には書かない）。
-    診断ページがその場で測ると、診断を作る処理（git・nmcli など）自体の負荷で Pi Zero では 100% 近くに出ていた"""
+    診断ページがその場で測ると、診断を作る処理（git・nmcli など）自体の負荷で Pi Zero では 100% 近くに出ていた。
+    airport：今表示している空港（自動更新のあと、設定と食い違っていないかを auto_update.sh が確かめる）"""
     path = path or STATUS_FILE
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w") as f:
-            json.dump({"cpu_1min": round(sum(cpu_samples) / len(cpu_samples), 1), "at": time.time()}, f)
+            json.dump({"cpu_1min": round(sum(cpu_samples) / len(cpu_samples), 1), "at": time.time(),
+                       "airport": airport}, f)
     except (OSError, ZeroDivisionError):
         pass
 

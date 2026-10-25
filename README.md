@@ -83,14 +83,14 @@ bash ~/raspi-weather-lite/update.sh
 依存パッケージ確認 → `git pull` → systemd サービス更新 → watchdog 確認 まで行い、最後に再起動するか聞かれます（`y` で再起動）。
 更新後は画面右下のバージョン表示（コミット日時）で反映を確認できます。
 
-`config.json`（Pi ごとの空港設定）は `update.sh` が更新の前後で退避・復元するので、ポータルで空港を変えていても更新で消えたり衝突したりしません。
+`config.json`（Pi ごとの空港設定）は 2026-10-25 から git で管理していない（`.gitignore`。見本は `config.example.json`）ので、更新で消えたり衝突したりしません。`update.sh` は管理していた古い版からの更新のときだけ、更新の前後で退避・復元します。
 
 **`update.sh` が自動で行うこと**
 
 | 処理 | 目的 |
 |------|------|
 | `git config core.fileMode false` | 実行権限（`chmod +x start.sh`）の差分で pull・ブランチ切替が止まらないように |
-| `config.json` の退避 → `git pull --ff-only` → 復元 | 空港設定を保持したまま更新。失敗時は案内を表示して停止 |
+| `git pull --ff-only`（`config.json` は触らない。git で管理していた古い版からのときだけ退避 → 復元） | 空港設定を保持したまま更新。失敗時は案内を表示して停止 |
 | root の python3 で astral・pytz を確認 | `main01.service`（root）が起動失敗を繰り返さないように |
 | 旧方式の起動（`~/.profile` の main01.py・`startx`、旧 `raspi-weather.service`）を無効化 | 二重起動・X11 モード・CPU 過負荷の防止 |
 | 有線 LAN の経路優先度設定・ARP 設定を配置 | WiFi 優先、WiFi＋有線同時接続時の IP 重複誤検知の防止 |
@@ -1053,7 +1053,7 @@ raspi-weather-lite/
 ├── jma_alerts.py        # JMA警報・注意報取得
 ├── utils.py             # 共通ユーティリティ（フォントキャッシュ・QR生成など）
 ├── config.py            # 空港設定・定数
-├── config.json          # 実行時設定（空港・更新間隔）※Pi ごとに書き換わる。変更をコミットしない
+├── config.example.json  # 実行時設定（config.json）の見本。config.json は Pi ごと（setup.sh が作る。git で管理しない）
 ├── wifi_portal.py       # WiFi設定ポータル（Flask）
 ├── wifi-portal.service  # systemdユニットファイル
 ├── screenshots.py       # スクリーンショットの共通処理（保存先・最新10枚・表示プログラムへの依頼・fb0 読み取り）

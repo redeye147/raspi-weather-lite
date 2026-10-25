@@ -95,7 +95,7 @@ def test_update_moves_old_default_interval_to_one_hour():
     """以前の既定（2 時間）のままの Pi は、update.sh で 1 時間に。ほかの値はそのまま"""
     s = _read("update.sh")
     assert 'if float(c.get("interval_hours", 2.0)) == 2.0:' in s and 'c["interval_hours"] = 1.0' in s
-    assert '"interval_hours": 1.0' in _read("setup.sh") and '"interval_hours": 1.0' in _read("config.json")
+    assert '"interval_hours": 1.0' in _read("setup.sh") and '"interval_hours": 1.0' in _read("config.example.json")
 
 
 @pytest.mark.parametrize("script", ["update.sh", "setup.sh"])
@@ -118,3 +118,17 @@ def test_hdmi_noaudio(tmp_path, before, after):
     assert cfg.read_text() == after
     subprocess.run(["bash", os.path.join(REPO, "wifi_setup/hdmi_noaudio.sh"), str(cfg)], check=True, capture_output=True)
     assert cfg.read_text() == after
+
+
+def test_config_json_not_tracked_and_update_leaves_it_alone():
+    """config.json（Pi ごとの設定）は git で管理しない。update.sh は管理していないときは消したり戻したりしない
+    （表示プログラムを先に起動する自動更新で、その間に既定の中部国際空港を読んでしまった。2026-10-25 の 112）"""
+    import subprocess
+    tracked = subprocess.run(["git", "-C", REPO, "ls-files", "config.json"], capture_output=True, text=True).stdout
+    assert tracked.strip() == ""
+    assert "config.json" in _read(".gitignore").splitlines()
+    u = _read("update.sh")
+    assert 'rm -f "$CFG"' not in u
+    assert u.count('[ "$CFG_TRACKED" = 1 ] && [ -f "$CFG_BAK" ] && cp "$CFG_BAK" "$CFG"') == 3
+    a = _read("auto_update.sh")
+    assert "/run/raspi-weather/status.json" in a and '[ "$want" != "$shown" ]' in a     # 食い違っていたら起動し直す

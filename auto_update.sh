@@ -23,8 +23,20 @@ echo "[auto-update] $(date '+%F %T') WiFi「$ssid」→ 裏で最新に更新（
 if timeout 600 bash "$REPO/update.sh" --auto >> "$log" 2>&1; then
     after=$(runuser -u pi -- git -C "$REPO" rev-parse HEAD 2>/dev/null)
     echo "[auto-update] 完了 $(runuser -u pi -- git -C "$REPO" log -1 --format='%h %s' 2>/dev/null)" | tee -a "$log"
+    # 表示中の空港が設定と食い違っていないか（古い版の update.sh は更新の間 config.json を既定の中部国際空港に
+    # 戻していたので、その間に表示プログラムが設定を読むと中部になった。2026-10-25 の 112（羽田））
+    want=$(python3 -c "import json;print(json.load(open('$REPO/config.json')).get('airport','centrair'))" 2>/dev/null)
+    shown=""
+    for _ in $(seq 1 12); do                    # 表示プログラムが状態を書くまで最大 2 分待つ（10 秒ごとに書く）
+        shown=$(python3 -c "import json;print(json.load(open('/run/raspi-weather/status.json')).get('airport') or '')" 2>/dev/null)
+        [ -n "$shown" ] && break
+        sleep 10
+    done
     if [ -n "$after" ] && [ "$before" != "$after" ]; then
         echo "[auto-update] 新しい版 → 表示プログラムを起動し直す" | tee -a "$log"
+        systemctl restart main01
+    elif [ -n "$want" ] && [ -n "$shown" ] && [ "$want" != "$shown" ]; then
+        echo "[auto-update] 表示中の空港（$shown）が設定（$want）と違う → 表示プログラムを起動し直す" | tee -a "$log"
         systemctl restart main01
     fi
 else
