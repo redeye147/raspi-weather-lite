@@ -137,34 +137,48 @@ def _latest_per_type(reports):
     return list(latest.values())
 
 
+def _active_kinds(report, area_codes):
+    """1 つの発表の中で、指定の市町村に発表・継続中の警報・注意報（解除・なしは除く）"""
+    out = []
+    for item in ((report.get("warning") or {}).get("class20Items") or []):
+        if str(item.get("areaCode", "")) not in area_codes:
+            continue
+        for k in (item.get("kinds") or []):
+            status = (k.get("status") or "").strip()
+            if k.get("code") and "解除" not in status and "なし" not in status:
+                out.append(k)
+    return out
+
+
 def active_warning_names_r8(reports, area_codes) -> List[str]:
     """新しい形（r8）：指定の市町村で発表・継続中の警報・注意報名（付け加えがあれば「雷注意報（突風・ひょう）」）を、
     特別警報→警報→注意報の順で"""
     names: List[str] = []
     for r in _latest_per_type(reports):
-        w = r.get("warning") or {}
-        for item in (w.get("class20Items") or []):
-            if str(item.get("areaCode", "")) not in area_codes:
-                continue
-            for k in (item.get("kinds") or []):
-                code = str(k.get("code") or "")
-                status = (k.get("status") or "").strip()
-                if not code or "解除" in status or "なし" in status:
-                    continue
-                name = WARNING_CODES.get(code, f"警報コード{code}")    # 知らないコードも出す（体系の変更に気付けるように）
-                adds = [a for a in (k.get("additions") or []) if isinstance(a, str)]
-                if adds:
-                    name += f"（{'・'.join(adds)}）"
-                if name not in names:
-                    names.append(name)
+        for k in _active_kinds(r, area_codes):
+            code = str(k.get("code"))
+            name = WARNING_CODES.get(code, f"警報コード{code}")    # 知らないコードも出す（体系の変更に気付けるように）
+            adds = [a for a in (k.get("additions") or []) if isinstance(a, str)]
+            if adds:
+                name += f"（{'・'.join(adds)}）"
+            if name not in names:
+                names.append(name)
     rank = lambda n: 0 if "特別警報" in n else 1 if "警報" in n else 2
     return sorted(names, key=rank)
 
 
-def headline_r8(reports) -> str:
-    """いちばん新しい発表の見出し"""
-    rs = sorted(_latest_per_type(reports), key=lambda r: r.get("reportDatetime") or "")
-    return (rs[-1].get("headlineText") or "").strip() if rs else ""
+def latest_active_report(reports, area_codes):
+    """指定の市町村に発表・継続中の警報・注意報がある発表のうち、いちばん新しいもの（無ければ None）。
+    見出しはこの発表のものを使う（ほかの種類の「注意報を解除します。」を、発表中の雷注意報に添えて出さないように。
+    2026-10-25 の 118：雷注意報（突風・ひょう）の下に、別の注意報の「注意報を解除します。」が出ていた）"""
+    rs = [r for r in _latest_per_type(reports) if _active_kinds(r, area_codes)]
+    return max(rs, key=lambda r: r.get("reportDatetime") or "") if rs else None
+
+
+def headline_r8(reports, area_codes) -> str:
+    """指定の市町村に発表中の警報・注意報の発表の見出し（発表中のものが無ければ空）"""
+    r = latest_active_report(reports, area_codes)
+    return (r.get("headlineText") or "").strip() if r else ""
 
 
 def r8_feed_stale(map_time, now=None, hours=R8_STALE_HOURS) -> bool:
@@ -188,7 +202,7 @@ def fetch_warnings_r8(pref_code: str, area_codes, get_json=None):
         raise
     except Exception:
         pass                                   # 更新時刻が取れないだけなら、警報はそのまま使う
-    return active_warning_names_r8(reports, tuple(area_codes)), headline_r8(reports)
+    return active_warning_names_r8(reports, tuple(area_codes)), headline_r8(reports, tuple(area_codes))
 
 
 def _extract_warning_text(warn_json: Dict[str, Any], area_codes: Tuple[str, ...]) -> str:
@@ -231,12 +245,12 @@ def get_overview_and_warning(
         w_text = "警報・注意報：" + ("、".join(names) if names else "発表なし")
         # 見出しは 1 日以上前の発表なら出さない（警報が無い日は古い発表のまま）
         w_head = ""
-        rs = sorted(_latest_per_type(reports), key=lambda r: r.get("reportDatetime") or "")
-        if rs:
+        latest = latest_active_report(reports, tuple(area_codes))   # 発表中の警報・注意報の発表の見出しだけ
+        if latest:
             try:
-                rep_dt = datetime.datetime.fromisoformat(rs[-1]["reportDatetime"].replace("Z", "+00:00"))
+                rep_dt = datetime.datetime.fromisoformat(latest["reportDatetime"].replace("Z", "+00:00"))
                 if (datetime.datetime.now(JST) - rep_dt.astimezone(JST)).days < 1:
-                    w_head = (rs[-1].get("headlineText") or "").strip()
+                    w_head = (latest.get("headlineText") or "").strip()
             except Exception:
                 pass
     except Exception:

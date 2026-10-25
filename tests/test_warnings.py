@@ -112,7 +112,21 @@ def test_r8_latest_report_per_type_wins():
     reports = [_r8("2026-10-25T04:42:00+09:00", "VPWW61", [{"code": "14", "status": "発表"}]),
                _r8("2026-10-25T09:00:00+09:00", "VPWW61", [{"code": "14", "status": "解除"}])]
     assert jma_alerts.active_warning_names_r8(reports, ("2321600",)) == []
-    assert jma_alerts.headline_r8(R8_AICHI) in ("東部では、高波に注意してください。", "愛知県では、急な強い雨や落雷に注意してください。")
+    assert jma_alerts.headline_r8(R8_AICHI, ("2321600",)) == "愛知県では、急な強い雨や落雷に注意してください。"
+
+
+def test_r8_headline_from_active_report_only():
+    """見出しは、その市町村に発表中の警報・注意報がある発表のもの。あとから出た別の注意報の
+    「注意報を解除します。」を、発表中の雷注意報に添えない（2026-10-25 20 時の 118）"""
+    import jma_alerts
+    reports = R8_AICHI + [_r8("2026-10-25T16:30:00+09:00", "VPWW59", [{"code": "16", "status": "解除"}],
+                              "注意報を解除します。")]
+    assert jma_alerts.active_warning_names_r8(reports, ("2321600",)) == ["雷注意報（突風・ひょう）"]
+    assert jma_alerts.headline_r8(reports, ("2321600",)) == "愛知県では、急な強い雨や落雷に注意してください。"
+    cleared = reports + [_r8("2026-10-25T21:00:00+09:00", "VPWW61", [{"code": "14", "status": "解除"}],
+                             "注意報を解除します。")]
+    assert jma_alerts.active_warning_names_r8(cleared, ("2321600",)) == []        # 雷も解除 → 発表なし
+    assert jma_alerts.headline_r8(cleared, ("2321600",)) == ""
 
 
 def test_r8_fetch_and_stale_feed():
