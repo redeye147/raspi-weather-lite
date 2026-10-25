@@ -394,6 +394,9 @@ def main():
     jma_at = snap_or("jma_at", 0.0)
     # 前回値が新しくても、起動 5 分後には取り直す（次の定期取得まで最大 1 時間待たない）
     last_jma_update = (now_ts - 3600 + STARTUP_REFRESH_DELAY_S) if jma_fresh else now_ts - 3600 + DEFER_INITIAL_FETCH_S
+    # 警報・注意報だけは 10 分ごとに取り直す（天気概況は 1 時間ごとのまま）。発表から画面に出るまでを短く
+    last_warn_update = last_jma_update
+    last_warn_ok = jma_at
 
     fetcher = WeatherFetcher(cfg, args)
     if weather_fresh:
@@ -764,11 +767,27 @@ def main():
                 updated_text  = jma_data.get("updated", "")
                 overview_text = jma_data.get("overview", "")
                 last_jma_update = jma_at = time.time()
+                if new_warn != "警報取得失敗":
+                    last_warn_ok = time.time()
                 needs_redraw = True
                 _save_state()
                 logging.info(f"JMA更新完了: {warning_text}")
             except Exception as e:
                 logging.error(f"JMA更新失敗: {e}")
+            last_warn_update = time.time()
+        elif time.time() - last_warn_update >= WARNING_INTERVAL_S:
+            last_warn_update = time.time()
+            new_warn, _ = fetch_warning_data(airport)
+            if new_warn == "警報取得失敗" and time.time() - last_warn_ok < 3600:
+                pass                           # 一時的に取れないだけなら、1 時間までは前の表示のまま
+            else:
+                if new_warn != "警報取得失敗":
+                    last_warn_ok = time.time()
+                if new_warn != warning_text:
+                    logging.info(f"警報・注意報が変わった: {warning_text} → {new_warn}")
+                    warning_text = new_warn
+                    needs_redraw = True
+                    _save_state()
 
         _r = startup_refresh_action(now, time.time(), startup_refresh_at, _fetch_pending, weather_at > boot_ts)
         if _r == "fetch":
@@ -966,6 +985,7 @@ def _with_observation(hourly, now, metar, rain=None):
     except Exception as e:                       # 置き換えに失敗しても、予報のまま表示を続ける
         logging.warning(f"実況の置き換え失敗: {e}")
         return hourly
+WARNING_INTERVAL_S = 600   # 警報・注意報を取り直す間隔（2026-10-25 に 1 時間 → 10 分）
 ANIMATE = True           # 今の時間帯の天気アイコンを動かす（--no-anim で止める）
 
 

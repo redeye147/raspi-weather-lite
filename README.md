@@ -1281,7 +1281,7 @@ for r in d:
 print('表示:', active_warning_names_r8(d, ('2321600',)))"
 ```
 
-> **2026 年の新しい防災気象情報（r8）**：今までの `bosai/warning/data/warning/{県}.json` は 2026-05-28 の発表のまま止まっていて、5 か月前の注意報（常滑市は濃霧注意報）を出し続けていた（2026-10-25 に判明）。今は気象庁の警報のページと同じ `bosai/warning/data/r8/{県}.json` を使う。中身は電文の種類（`dataTypeCode`）ごとの最新の発表の一覧で、市町村（`class20Items` の `areaCode`）ごとの `kinds`（`code`・`status`・付け加えの `additions`「突風」「ひょう」など）を合わせたものが今の状態。全国の更新時刻（`r8/map_time.json`）が 2 日以上止まっていたら「警報取得失敗」にする。置き場所が変わったら `tools/warning_probe.py` で探す
+> **2026 年の新しい防災気象情報（r8）**：今までの `bosai/warning/data/warning/{県}.json` は 2026-05-28 の発表のまま止まっていて、5 か月前の注意報（常滑市は濃霧注意報）を出し続けていた（2026-10-25 に判明）。今は気象庁の警報のページと同じ `bosai/warning/data/r8/{県}.json` を使う。中身は電文の種類（`dataTypeCode`）ごとの最新の発表の一覧で、市町村（`class20Items` の `areaCode`）ごとの `kinds`（`code`・`status`・付け加えの `additions`「突風」「ひょう」など）を合わせたものが今の状態。全国の更新時刻（`r8/map_time.json`）が 2 日以上止まっていたら「警報取得失敗」にする。警報・注意報は **10 分ごと**に取り直す（天気概況は 1 時間ごと。一時的に取れないときは 1 時間までは前の表示のまま）。置き場所が変わったら `tools/warning_probe.py` で探す
 
 `表示:` の内容が画面右下に出ます。`[]` なら発表なし。
 

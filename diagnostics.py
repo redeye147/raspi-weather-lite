@@ -357,7 +357,7 @@ def _jma_item(now, snap):
     age = now.timestamp() - ts
     level = OK if age <= 90 * 60 else (WARN if age <= 3 * 3600 else BAD)
     return _item("JMA", "警報・天気概況", level, f"{_hm(ts)} 取得（{_ago(age)}）",
-                 "" if level == OK else "1時間ごとの取得ができていません")
+                 "" if level == OK else "天気概況の 1 時間ごとの取得ができていません（警報・注意報は 10 分ごと）")
 
 
 def _wbgt_item(now, snap):
