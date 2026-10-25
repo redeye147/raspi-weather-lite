@@ -10,12 +10,19 @@ fetch_thunder.py
 雷の活動度（凡例の色）
   1: 雷可能性あり  2: 雷あり  3: やや激しい雷  4: 激しい雷
 活動度 2 以上（実際に雷がある）だけを数え、空港からいちばん近い位置の距離と方向を返す。
+
+凡例の色はまだ雷の日の実物で確かめていない（2026-10-22 17:10 の 118 で、空港の観測は晴れ・雷なしなのに
+「雷接近 9.2km」が出た）。確かめるため、雷を見つけたときは
+  - 見つけた画素の色・活動度と、半径 20km の中の色の数をログに残す
+  - その解析のタイル画像（PNG）と中身のまとめを cache/thunder/ に保存する（最新 EVIDENCE_KEEP 回分）
 """
 
 import datetime
 import io
 import logging
+import json
 import math
+import os
 import threading
 
 import requests
@@ -39,6 +46,9 @@ LEVEL_COLORS = {
     3: (255, 40, 0),      # 赤
     4: (180, 0, 104),     # 紫
 }
+
+EVIDENCE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache", "thunder")
+EVIDENCE_KEEP = 10        # 雷を見つけた解析の画像を何回分残すか（1 回 数 KB〜数十 KB）
 
 DIRECTIONS = ["北", "北東", "東", "南東", "南", "南西", "西", "北西"]
 
@@ -107,6 +117,7 @@ def nearest_thunder(lat, lon, tiles: dict, z=ZOOM, km=SEARCH_KM, min_level=MIN_L
     r_px = int(km / px_km) + 2
     best = None
     max_level = 0
+    colors = {}                                    # 半径の中の色ごとの画素数（色と活動度の対応を確かめる用）
     for gy in range(int(cy) - r_px, int(cy) + r_px + 1):
         for gx in range(int(cx) - r_px, int(cx) + r_px + 1):
             img = tiles.get((gx // 256, gy // 256))
@@ -116,18 +127,54 @@ def nearest_thunder(lat, lon, tiles: dict, z=ZOOM, km=SEARCH_KM, min_level=MIN_L
             if len(c) > 3 and c[3] < 128:          # 透明 = 雷なし
                 continue
             lv = level_for_color(c)
-            if lv < min_level:
-                continue
             plat, plon = from_global_px(gx + 0.5, gy + 0.5, z)
             d, deg = distance_bearing(lat, lon, plat, plon)
             if d > km:
                 continue
+            rgba = tuple(c[:4]) if len(c) > 3 else (*tuple(c[:3]), 255)
+            colors[rgba] = colors.get(rgba, 0) + 1
+            if lv < min_level:
+                continue
             max_level = max(max_level, lv)
             if best is None or d < best["km"]:
-                best = {"km": d, "deg": deg, "dir": direction_name(deg), "level": lv}
+                best = {"km": d, "deg": deg, "dir": direction_name(deg), "level": lv, "rgba": rgba}
     if best:
         best["max_level"] = max_level
+        best["colors"] = sorted(([list(k), n, level_for_color(k)] for k, n in colors.items()),
+                                key=lambda x: -x[1])[:8]
     return best
+
+
+def describe_hit(hit):
+    """ログ用：見つけた画素の色と、半径の中の色（多い順）"""
+    cs = "・".join(f"RGBA{tuple(c)}×{n}→{lv}" for c, n, lv in hit.get("colors", []))
+    return f"活動度 {hit['level']}（RGBA{tuple(hit['rgba'])}）・半径内の色 {cs}"
+
+
+def save_evidence(valid, raw_tiles, hit, base_dir=None, keep=None):
+    """雷を見つけた解析のタイル画像と、まとめ（json）を残す。同じ解析は 1 回だけ。古いものから消す"""
+    base_dir = base_dir or EVIDENCE_DIR
+    keep = keep or EVIDENCE_KEEP
+    stamp = jst_of(valid).strftime("%Y%m%d_%H%M")
+    summary = os.path.join(base_dir, f"thns_{stamp}.json")
+    if os.path.exists(summary):
+        return False
+    os.makedirs(base_dir, exist_ok=True)
+    for (tx, ty), data in raw_tiles.items():
+        with open(os.path.join(base_dir, f"thns_{stamp}_{tx}_{ty}.png"), "wb") as f:
+            f.write(data)
+    with open(summary, "w", encoding="utf-8") as f:
+        json.dump({"valid": valid, "hit": {k: v for k, v in hit.items()}, "tiles": [list(t) for t in raw_tiles]},
+                  f, ensure_ascii=False, indent=1)
+    stamps = sorted({n[5:18] for n in os.listdir(base_dir) if n.startswith("thns_")})
+    for old in stamps[:-keep]:
+        for n in os.listdir(base_dir):
+            if n.startswith(f"thns_{old}"):
+                try:
+                    os.remove(os.path.join(base_dir, n))
+                except OSError:
+                    pass
+    return True
 
 
 def _load_png(data: bytes):
@@ -135,8 +182,9 @@ def _load_png(data: bytes):
     return pygame.image.load(io.BytesIO(data), "tile.png")
 
 
-def fetch_tiles(lat: float, lon: float, km=SEARCH_KM, z=ZOOM, session=requests):
-    """最新の解析時刻と、空港から半径 km を覆うタイル {(tx, ty): 画像} を返す。((base, valid), tiles)"""
+def fetch_tiles(lat: float, lon: float, km=SEARCH_KM, z=ZOOM, session=requests, raw=None):
+    """最新の解析時刻と、空港から半径 km を覆うタイル {(tx, ty): 画像} を返す。((base, valid), tiles)
+    raw に辞書を渡すと、元の PNG のバイト列も {(tx, ty): bytes} で入れる"""
     r = get_with_retry(TIMES_URL, session=session, headers=_HEADERS, timeout=TIMEOUT)
     r.raise_for_status()
     latest = latest_analysis(r.json())
@@ -151,6 +199,8 @@ def fetch_tiles(lat: float, lon: float, km=SEARCH_KM, z=ZOOM, session=requests):
             continue
         tr.raise_for_status()
         tiles[(tx, ty)] = _load_png(tr.content)
+        if raw is not None:
+            raw[(tx, ty)] = tr.content
     return latest, tiles
 
 
@@ -163,10 +213,19 @@ def fetch_thunder(lat: float, lon: float, session=requests):
     """最新の雷の解析を調べる。
     戻り値 {"status": "ok", "at": datetime(JST), "hit": nearest_thunder の結果 or None}
     取得できないときは {"status": "error", "error": "..."}"""
-    latest, tiles = fetch_tiles(lat, lon, session=session)
+    raw = {}
+    latest, tiles = fetch_tiles(lat, lon, session=session, raw=raw)
     if latest is None:
         return {"status": "error", "error": "雷の解析時刻が見つからない"}
-    return {"status": "ok", "at": jst_of(latest[1]), "hit": nearest_thunder(lat, lon, tiles)}
+    hit = nearest_thunder(lat, lon, tiles)
+    if hit:
+        try:
+            if save_evidence(latest[1], raw, hit):
+                logging.info(f"[thunder] {jst_of(latest[1]):%H:%M} 解析 {hit['dir']} {hit['km']:.1f}km "
+                             f"{describe_hit(hit)}（画像を cache/thunder/ に保存）")
+        except Exception as e:
+            logging.info(f"[thunder] 画像の保存に失敗: {e}")
+    return {"status": "ok", "at": jst_of(latest[1]), "hit": hit}
 
 
 _FAILURES = FailureLog("雷ナウキャスト")      # 一時的な失敗は INFO、15 分以上続いたら WARNING
@@ -206,7 +265,8 @@ class ThunderState:
         hit = result.get("hit")
         if not hit:
             return
-        info = {"km": hit["km"], "dir": hit["dir"], "at": result["at"]}
+        info = {"km": hit["km"], "dir": hit["dir"], "at": result["at"],
+                "level": hit.get("level"), "rgba": hit.get("rgba")}
         self.watch = info
         if hit["km"] <= NEAR_KM:
             self.near = info

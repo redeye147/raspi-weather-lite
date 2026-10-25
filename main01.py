@@ -743,7 +743,9 @@ def main():
             if _kind != shown_thunder_kind:
                 # テスト表示（--thunder-test）は診断ページの「直近の警告」に残さない
                 (logging.info if args.thunder_test else logging.warning)(
-                    f"雷: {_kind} {_new['dir']} {_new['km']:.1f}km（{_new['at']:%H:%M} 解析）" if _new else "雷: 解除")
+                    f"雷: {_kind} {_new['dir']} {_new['km']:.1f}km（{_new['at']:%H:%M} 解析"
+                    + (f"・活動度 {_new['level']} RGBA{tuple(_new['rgba'])}" if _new.get("rgba") else "") + "）"
+                    if _new else "雷: 解除")
                 shown_thunder_kind = _kind
             thunder_info = _new
             needs_redraw = True

@@ -1,5 +1,6 @@
 """雷ナウキャスト（fetch_thunder）：時刻一覧の読み方・距離と方向・色→活動度・表示の保持"""
 import datetime
+import os
 
 import pytest
 
@@ -139,8 +140,12 @@ class FakeResp:
 
 
 def test_fetch_thunder_with_png_tiles(monkeypatch, tmp_path):
-    """実際の PNG を読み込む経路：雷のあるタイルを 1 枚だけ返し、ほかは 404"""
+    """実際の PNG を読み込む経路：雷のあるタイルを 1 枚だけ返し、ほかは 404。
+    雷を見つけたら、その解析のタイル画像とまとめを残す（色と活動度の対応を確かめる用）"""
+    import json
+    import os
     import pygame
+    monkeypatch.setattr(ft, "EVIDENCE_DIR", str(tmp_path / "ev"))
     x, y = ft.to_global_px(LAT + 0.08, LON, ft.ZOOM)
     target = (int(x) // 256, int(y) // 256)
     surf = pygame.Surface((256, 256), pygame.SRCALPHA)
@@ -165,3 +170,19 @@ def test_fetch_thunder_with_png_tiles(monkeypatch, tmp_path):
     assert r["at"] == datetime.datetime(2026, 8, 20, 10, 10, tzinfo=JST)
     assert r["hit"]["dir"] == "北" and r["hit"]["level"] == 3
     assert all("/20260820011000/none/20260820011000/surf/thns/" in u for u in urls[1:])
+    assert r["hit"]["rgba"] == (*ft.LEVEL_COLORS[3], 255)
+    files = sorted(os.listdir(tmp_path / "ev"))
+    assert files == sorted([f"thns_20260820_1010_{target[0]}_{target[1]}.png", "thns_20260820_1010.json"])
+    saved = json.load(open(tmp_path / "ev" / "thns_20260820_1010.json"))
+    assert saved["hit"]["level"] == 3 and saved["hit"]["colors"][0][2] == 3
+    assert "活動度 3" in ft.describe_hit(r["hit"])
+
+
+def test_evidence_keeps_latest_only(tmp_path):
+    d = str(tmp_path)
+    hit = {"km": 5.0, "dir": "北", "level": 2, "rgba": (255, 153, 0, 255), "colors": []}
+    for m in range(0, 60, 10):
+        assert ft.save_evidence(f"20260820{1 + m // 60:02d}{m:02d}00", {(1, 2): b"png"}, hit, base_dir=d, keep=3)
+    assert not ft.save_evidence("20260820015000", {(1, 2): b"png"}, hit, base_dir=d, keep=3)   # 同じ解析は 1 回だけ
+    stamps = sorted({n[5:18] for n in os.listdir(d)})
+    assert stamps == ["20260820_1030", "20260820_1040", "20260820_1050"]

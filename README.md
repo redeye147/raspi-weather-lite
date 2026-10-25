@@ -674,6 +674,16 @@ python3 ~/raspi-weather-lite/tools/thunder_probe.py        # 半径 20km
 python3 ~/raspi-weather-lite/tools/thunder_probe.py 300    # 半径 300km（遠くで雷が出ている日に、色と活動度の対応を確かめる）
 ```
 
+**雷を見つけたときの記録**：色と活動度の対応はまだ実物で確かめていない（2026-10-22 17:10 の 118 で、空港の観測は晴れ・雷なしなのに「雷接近」が出た）。確かめるため、雷を見つけたときは
+- 診断ページの「直近の警告」の行に、見つけた画素の活動度と色（例 `雷: near 南東 9.2km（17:10 解析・活動度 2 RGBA(255, 153, 0, 255)）`）
+- ログに、半径 20km の中の色と画素数（多い順）
+- `~/raspi-weather-lite/cache/thunder/` に、その解析のタイル画像（PNG）とまとめ（json）。最新 10 回分
+
+```bash
+ls ~/raspi-weather-lite/cache/thunder/
+scp 'pi@192.168.1.118:~/raspi-weather-lite/cache/thunder/*' ~/Desktop/thunder/    # PC に持ってきて画像を見る
+```
+
 ### WBGTバッジ
 
 環境省「熱中症予防情報サイト」の WBGT 予測値を取得し、ヘッダー右端にバッジ表示します。
