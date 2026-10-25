@@ -74,7 +74,8 @@ def main():
     for name in ("map_time", "map"):
         st, body = get(BASE + f"/bosai/warning/data/r8/{name}.json")
         print(f"\n/bosai/warning/data/r8/{name}.json: HTTP {st}・先頭 {(body or '')[:400]}")
-    return 0
+
+    # 置き場所がまた変わったときのために、警報のページのプログラムからデータの URL らしい文字も探す
     scripts = set()
     for page in PAGES:
         st, html = get(BASE + page)

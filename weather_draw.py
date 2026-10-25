@@ -429,6 +429,8 @@ def draw_today_title_bar(
 
 
 ALERT_BANNER_H = 44
+# 注意報の文字色。以前の (255, 140, 0) は白地とのコントラスト 2.3 で見にくかったので、濃いオレンジ（4.3）に（2026-10-25）
+ADVISORY_COLOR = (204, 85, 0)
 DATE_FONT_SIZE = 34                 # 今日の天気の日付（10/24 など）の文字の大きさ（太字）
 SECTION_TITLE_SIZE = 28             # 「今日の天気」「１週間の天気」の題名の文字の大きさ（太字。2 つをそろえる）
 current_anim = None      # 最後に描いた画面の「今の時間帯のアイコン」{"rect", "icon_code"}（無ければ None）
@@ -895,7 +897,7 @@ def draw_weather(
             if "警報" in display_warning:
                 wcolor = (255, 0, 0)
             elif "注意報" in display_warning:
-                wcolor = (255, 140, 0)
+                wcolor = ADVISORY_COLOR
             else:
                 wcolor = (0, 0, 0)
         elif warning_text and "失敗" in warning_text:
@@ -917,7 +919,7 @@ def draw_weather(
 
         # 1) 警報・注意報（最優先。長ければ折り返して全部出す。入りきらなければ文字を小さくし、それでも無理なら末尾を…）
         for wsize in (24, 22, 20, 18):
-            warn_font = get_font(base_font_path, wsize)
+            warn_font = get_font(base_font_path, wsize, bold=has_active_warning)   # 発表中は太字（白地で読みやすく）
             wlines = _wrap_text(display_warning, warn_font, max_width)
             if len(wlines) * (warn_font.get_height() + 2) <= bottom - 4 - y_line:
                 break
