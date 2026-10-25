@@ -64,7 +64,13 @@ def main():
                     for i, v in enumerate(x):
                         walk(v, f"{path}[{i}]")
             walk(d, "")
-            print("\n先頭 1500 文字:", body[:1500])
+            print("\n発表の一覧（配列の要素ごと）:")
+            for i, rep in enumerate(d if isinstance(d, list) else [d]):
+                w = rep.get("warning") or {}
+                tok = [it for key in w for it in (w.get(key) or []) if isinstance(it, dict) and it.get("areaCode") == "2321600"]
+                print(f"  [{i}] {rep.get('reportDatetime')} {rep.get('dataTypeCode')} {rep.get('infoType')} "
+                      f"項目 {list(w.keys())}・常滑市 {json.dumps(tok, ensure_ascii=False)[:600]}")
+                print(f"       {str(rep.get('headlineText'))[:120]}")
     for name in ("map_time", "map"):
         st, body = get(BASE + f"/bosai/warning/data/r8/{name}.json")
         print(f"\n/bosai/warning/data/r8/{name}.json: HTTP {st}・先頭 {(body or '')[:400]}")
