@@ -1269,17 +1269,19 @@ sudo apt-mark manual python3-pytz python3-tz
 
 ### 警報・注意報が表示されない
 
-気象庁が実際に何を発表しているか、Pi 上で直接確認できます（成田の例。他空港は URL の `120000` と市区町村コードを置き換え）。
+気象庁が実際に何を発表しているか、Pi 上で直接確認できます（中部国際空港＝常滑市の例。他空港は URL の `230000`（県）と市区町村コードを置き換え）。
 
 ```bash
 cd ~/raspi-weather-lite && python3 -c "
-import requests; from jma_alerts import active_warning_names
-d=requests.get('https://www.jma.go.jp/bosai/warning/data/warning/120000.json',timeout=10).json()
-for at in d['areaTypes']:
-    for a in at['areas']:
-        if a['code'] in ('1221100','120010'): print(a['code'], a['warnings'])
-print('表示:', active_warning_names(d, ('1221100',)))"
+import requests; from jma_alerts import active_warning_names_r8
+d=requests.get('https://www.jma.go.jp/bosai/warning/data/r8/230000.json',timeout=10).json()
+for r in d:
+    for it in r['warning'].get('class20Items', []):
+        if it['areaCode'] == '2321600': print(r['reportDatetime'], r['dataTypeCode'], it['kinds'])
+print('表示:', active_warning_names_r8(d, ('2321600',)))"
 ```
+
+> **2026 年の新しい防災気象情報（r8）**：今までの `bosai/warning/data/warning/{県}.json` は 2026-05-28 の発表のまま止まっていて、5 か月前の注意報（常滑市は濃霧注意報）を出し続けていた（2026-10-25 に判明）。今は気象庁の警報のページと同じ `bosai/warning/data/r8/{県}.json` を使う。中身は電文の種類（`dataTypeCode`）ごとの最新の発表の一覧で、市町村（`class20Items` の `areaCode`）ごとの `kinds`（`code`・`status`・付け加えの `additions`「突風」「ひょう」など）を合わせたものが今の状態。全国の更新時刻（`r8/map_time.json`）が 2 日以上止まっていたら「警報取得失敗」にする。置き場所が変わったら `tools/warning_probe.py` で探す
 
 `表示:` の内容が画面右下に出ます。`[]` なら発表なし。
 

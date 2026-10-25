@@ -80,3 +80,49 @@ def test_warning_data_stale():
     assert jma_alerts.warning_data_stale("2026-05-28T09:41:00+09:00", now) == "5/28"
     assert jma_alerts.warning_data_stale("2026-10-24T10:39:00+09:00", now) is None
     assert jma_alerts.warning_data_stale("", now) is None                     # 読めなければ止めない
+
+
+# ---------------------------------------------------------------- 2026 年の新しい形（r8）
+def _r8(dt, typ, kinds, head="", area="2321600"):
+    return {"reportDatetime": dt, "dataTypeCode": typ, "infoType": "発表", "headlineText": head,
+            "warning": {"class10Items": [], "class20Items": [{"areaCode": area, "kinds": kinds},
+                                                           {"areaCode": "2310000", "kinds": [{"code": "03", "status": "発表"}]}]}}
+
+
+R8_AICHI = [   # 2026-10-25 12 時ごろに Pi で見た愛知県（230000）の中身（常滑市の所）
+    _r8("2026-09-26T07:26:00+09:00", "VPWW55", [{"status": "発表警報・注意報はなし"}], "注意報を解除します。"),
+    _r8("2026-09-30T04:03:00+09:00", "VPWW56", [{"status": "発表警報・注意報はなし"}]),
+    _r8("2026-10-14T20:41:00+09:00", "VPWW58", [{"code": "15", "status": "解除"}]),
+    _r8("2026-10-25T04:42:00+09:00", "VPWW59", [{"code": "16", "status": "解除"}], "東部では、高波に注意してください。"),
+    _r8("2026-10-25T04:42:00+09:00", "VPWW61", [{"code": "14", "status": "発表", "additions": ["突風", "ひょう"]}],
+        "愛知県では、急な強い雨や落雷に注意してください。"),
+]
+
+
+def test_r8_active_warnings_for_tokoname():
+    """常滑市は雷注意報（突風・ひょう）だけ。ほかの市の大雨警報・解除済みの注意報は出さない"""
+    import jma_alerts
+    assert jma_alerts.active_warning_names_r8(R8_AICHI, ("2321600",)) == ["雷注意報（突風・ひょう）"]
+    assert jma_alerts.active_warning_names_r8(R8_AICHI, ("2310000",)) == ["大雨警報"]
+
+
+def test_r8_latest_report_per_type_wins():
+    """同じ種類の発表が 2 つあれば新しい方（発表 → 解除）"""
+    import jma_alerts
+    reports = [_r8("2026-10-25T04:42:00+09:00", "VPWW61", [{"code": "14", "status": "発表"}]),
+               _r8("2026-10-25T09:00:00+09:00", "VPWW61", [{"code": "14", "status": "解除"}])]
+    assert jma_alerts.active_warning_names_r8(reports, ("2321600",)) == []
+    assert jma_alerts.headline_r8(R8_AICHI) in ("東部では、高波に注意してください。", "愛知県では、急な強い雨や落雷に注意してください。")
+
+
+def test_r8_fetch_and_stale_feed():
+    import datetime
+    import pytest as _pytest
+    import jma_alerts
+    fresh = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    get = lambda url: R8_AICHI if url.endswith("230000.json") else {"latestControlDatetime": fresh}
+    names, head = jma_alerts.fetch_warnings_r8("230000", ("2321600",), get_json=get)
+    assert names == ["雷注意報（突風・ひょう）"]
+    old = lambda url: R8_AICHI if url.endswith("230000.json") else {"latestControlDatetime": "2026-05-28T00:41:00Z"}
+    with _pytest.raises(ValueError):
+        jma_alerts.fetch_warnings_r8("230000", ("2321600",), get_json=old)

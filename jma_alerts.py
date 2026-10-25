@@ -115,6 +115,82 @@ def active_warning_names(warn_json: Dict[str, Any], area_codes) -> List[str]:
     return sorted(names, key=rank)
 
 
+# ── 2026 年の新しい防災気象情報（r8 = 令和 8 年）────────────────
+# 今までの bosai/warning/data/warning/{県}.json は 2026-05-28 の発表のまま止まっていた（2026-10-25 に判明。
+# 5 か月前の「濃霧注意報」を出し続けていた）。気象庁の警報のページは bosai/warning/data/r8/{県}.json を読んでいる。
+# 中身は発表（電文の種類 dataTypeCode ごと。例 VPWW61）の一覧で、それぞれが市町村（class20Items の areaCode）ごとの
+# 警報・注意報（kinds の code・status、付け加え additions「突風」「ひょう」など）を持つ。種類ごとに最新の発表を合わせたものが今の状態
+WARNING_R8_URL = JMA_BASE + "/bosai/warning/data/r8/{pref}.json"
+WARNING_R8_TIME_URL = JMA_BASE + "/bosai/warning/data/r8/map_time.json"   # 全国の最新の更新時刻
+R8_STALE_HOURS = 48       # 全国の最新の更新がこれより古ければ、データが止まっているとみなす
+
+
+def _latest_per_type(reports):
+    """電文の種類（dataTypeCode）ごとに最新の発表だけ"""
+    latest = {}
+    for r in reports if isinstance(reports, list) else [reports]:
+        if not isinstance(r, dict):
+            continue
+        key = r.get("dataTypeCode") or ""
+        if key not in latest or (r.get("reportDatetime") or "") > (latest[key].get("reportDatetime") or ""):
+            latest[key] = r
+    return list(latest.values())
+
+
+def active_warning_names_r8(reports, area_codes) -> List[str]:
+    """新しい形（r8）：指定の市町村で発表・継続中の警報・注意報名（付け加えがあれば「雷注意報（突風・ひょう）」）を、
+    特別警報→警報→注意報の順で"""
+    names: List[str] = []
+    for r in _latest_per_type(reports):
+        w = r.get("warning") or {}
+        for item in (w.get("class20Items") or []):
+            if str(item.get("areaCode", "")) not in area_codes:
+                continue
+            for k in (item.get("kinds") or []):
+                code = str(k.get("code") or "")
+                status = (k.get("status") or "").strip()
+                if not code or "解除" in status or "なし" in status:
+                    continue
+                name = WARNING_CODES.get(code, f"警報コード{code}")    # 知らないコードも出す（体系の変更に気付けるように）
+                adds = [a for a in (k.get("additions") or []) if isinstance(a, str)]
+                if adds:
+                    name += f"（{'・'.join(adds)}）"
+                if name not in names:
+                    names.append(name)
+    rank = lambda n: 0 if "特別警報" in n else 1 if "警報" in n else 2
+    return sorted(names, key=rank)
+
+
+def headline_r8(reports) -> str:
+    """いちばん新しい発表の見出し"""
+    rs = sorted(_latest_per_type(reports), key=lambda r: r.get("reportDatetime") or "")
+    return (rs[-1].get("headlineText") or "").strip() if rs else ""
+
+
+def r8_feed_stale(map_time, now=None, hours=R8_STALE_HOURS) -> bool:
+    """全国の最新の更新時刻（map_time.json）が hours 時間より古ければ True（読めなければ False）"""
+    try:
+        t = datetime.datetime.fromisoformat(str(map_time.get("latestControlDatetime")).replace("Z", "+00:00"))
+    except Exception:
+        return False
+    now = now or datetime.datetime.now(JST)
+    return now - t > datetime.timedelta(hours=hours)
+
+
+def fetch_warnings_r8(pref_code: str, area_codes, get_json=None):
+    """(警報・注意報名の並び, 見出し)。データが止まっていれば ValueError"""
+    get_json = get_json or _get_json
+    reports = get_json(WARNING_R8_URL.format(pref=pref_code))
+    try:
+        if r8_feed_stale(get_json(WARNING_R8_TIME_URL)):
+            raise ValueError("警報データ（r8）の全国の更新が 2 日以上止まっている")
+    except ValueError:
+        raise
+    except Exception:
+        pass                                   # 更新時刻が取れないだけなら、警報はそのまま使う
+    return active_warning_names_r8(reports, tuple(area_codes)), headline_r8(reports)
+
+
 def _extract_warning_text(warn_json: Dict[str, Any], area_codes: Tuple[str, ...]) -> str:
     names = active_warning_names(warn_json, area_codes)
     if not names:
@@ -137,7 +213,6 @@ def get_overview_and_warning(
     cache = _load_cache(cache_json_path)
 
     overview_url = f"{JMA_BASE}/bosai/forecast/data/overview_forecast/{office_code}.json"
-    warning_url  = f"{JMA_BASE}/bosai/warning/data/warning/{office_code}.json"
 
     try:
         ov = _get_json(overview_url)
@@ -151,19 +226,17 @@ def get_overview_and_warning(
         updated = datetime.datetime.now(JST).strftime("%Y-%m-%d %H:%M")
 
     try:
-        wj = _get_json(warning_url)
-        w_head = (wj.get("headlineText") or "").strip()
-        w_text = _extract_warning_text(wj, area_codes)
-        if warning_data_stale(wj.get("reportDatetime")):
-            w_text = "警報・注意報：データの更新が止まっています"
-        # updated は警報 reportDatetime で上書きしない（警報なしの日は古い日付になるため）
-        # reportDatetime が1日以上古い headline は表示しない
-        w_rep_dt_str = wj.get("reportDatetime") or ""
-        if w_head and w_rep_dt_str:
+        reports = _get_json(WARNING_R8_URL.format(pref=office_code))
+        names = active_warning_names_r8(reports, tuple(area_codes))
+        w_text = "警報・注意報：" + ("、".join(names) if names else "発表なし")
+        # 見出しは 1 日以上前の発表なら出さない（警報が無い日は古い発表のまま）
+        w_head = ""
+        rs = sorted(_latest_per_type(reports), key=lambda r: r.get("reportDatetime") or "")
+        if rs:
             try:
-                rep_dt = datetime.datetime.fromisoformat(w_rep_dt_str.replace("Z", "+00:00"))
-                if (datetime.datetime.now(JST) - rep_dt.astimezone(JST)).days >= 1:
-                    w_head = ""
+                rep_dt = datetime.datetime.fromisoformat(rs[-1]["reportDatetime"].replace("Z", "+00:00"))
+                if (datetime.datetime.now(JST) - rep_dt.astimezone(JST)).days < 1:
+                    w_head = (rs[-1].get("headlineText") or "").strip()
             except Exception:
                 pass
     except Exception:

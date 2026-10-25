@@ -73,7 +73,7 @@ from utils import get_sunrise_sunset_str, build_work_summary, JST, get_local_ip,
 from utils import wait_ms as _wait_ms
 from utils import get_cpu_temp, format_cpu_status, clear_font_cache
 from header import _plane_cache
-from jma_alerts import get_overview_and_warning, active_warning_names, warning_data_stale
+from jma_alerts import get_overview_and_warning, fetch_warnings_r8
 
 from config import AIRPORT_CONFIG, LOG_FILE, ICON_DIR, BASE_FONT, SCREENSHOT_REQUEST, STATUS_FILE
 
@@ -353,26 +353,21 @@ def main():
         "naha":     {"pref": "471000", "city": "4720100"},
     }
     def fetch_warning_data(airport_key: str):
+        # 2026 年の新しい防災気象情報の置き場所（r8）。今までの場所は 2026-05-28 のまま止まっていた
         info = AIRPORT_WARNING[airport_key]
-        url = f"https://www.jma.go.jp/bosai/warning/data/warning/{info['pref']}.json"
         try:
-            r = get_with_retry(url, headers=HEADERS, timeout=5)      # 一瞬の DNS エラーなどは 3 秒後に 1 回取り直す
-            r.raise_for_status()
-            data = r.json()
+            warning_list, headline = fetch_warnings_r8(info["pref"], (info["city"],), get_json=_warning_json)
         except Exception as e:
             logging.warning(f"警報取得失敗: {e}")
             return "警報取得失敗", ""
-        headline = data.get("headlineText", "")
-        # 発表が古すぎるデータは使わない（2026-10-25：このデータが 2026-05-28 の発表のまま止まっていて、
-        # 5 か月前の「濃霧注意報」を出し続けていた。気象庁の仕組みの変更で別の場所に移った可能性）
-        stale = warning_data_stale(data.get("reportDatetime"))
-        if stale:
-            logging.warning(f"警報データが古い（{stale} の発表のまま）→ 表示しない")
-            return f"警報データの更新が止まっています（{stale} 発表のまま）", ""
-        warning_list = active_warning_names(data, (info["city"],))
         if not warning_list:
             return "警報・注意報なし", headline
         return " / ".join(warning_list), headline
+
+    def _warning_json(url):
+        r = get_with_retry(url, headers=HEADERS, timeout=5)      # 一瞬の DNS エラーなどは 3 秒後に 1 回取り直す
+        r.raise_for_status()
+        return r.json()
 
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     jma_cache_path = os.path.join(BASE_DIR, f"jma_{airport}.json")
