@@ -82,6 +82,19 @@ WARNING_CODES = {
 }
 
 
+WARNING_STALE_DAYS = 3     # 発表がこれより古い警報データは使わない（更新が止まっているとみなす）
+
+
+def warning_data_stale(report_datetime, now=None, days=WARNING_STALE_DAYS):
+    """警報データの発表時刻が days 日より古ければ、その日付（"5/28"）を返す。新しい・読めなければ None"""
+    try:
+        rep = datetime.datetime.fromisoformat(str(report_datetime).replace("Z", "+00:00")).astimezone(JST)
+    except Exception:
+        return None
+    now = now or datetime.datetime.now(JST)
+    return f"{rep.month}/{rep.day}" if now - rep > datetime.timedelta(days=days) else None
+
+
 def active_warning_names(warn_json: Dict[str, Any], area_codes) -> List[str]:
     """指定エリアで発表・継続中の警報・注意報名を、特別警報→警報→注意報の順で返す。"""
     names: List[str] = []
@@ -141,6 +154,8 @@ def get_overview_and_warning(
         wj = _get_json(warning_url)
         w_head = (wj.get("headlineText") or "").strip()
         w_text = _extract_warning_text(wj, area_codes)
+        if warning_data_stale(wj.get("reportDatetime")):
+            w_text = "警報・注意報：データの更新が止まっています"
         # updated は警報 reportDatetime で上書きしない（警報なしの日は古い日付になるため）
         # reportDatetime が1日以上古い headline は表示しない
         w_rep_dt_str = wj.get("reportDatetime") or ""

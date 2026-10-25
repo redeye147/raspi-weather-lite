@@ -907,11 +907,11 @@ def draw_weather(
 
         max_width = box_w - 20
 
-        # 枠の下端に「警報更新：…」。ほかの文字はこれより上に収める（枠や画面の下にはみ出さない）
+        # 枠の下端に「概況更新：…」（天気概況の発表時刻。警報の発表時刻ではない）。ほかの文字はこれより上に収める（枠や画面の下にはみ出さない）
         small_font = get_font(base_font_path, 20)
         bottom = box_y + box_h - 5
         if updated_text:
-            upd_surf = small_font.render(f"警報更新：{updated_text}", True, (0, 0, 0))
+            upd_surf = small_font.render(f"概況更新：{updated_text}", True, (0, 0, 0))
             bottom -= upd_surf.get_height()
             screen.blit(upd_surf, (box_x + 10, bottom))
 

@@ -69,3 +69,14 @@ def test_extract_text_joins_names():
 def test_empty_or_broken_json():
     assert active_warning_names({}, NARITA) == []
     assert active_warning_names({"areaTypes": None}, NARITA) == []
+
+
+def test_warning_data_stale():
+    """発表が 3 日より古い警報データは使わない（2026-05-28 の発表のまま止まっていて、5 か月前の濃霧注意報を出していた）"""
+    import datetime
+    import jma_alerts
+    JST = datetime.timezone(datetime.timedelta(hours=9))
+    now = datetime.datetime(2026, 10, 25, 12, 0, tzinfo=JST)
+    assert jma_alerts.warning_data_stale("2026-05-28T09:41:00+09:00", now) == "5/28"
+    assert jma_alerts.warning_data_stale("2026-10-24T10:39:00+09:00", now) is None
+    assert jma_alerts.warning_data_stale("", now) is None                     # 読めなければ止めない

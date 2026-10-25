@@ -73,7 +73,7 @@ from utils import get_sunrise_sunset_str, build_work_summary, JST, get_local_ip,
 from utils import wait_ms as _wait_ms
 from utils import get_cpu_temp, format_cpu_status, clear_font_cache
 from header import _plane_cache
-from jma_alerts import get_overview_and_warning, active_warning_names
+from jma_alerts import get_overview_and_warning, active_warning_names, warning_data_stale
 
 from config import AIRPORT_CONFIG, LOG_FILE, ICON_DIR, BASE_FONT, SCREENSHOT_REQUEST, STATUS_FILE
 
@@ -363,6 +363,12 @@ def main():
             logging.warning(f"警報取得失敗: {e}")
             return "警報取得失敗", ""
         headline = data.get("headlineText", "")
+        # 発表が古すぎるデータは使わない（2026-10-25：このデータが 2026-05-28 の発表のまま止まっていて、
+        # 5 か月前の「濃霧注意報」を出し続けていた。気象庁の仕組みの変更で別の場所に移った可能性）
+        stale = warning_data_stale(data.get("reportDatetime"))
+        if stale:
+            logging.warning(f"警報データが古い（{stale} の発表のまま）→ 表示しない")
+            return f"警報データの更新が止まっています（{stale} 発表のまま）", ""
         warning_list = active_warning_names(data, (info["city"],))
         if not warning_list:
             return "警報・注意報なし", headline
