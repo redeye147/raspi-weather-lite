@@ -36,6 +36,39 @@ def main():
     m = re.search(r'"reportDatetime"\s*:\s*"([^"]+)"', body or "")
     print(f"今までの場所: HTTP {st}・発表 {m.group(1) if m else '-'}")
 
+    # 2026-10-25 に見つけた新しい場所（r8 = 令和 8 年の新しい防災気象情報？）の中身
+    import json
+    st, body = get(BASE + "/bosai/warning/data/r8/230000.json")
+    print(f"\n新しい場所 /bosai/warning/data/r8/230000.json: HTTP {st}・{len(body or '')} 文字")
+    if st == 200:
+        try:
+            d = json.loads(body)
+        except ValueError:
+            d = None
+            print(body[:1500])
+        if d is not None:
+            top = d if isinstance(d, dict) else (d[0] if d else {})
+            print("一番上の項目:", list(top.keys()) if isinstance(top, dict) else type(d))
+            for k in ("reportDatetime", "publishingOffice", "headlineText"):
+                if isinstance(top, dict) and k in top:
+                    print(f"  {k}: {str(top[k])[:200]}")
+
+            def walk(x, path):
+                if isinstance(x, dict):
+                    if str(x.get("code")) == "2321600":
+                        print(f"\n常滑市（2321600）の所 {path}:")
+                        print(json.dumps(x, ensure_ascii=False)[:3000])
+                    for k, v in x.items():
+                        walk(v, f"{path}.{k}")
+                elif isinstance(x, list):
+                    for i, v in enumerate(x):
+                        walk(v, f"{path}[{i}]")
+            walk(d, "")
+            print("\n先頭 1500 文字:", body[:1500])
+    for name in ("map_time", "map"):
+        st, body = get(BASE + f"/bosai/warning/data/r8/{name}.json")
+        print(f"\n/bosai/warning/data/r8/{name}.json: HTTP {st}・先頭 {(body or '')[:400]}")
+    return 0
     scripts = set()
     for page in PAGES:
         st, html = get(BASE + page)
