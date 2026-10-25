@@ -510,3 +510,34 @@ def test_wind_color_legend_below_today_table(w, h):
         c = np.all(arr == weather_draw.wind_arrow_color(speed), axis=2)
         xs = np.where(c.any(axis=1))[0]
         assert len(xs) and xs.max() <= right, f"{w}×{h}: {speed} m/s の区切りが無い・はみ出す"
+
+
+def test_wrap_text_keeps_closing_paren_off_line_start():
+    """「（突風・ひょう\n）」のように閉じかっこが行の先頭に来ない（行頭禁則）"""
+    import pygame
+    import weather_draw
+    from config import BASE_FONT
+    pygame.font.init()
+    font = weather_draw.get_font(BASE_FONT, 24, bold=True)
+    text = "大雨警報 / 洪水警報 / 雷注意報（突風・ひょう） / 強風注意報"
+    for w in range(200, 700, 7):
+        lines = weather_draw._wrap_text(text, font, w)
+        assert "".join(lines) == text
+        assert all(not l.startswith(("）", "・", "ょ")) for l in lines[1:]), (w, lines)
+
+
+@pytest.mark.parametrize("size", [(1920, 1080), (1366, 768), (1280, 720)])
+def test_overview_fits_with_many_warnings(size, monkeypatch):
+    """警報・注意報が多くても、天気概況が少なくとも 1 行は欄の中に出る（警報・注意報との間は 1 行あける）"""
+    import weather_draw
+    W, H = size
+    drawn = []
+    real = weather_draw._wrap_text
+    monkeypatch.setattr(weather_draw, "_wrap_text", lambda t, f, w: (drawn.append(t), real(t, f, w))[1])
+    s = pygame.Surface((W, H))
+    many = "大雨特別警報 / 大雨警報 / 洪水警報 / 暴風警報 / 波浪警報 / 高潮警報 / 雷注意報（突風・ひょう） / 濃霧注意報 / 乾燥注意報"
+    weather_draw.draw_weather(s, W, H, _hourly(), _daily()[:5], {}, BASE_FONT, many, "見出し" * 20, "2026-10-25 11:00",   # 画面は 5 日分
+                              "天気更新 11:37", "中部国際空港", "06:06", "17:06", "", "",
+                              overview_text="２５日の東海地方は、前線や湿った空気の影響によりおおむね雨となるでしょう。",
+                              now=datetime.datetime(2026, 10, 25, 12, 0, tzinfo=JST))
+    assert any(t.startswith("【天気概況】") for t in drawn)

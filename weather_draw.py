@@ -46,14 +46,22 @@ WIND_BOLD_FROM = 9                     # 風速の数字を太字にするのは
 WIND_ARROW_SCALE = 0.72                # 矢印の大きさ（行の高さに対して。以前の 0.8 の 0.9 倍）
 
 
+_NO_LINE_START = "）」』】、。，．・ぁぃぅぇぉっゃゅょァィゥェォッャュョー"   # 行の先頭に来ないようにする文字（行頭禁則）
+
+
 def _wrap_text(text, font, max_width):
     lines, cur = [], ""
     for ch in text:
         if font.size(cur + ch)[0] <= max_width:
             cur += ch
         else:
-            lines.append(cur)
-            cur = ch
+            # 「（突風・ひょう\n）」のように閉じかっこ・小さい字が行の先頭に来るときは、前の行の最後の字も次の行へ送る
+            if ch in _NO_LINE_START and len(cur) > 1:
+                lines.append(cur[:-1])
+                cur = cur[-1] + ch
+            else:
+                lines.append(cur)
+                cur = ch
     if cur:
         lines.append(cur)
     return lines
@@ -917,13 +925,26 @@ def draw_weather(
             bottom -= upd_surf.get_height()
             screen.blit(upd_surf, (box_x + 10, bottom))
 
+        # 天気概況が少なくとも 1 行（と、その前のあけた 1 行）入る場所を、警報・注意報より先に取っておく。
+        # 警報・注意報がそれでも入りきらないときだけ、概況の場所も使う（警報・注意報がいちばん大事）
+        ov = _overview_outlook(overview_text)
+        ov_font = get_font(base_font_path, 20)
+        line_h = ov_font.get_linesize()
+        reserve = (line_h * 2 + 4) if ov else 0
+
         # 1) 警報・注意報（最優先。長ければ折り返して全部出す。入りきらなければ文字を小さくし、それでも無理なら末尾を…）
-        for wsize in (24, 22, 20, 18):
-            warn_font = get_font(base_font_path, wsize, bold=has_active_warning)   # 発表中は太字（白地で読みやすく）
-            wlines = _wrap_text(display_warning, warn_font, max_width)
-            if len(wlines) * (warn_font.get_height() + 2) <= bottom - 4 - y_line:
-                break
-        fit = max(1, (bottom - 4 - y_line) // (warn_font.get_height() + 2))
+        def _fit_warning(limit):
+            for wsize in (24, 22, 20, 18, 16):
+                font = get_font(base_font_path, wsize, bold=has_active_warning)   # 発表中は太字（白地で読みやすく）
+                lines = _wrap_text(display_warning, font, max_width)
+                if len(lines) * (font.get_height() + 2) <= limit - 4 - y_line:
+                    return font, lines, True
+            return font, lines, False
+        warn_font, wlines, ok = _fit_warning(bottom - reserve)
+        if not ok:
+            warn_font, wlines, ok = _fit_warning(bottom)
+            reserve = 0
+        fit = max(1, (bottom - reserve - 4 - y_line) // (warn_font.get_height() + 2))
         if len(wlines) > fit:
             wlines = wlines[:fit]
             last = wlines[-1]
@@ -936,25 +957,25 @@ def draw_weather(
             y_line += warn_surf.get_height() + 2
         y_line += 6
 
-        # 2) 警報発令中のときのみ見出し文（解除後は古い見出しを残さない。入る行数だけ）
+        # 2) 警報発令中のときのみ見出し文（解除後は古い見出しを残さない。概況の場所を残して、入る行数だけ）
         if headline_text and has_active_warning:
             for line in _wrap_text(headline_text, small_font, max_width)[:2]:
                 head_surf = small_font.render(line, True, (0, 0, 0))
-                if y_line + head_surf.get_height() > bottom - 4:
+                if y_line + head_surf.get_height() > bottom - 4 - reserve:
                     break
                 screen.blit(head_surf, (box_x + 10, y_line))
                 y_line += head_surf.get_height() + 4
 
         # 3) 天気概況（最大 OVERVIEW_MAX_LINES 行・残りスペース内。溢れたら末尾を…で切る）
-        ov = _overview_outlook(overview_text)
         if ov:
-            ov_font = get_font(base_font_path, 20)
-            line_h = ov_font.get_linesize()
-            y_line += 4
+            # 警報・注意報と【天気概況】の間を 1 行あける（見分けやすく）。あけると概況が 1 行も入らないときだけ詰める
+            gap = line_h if (bottom - 4 - (y_line + line_h)) // line_h >= 1 else 4
+            y_line += gap
             max_lines = min(OVERVIEW_MAX_LINES, (bottom - 4 - y_line) // line_h)
             if max_lines > 0:
+                sep_y = y_line - max(2, gap // 2)                  # 区切りの線はあけた行の真ん中
                 pygame.draw.line(screen, (180, 180, 180),
-                                 (box_x + 10, y_line - 2), (box_x + box_w - 10, y_line - 2), 1)
+                                 (box_x + 10, sep_y), (box_x + box_w - 10, sep_y), 1)
                 lines = _wrap_text("【天気概況】" + ov, ov_font, max_width)
                 if len(lines) > max_lines:
                     lines = lines[:max_lines]
