@@ -13,11 +13,12 @@ tools/warning_probe.py
 
 import re
 import sys
+from urllib.parse import urljoin
 
 import requests
 
 BASE = "https://www.jma.go.jp"
-PAGES = ["/bosai/warning/", "/bosai/map.html"]
+PAGES = ["/bosai/warning/", "/bosai/warning/index.html", "/bosai/map.html"]
 H = {"User-Agent": "raspi-weather-lite (airport weather signage)"}
 
 
@@ -30,33 +31,31 @@ def get(url):
 
 
 def main():
-    old = BASE + "/bosai/warning/data/warning/230000.json"
-    st, body = get(old)
+    st, body = get(BASE + "/bosai/warning/data/warning/230000.json")
     m = re.search(r'"reportDatetime"\s*:\s*"([^"]+)"', body or "")
     print(f"今までの場所: HTTP {st}・発表 {m.group(1) if m else '-'}")
 
-    scripts, found = set(), set()
+    scripts = set()
     for page in PAGES:
         st, html = get(BASE + page)
-        print(f"{page}: HTTP {st}")
-        for src in re.findall(r'<script[^>]+src="([^"]+)"', html or ""):
-            if src.startswith("http"):
-                scripts.add(src)
-            elif src.startswith("/"):
-                scripts.add(BASE + src)
-            else:
-                scripts.add(BASE + page.rsplit("/", 1)[0] + "/" + src)
+        srcs = re.findall(r'<script[^>]*\ssrc\s*=\s*["\']?([^"\' >]+)', html or "", re.I)
+        print(f"{page}: HTTP {st}・{len(html or '')} 文字・script {srcs}")
+        for src in srcs:
+            scripts.add(urljoin(BASE + page, src))
+        if page == "/bosai/warning/" and html:
+            print("  ページの先頭:", re.sub(r"\s+", " ", html[:600]))
+    found = set()
     for js in sorted(scripts):
         st, text = get(js)
-        hits = set(re.findall(r'["\'`](/?bosai/[A-Za-z0-9_./${}-]*data/[A-Za-z0-9_./${}-]*)', text or ""))
-        hits |= set(re.findall(r'["\'`]((?:\.\./)*data/[A-Za-z0-9_./${}-]*warning[A-Za-z0-9_./${}-]*)', text or ""))
-        if hits:
-            print(f"\n{js} （HTTP {st}）")
-            for h in sorted(hits):
-                print("   ", h)
-            found |= hits
+        text = text or ""
+        hits = set(re.findall(r'["\'`]([^"\'`\s]{0,80}\.json[^"\'`\s]{0,20})["\'`]', text))
+        hits |= set(re.findall(r'["\'`]([^"\'`\s]{0,60}data/[^"\'`\s]{0,80})["\'`]', text))
+        print(f"\n{js}（HTTP {st}・{len(text)} 文字）")
+        for h in sorted(hits)[:60]:
+            print("   ", h)
+        found |= hits
     if not found:
-        print("データの URL らしい文字は見つからなかった")
+        print("\nデータの URL らしい文字は見つからなかった")
     return 0
 
 
