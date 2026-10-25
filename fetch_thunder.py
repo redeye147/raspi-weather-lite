@@ -44,13 +44,22 @@ MIN_LEVEL = 2             # 活動度 2（雷あり）以上
 TIMEOUT = 15
 _HEADERS = {"User-Agent": "raspi-weather-lite (airport weather signage)"}
 
-# 凡例の色（気象庁の雨量と同じ系統の色）。実際の画素は一番近い色で活動度を決める
+# 凡例の色。気象庁「雷ナウキャストとは」の活動度の表から測った色（2026-10-25）。
+# 地図の画像の実際の色はまだ確かめていない（説明ページの図は圧縮などで少し色が変わることがある）ので、
+# 以前の推定の色（気象庁の雨量の配色）も残し、どちらかいちばん近い色で活動度を決める
 LEVEL_COLORS = {
-    1: (242, 242, 0),     # 黄
-    2: (255, 153, 0),     # 橙
-    3: (255, 40, 0),      # 赤
-    4: (180, 0, 104),     # 紫
+    1: (241, 248, 46),    # 黄　雷可能性あり
+    2: (238, 167, 34),    # 橙　雷あり
+    3: (232, 59, 21),     # 赤　やや激しい雷
+    4: (186, 0, 250),     # 紫　激しい雷
 }
+LEVEL_COLORS_OLD = {
+    1: (242, 242, 0),
+    2: (255, 153, 0),
+    3: (255, 40, 0),
+    4: (180, 0, 104),
+}
+_REFERENCE = [(lv, c) for table in (LEVEL_COLORS, LEVEL_COLORS_OLD) for lv, c in table.items()]
 
 EVIDENCE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache", "thunder")
 EVIDENCE_KEEP = 10        # 雷を見つけた解析の画像を何回分残すか（1 回 数 KB〜数十 KB）
@@ -59,10 +68,9 @@ DIRECTIONS = ["北", "北東", "東", "南東", "南", "南西", "西", "北西"
 
 
 def level_for_color(rgb) -> int:
-    """画素の色 → 活動度（1〜4）。凡例の色の中で一番近いもの"""
+    """画素の色 → 活動度（1〜4）。凡例の色（表の色・以前の推定の色）の中で一番近いもの"""
     r, g, b = rgb[:3]
-    return min(LEVEL_COLORS, key=lambda lv: (LEVEL_COLORS[lv][0] - r) ** 2
-               + (LEVEL_COLORS[lv][1] - g) ** 2 + (LEVEL_COLORS[lv][2] - b) ** 2)
+    return min(_REFERENCE, key=lambda x: (x[1][0] - r) ** 2 + (x[1][1] - g) ** 2 + (x[1][2] - b) ** 2)[0]
 
 
 def latest_analysis(times: list):

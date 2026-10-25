@@ -38,8 +38,11 @@ def test_distance_bearing_southwest():
     assert 13 < d < 16 and ft.direction_name(deg) == "南西"
 
 
-@pytest.mark.parametrize("rgb, level", [((242, 242, 0), 1), ((250, 245, 10), 1), ((255, 153, 0), 2),
-                                        ((255, 40, 0), 3), ((180, 0, 104), 4), ((200, 0, 255), 4)])
+@pytest.mark.parametrize("rgb, level", [
+    ((242, 242, 0), 1), ((250, 245, 10), 1), ((255, 153, 0), 2), ((255, 40, 0), 3), ((180, 0, 104), 4),   # 以前の推定の色
+    ((241, 248, 46), 1), ((238, 167, 34), 2), ((232, 59, 21), 3), ((186, 0, 250), 4), ((200, 0, 255), 4),  # 気象庁の表の色
+    ((248, 200, 20), 2),                                                  # 黄と橙の間（橙寄り）
+])
 def test_level_for_color(rgb, level):
     assert ft.level_for_color(rgb) == level
 
