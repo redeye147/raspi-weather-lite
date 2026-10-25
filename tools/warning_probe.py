@@ -25,6 +25,7 @@ H = {"User-Agent": "raspi-weather-lite (airport weather signage)"}
 def get(url):
     try:
         r = requests.get(url, headers=H, timeout=20)
+        r.encoding = "utf-8"
         return r.status_code, r.text
     except Exception as e:
         return None, str(e)
@@ -42,16 +43,19 @@ def main():
         print(f"{page}: HTTP {st}・{len(html or '')} 文字・script {srcs}")
         for src in srcs:
             scripts.add(urljoin(BASE + page, src))
-        if page == "/bosai/warning/" and html:
-            print("  ページの先頭:", re.sub(r"\s+", " ", html[:600]))
+        if page in ("/bosai/warning/", "/bosai/map.html") and html:
+            scripts.add(("inline", page, html))            # ページの中に直接書かれたプログラムも調べる
     found = set()
-    for js in sorted(scripts):
-        st, text = get(js)
+    for js in sorted(scripts, key=str):
+        if isinstance(js, tuple):
+            st, text, js = 200, js[2], f"{js[1]} の中"
+        else:
+            st, text = get(js)
         text = text or ""
         hits = set(re.findall(r'["\'`]([^"\'`\s]{0,80}\.json[^"\'`\s]{0,20})["\'`]', text))
         hits |= set(re.findall(r'["\'`]([^"\'`\s]{0,60}data/[^"\'`\s]{0,80})["\'`]', text))
         print(f"\n{js}（HTTP {st}・{len(text)} 文字）")
-        for h in sorted(hits)[:60]:
+        for h in sorted(hits)[:80]:
             print("   ", h)
         found |= hits
     if not found:
