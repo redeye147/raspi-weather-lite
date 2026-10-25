@@ -77,11 +77,17 @@ def test_update_auto_mode_never_asks_or_restarts_display():
 
 
 def test_start_sh_auto_update_only_on_listed_wifi_once_per_boot():
+    """家の WiFi のときだけ起動ごとに 1 回、裏で更新する。天気画面は待たずにすぐ出す（黒い画面を長くしない）"""
     s = _read("start.sh")
     assert 'AUTO_SSIDS="$REPO/auto_update_ssids.txt"' in s
     assert "/run/raspi-weather-auto-updated" in s          # 再起動で消える目印：起動ごとに 1 回だけ
-    assert 'timeout 600 bash "$REPO/update.sh" --auto' in s
-    assert s.index("update.sh\" --auto") < s.index("exec /usr/bin/python3")   # 更新してから表示
+    assert 'systemd-run --unit=raspi-weather-auto-update' in s and 'auto_update.sh"' in s
+    assert "timeout 600" not in s                          # start.sh では更新を待たない
+    assert s.index("auto_update.sh") < s.index("exec /usr/bin/python3")
+    a = _read("auto_update.sh")
+    assert 'timeout 600 bash "$REPO/update.sh" --auto' in a
+    assert 'grep -Fxq -- "$ssid"' in a                     # 書いた SSID と完全一致のときだけ
+    assert a.index('[ "$before" != "$after" ]') < a.index("systemctl restart main01")   # 新しい版のときだけ起動し直す
     assert "auto_update_ssids.txt" in _read(".gitignore")  # SSID は公開リポジトリに入れない
 
 
