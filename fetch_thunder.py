@@ -35,6 +35,11 @@ TILE_URL = "https://www.jma.go.jp/bosai/jmatile/data/nowc/{base}/none/{valid}/su
 ZOOM = 8                  # 1 画素 ≒ 0.5km（北緯 35 度）。半径 20km ならタイル 1〜4 枚
 SEARCH_KM = 20            # これより遠い雷は数えない
 NEAR_KM = 10              # 「雷接近」（赤）
+# 活動度 2 は、雷の放電を捉えていなくても、雨雲の形から雷雲と判断しただけでも出る（気象庁「雷ナウキャストとは」）。
+# 赤の「雷接近」は、10km 以内に活動度 3 以上（落雷あり）か、活動度 2 が 2 回の解析（10 分）続けてあったときだけ。
+# 黄の「雷注意」は今までどおり活動度 2 以上ですぐ出す（2026-10-25 から。10/22 の 118 で晴れなのに一瞬「雷接近」が出た）
+NEAR_CONFIRM_LEVEL = 3
+NEAR_CONFIRM_GAP_MIN = 15   # 前の解析（10 分前）からこれ以内なら「続けて」とみなす
 MIN_LEVEL = 2             # 活動度 2（雷あり）以上
 TIMEOUT = 15
 _HEADERS = {"User-Agent": "raspi-weather-lite (airport weather signage)"}
@@ -117,6 +122,7 @@ def nearest_thunder(lat, lon, tiles: dict, z=ZOOM, km=SEARCH_KM, min_level=MIN_L
     r_px = int(km / px_km) + 2
     best = None
     max_level = 0
+    near_level = 0                                 # 10km 以内のいちばん高い活動度
     colors = {}                                    # 半径の中の色ごとの画素数（色と活動度の対応を確かめる用）
     for gy in range(int(cy) - r_px, int(cy) + r_px + 1):
         for gx in range(int(cx) - r_px, int(cx) + r_px + 1):
@@ -136,10 +142,13 @@ def nearest_thunder(lat, lon, tiles: dict, z=ZOOM, km=SEARCH_KM, min_level=MIN_L
             if lv < min_level:
                 continue
             max_level = max(max_level, lv)
+            if d <= NEAR_KM:
+                near_level = max(near_level, lv)
             if best is None or d < best["km"]:
                 best = {"km": d, "deg": deg, "dir": direction_name(deg), "level": lv, "rgba": rgba}
     if best:
         best["max_level"] = max_level
+        best["near_level"] = near_level
         best["colors"] = sorted(([list(k), n, level_for_color(k)] for k, n in colors.items()),
                                 key=lambda x: -x[1])[:8]
     return best
@@ -256,20 +265,29 @@ class ThunderState:
     """直近の検出を覚えて、帯に出す内容（None / {"kind": "near"|"watch", km, dir, at}）を決める"""
 
     def __init__(self):
-        self.near = None      # 10km 以内を最後に見た検出
+        self.near = None      # 10km 以内を最後に（確かに）見た検出
         self.watch = None     # 20km 以内を最後に見た検出
+        self.near_seen_at = None   # 10km 以内に活動度 2 以上があった直近の解析時刻（2 回続いたかを見る）
 
     def update(self, result: dict):
         if not result or result.get("status") != "ok":
             return
         hit = result.get("hit")
+        at = result["at"]
+        if self.near_seen_at is not None and at == self.near_seen_at:
+            return                                     # 同じ解析を 2 回取った（5 分おきに確かめるため）
+        is_near = bool(hit) and hit["km"] <= NEAR_KM
+        prev, self.near_seen_at = self.near_seen_at, (at if is_near else None)
         if not hit:
             return
-        info = {"km": hit["km"], "dir": hit["dir"], "at": result["at"],
+        info = {"km": hit["km"], "dir": hit["dir"], "at": at,
                 "level": hit.get("level"), "rgba": hit.get("rgba")}
         self.watch = info
-        if hit["km"] <= NEAR_KM:
-            self.near = info
+        if is_near:
+            strong = (hit.get("near_level") or hit.get("level") or 0) >= NEAR_CONFIRM_LEVEL
+            again = prev is not None and datetime.timedelta(0) < at - prev <= datetime.timedelta(minutes=NEAR_CONFIRM_GAP_MIN)
+            if strong or again:
+                self.near = info
 
     def current(self, now: datetime.datetime):
         hold = datetime.timedelta(minutes=HOLD_MIN)

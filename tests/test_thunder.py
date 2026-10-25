@@ -86,9 +86,10 @@ def test_nearest_thunder_ignores_far_and_transparent():
     assert ft.nearest_thunder(LAT, LON, {}) is None                  # タイルが無い（404）＝雷なし
 
 
-def _result(km, minute, d="南西"):
+def _result(km, minute, d="南西", level=3):
     at = datetime.datetime(2026, 8, 20, 10, minute, tzinfo=JST)
-    return {"status": "ok", "at": at, "hit": None if km is None else {"km": km, "dir": d, "level": 2}}
+    return {"status": "ok", "at": at,
+            "hit": None if km is None else {"km": km, "dir": d, "level": level, "near_level": level if km <= 10 else 0}}
 
 
 def _now(minute):
@@ -186,3 +187,41 @@ def test_evidence_keeps_latest_only(tmp_path):
     assert not ft.save_evidence("20260820015000", {(1, 2): b"png"}, hit, base_dir=d, keep=3)   # 同じ解析は 1 回だけ
     stamps = sorted({n[5:18] for n in os.listdir(d)})
     assert stamps == ["20260820_1030", "20260820_1040", "20260820_1050"]
+
+
+def test_near_needs_level3_or_two_analyses():
+    """赤の「雷接近」：活動度 2（雨雲の形だけでも出る）は 1 回では黄、2 回の解析で続けば赤。活動度 3 以上はすぐ赤"""
+    st = ft.ThunderState()
+    st.update(_result(9, 10, level=2))
+    assert st.current(_now(11))["kind"] == "watch" and st.current(_now(11))["km"] == 9
+    st.update(_result(9, 10, level=2))                 # 同じ解析をもう一度取っても数えない
+    assert st.current(_now(16))["kind"] == "watch"
+    st.update(_result(8, 20, level=2))                 # 次の解析でも 10km 以内 → 赤
+    assert st.current(_now(21))["kind"] == "near"
+
+    st = ft.ThunderState()
+    st.update(_result(9, 10, level=2))
+    st.update(_result(None, 20))                       # 間に雷なしの解析 → 続いていない
+    st.update(_result(9, 30, level=2))
+    assert st.current(_now(31))["kind"] == "watch"
+
+    st = ft.ThunderState()
+    st.update(_result(9, 10, level=2))
+    st.update(_result(15, 20, level=2))                # 次は 10km より遠い → 続いていない
+    st.update(_result(9, 30, level=2))
+    assert st.current(_now(31))["kind"] == "watch"
+
+    st = ft.ThunderState()
+    st.update(_result(7, 10, level=3))                 # 落雷あり → すぐ赤
+    assert st.current(_now(11))["kind"] == "near"
+
+
+def test_near_level_counts_within_10km_only():
+    """10km 以内のいちばん高い活動度で決める（遠くの活動度 4 では赤にしない）"""
+    tiles = _tiles_with([(LAT + 0.08, LON, ft.LEVEL_COLORS[2]),     # 約 9km 北：活動度 2
+                         (LAT, LON + 0.15, ft.LEVEL_COLORS[4])])    # 約 14km 東：活動度 4
+    hit = ft.nearest_thunder(LAT, LON, tiles)
+    assert hit["near_level"] == 2 and hit["max_level"] == 4
+    st = ft.ThunderState()
+    st.update({"status": "ok", "at": _now(10), "hit": hit})
+    assert st.current(_now(11))["kind"] == "watch"

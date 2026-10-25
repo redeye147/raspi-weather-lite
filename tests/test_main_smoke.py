@@ -68,7 +68,7 @@ def signage(tmp_path, monkeypatch):
     monkeypatch.setattr(main01, "start_thunder_fetch",
                         lambda lat, lon, holder: (thunder_calls.append((lat, lon)), holder.update(result={
                             "status": "ok", "at": datetime.datetime.now(JST),
-                            "hit": {"km": 8.2, "dir": "南西", "level": 2, "max_level": 2}})))
+                            "hit": {"km": 8.2, "dir": "南西", "level": 3, "max_level": 3, "near_level": 3}})))
     for mod in (main01, netstate):
         monkeypatch.setattr(mod, "get_connection_kind", lambda: "wifi")
     monkeypatch.setattr(main01, "wired_cable_status", lambda: "")
