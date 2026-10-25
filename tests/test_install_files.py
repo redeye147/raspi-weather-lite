@@ -77,18 +77,39 @@ def test_update_auto_mode_never_asks_or_restarts_display():
 
 
 def test_start_sh_auto_update_only_on_listed_wifi_once_per_boot():
-    """家の WiFi のときだけ起動ごとに 1 回、裏で更新する。天気画面は待たずにすぐ出す（黒い画面を長くしない）"""
+    """家の WiFi のときだけ起動ごとに 1 回、表示の前に更新する。その間は「更新しています」の画面を出し、
+    更新が終わって画面を手放してから表示プログラムを起動する（更新と表示を同時に動かさない）"""
     s = _read("start.sh")
     assert 'AUTO_SSIDS="$REPO/auto_update_ssids.txt"' in s
     assert "/run/raspi-weather-auto-updated" in s          # 再起動で消える目印：起動ごとに 1 回だけ
-    assert 'systemd-run --unit=raspi-weather-auto-update' in s and 'auto_update.sh"' in s
-    assert "timeout 600" not in s                          # start.sh では更新を待たない
-    assert s.index("auto_update.sh") < s.index("exec /usr/bin/python3")
+    assert "systemd-run" not in s                          # 裏では動かさない
+    i_splash, i_update = s.index("update_splash.py"), s.index('bash "$REPO/auto_update.sh"')
+    i_kill, i_exec = s.index('kill -TERM "$splash"'), s.index("exec /usr/bin/python3")
+    assert s.index("SDL_VIDEODRIVER=kmsdrm") < i_splash < i_update < i_kill < i_exec
     a = _read("auto_update.sh")
     assert 'timeout 600 bash "$REPO/update.sh" --auto' in a
     assert 'grep -Fxq -- "$ssid"' in a                     # 書いた SSID と完全一致のときだけ
-    assert a.index('[ "$before" != "$after" ]') < a.index("systemctl restart main01")   # 新しい版のときだけ起動し直す
+    assert "systemctl restart main01" not in a
     assert "auto_update_ssids.txt" in _read(".gitignore")  # SSID は公開リポジトリに入れない
+
+
+def test_update_splash_draws_each_phase(tmp_path, monkeypatch):
+    """更新中の画面：WiFi の確認・更新・終わりの文が出る（描くだけ。画面は dummy）"""
+    import os as _os
+    _os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+    import pygame
+    import fb_display
+    import update_splash
+    pygame.display.init()
+    pygame.font.init()
+    screen = pygame.display.set_mode((1280, 720))
+    monkeypatch.setattr(fb_display, "present", lambda s: None)
+    for ph in ("wifi", "update", "done", ""):
+        f = tmp_path / "phase"
+        f.write_text(ph)
+        monkeypatch.setattr(update_splash, "PHASE_FILE", str(f))
+        update_splash.draw(screen, started=0, now=42)
+    assert update_splash.phase() == "wifi"                 # 空なら WiFi の確認中とみなす
 
 
 def test_update_moves_old_default_interval_to_one_hour():
@@ -130,5 +151,3 @@ def test_config_json_not_tracked_and_update_leaves_it_alone():
     u = _read("update.sh")
     assert 'rm -f "$CFG"' not in u
     assert u.count('[ "$CFG_TRACKED" = 1 ] && [ -f "$CFG_BAK" ] && cp "$CFG_BAK" "$CFG"') == 3
-    a = _read("auto_update.sh")
-    assert "/run/raspi-weather/status.json" in a and '[ "$want" != "$shown" ]' in a     # 食い違っていたら起動し直す
