@@ -479,7 +479,8 @@ DIAG_HTML = """<!DOCTYPE html>
   <div id="overall" class="overall"></div>
   <div class="box" id="items"></div>
   <div class="box"><div class="sub">直近の警告・エラー（新しい順・最大20件。同じ内容はまとめて回数を表示）</div><div id="problems"></div></div>
-  <div class="box"><div class="sub">予報の精度（予報と空港の観測のずれ）</div><div id="accuracy"></div></div>
+  <div class="box"><div class="sub">予報の精度（予報と空港の観測のずれ）</div><div id="accuracy"></div>
+    <div class="sub" style="margin-top:8px"><a href="/diag/verify.csv" style="color:#7fb8ff">記録をダウンロード（CSV・最大 4 か月分）</a></div></div>
   <div class="sub" id="foot" style="margin-top:10px"></div>
   <button onclick="load()">🔄 再診断</button>
 </div>
@@ -674,6 +675,25 @@ def diag_data():
     """診断結果（見るだけ）。ログの中身・IP などが含まれるのでパスワード入力済みのときだけ返す"""
     import diagnostics
     return _no_cache(jsonify(diagnostics.diagnose()))
+
+
+@app.route("/diag/verify.csv")
+@admin_required
+def diag_verify_csv():
+    """予報の精度の記録（予報と空港の観測を並べたもの。最大 4 か月分）を CSV でダウンロード。
+    PC に集めて、空港ごと・季節ごとに Excel などで比べる用"""
+    import socket
+    import verify
+    from config import AIRPORT_CONFIG
+    text, n = verify.export_csv()
+    cfg = _load_config()
+    icao = (AIRPORT_CONFIG.get(cfg.get("airport", "centrair"), {}) or {}).get("icao", "")
+    name = f"verify_{socket.gethostname()}_{icao}_{time.strftime('%Y%m%d')}.csv"
+    resp = make_response("\ufeff" + text)              # Excel で文字化けしないように BOM を付ける
+    resp.headers["Content-Type"] = "text/csv; charset=utf-8"
+    resp.headers["Content-Disposition"] = f'attachment; filename="{name}"'
+    resp.headers["X-Rows"] = str(n)
+    return _no_cache(resp)
 
 
 @app.route("/shots")

@@ -136,3 +136,25 @@ def test_blended_compared_on_same_hours_only(tmp_path):
     line = next(l for l in verify.summarize(d, now=datetime.datetime(2026, 10, 24, 13, 0, tzinfo=JST)) if "表示した予報" in l)
     assert "風速 +1.0m/s（ずれ平均 1.0m/s、元の予報 -2.0・2.0m/s）1件" in line
     assert "雨の有無の的中 100%（元の予報 100%）1件" in line
+
+
+def test_airport_change_does_not_mix(tmp_path):
+    """空港を変えても混ざらない：別の空港の予報とは比べず、集計も今の空港の分だけ"""
+    d = str(tmp_path)
+    verify.record_forecast(_hourly(0, 30.0, 9.0, 0, 0.0), datetime.datetime(2026, 10, 24, 6, 0, tzinfo=JST), d, icao="RJTT")
+    verify.record_forecast(_hourly(0, 18.0, 6.0, 61, 1.0), datetime.datetime(2026, 10, 24, 5, 0, tzinfo=JST), d, icao="RJGG")
+    verify.record_observation(metar("RJGG 240100Z 33012KT 9999 -RA BKN020 19/15 Q1012"), None, d)
+    with open(os.path.join(d, "vf_202610.csv"), encoding="utf-8") as f:
+        r = list(csv.DictReader(f))[0]
+    assert r["fc3_temp"] == "18.0"                                       # 新しい RJTT の予報ではなく RJGG の予報
+    lines = verify.summarize(d, now=datetime.datetime(2026, 10, 24, 13, 0, tzinfo=JST), icao="RJTT")
+    assert lines == []                                                   # 羽田の記録はまだ無い
+    assert verify.summarize(d, now=datetime.datetime(2026, 10, 24, 13, 0, tzinfo=JST), icao="RJGG")[0].startswith("記録 1 時間分（RJGG・")
+
+
+def test_export_csv(tmp_path):
+    d = str(tmp_path)
+    verify.record_observation(metar("RJGG 240100Z 33012KT 9999 FEW020 19/15 Q1012"), None, d)
+    text, n = verify.export_csv(d)
+    assert n == 1 and text.splitlines()[0].startswith("obs_time,icao,temp")
+    assert "RJGG" in text.splitlines()[1]

@@ -13,6 +13,9 @@ verify.py
        cache/verify/bl_YYYYMMDD.jsonl  1 行 = TAF・降水短時間予報が届いたとき  {"at": ..., "hours": {"…T10:00": {"wind": .., "prec": ..}}}
      直した値だけを持つ（TAF の期間外の風・6 時間より先の雨は無い）。無い値は元の予報と同じとみなす
 
+空港を変えても混ざらないよう、予報の記録には空港（ICAO）を書き、比べるときは同じ空港の予報だけを使う。
+集計も今の空港の分だけ（前の空港の記録は消さずに残す。CSV の icao 列で分かる）。
+
 SD カードへの書き込みは 1 時間に数 KB。予報の記録は 3 日分、比べた記録は 4 か月分（月ごとのファイル）残す。
 """
 
@@ -47,7 +50,7 @@ def _hour_key(dt):
 
 
 # ------------------------------------------------------------------ 1. 予報の記録
-def record_forecast(hourly, fetched_at, base_dir=None):
+def record_forecast(hourly, fetched_at, base_dir=None, icao=None):
     """天気を取ったときに呼ぶ。hourly の各列の "hours"（1 時間ごとの元の値）をまとめて 1 行に"""
     hours = {}
     since = _hour_key(fetched_at)                    # 過ぎた時間（前の日の列など）は予報ではないので記録しない
@@ -61,12 +64,13 @@ def record_forecast(hourly, fetched_at, base_dir=None):
     os.makedirs(base_dir, exist_ok=True)
     path = os.path.join(base_dir, f"fc_{fetched_at.astimezone(JST):%Y%m%d}.jsonl")
     with open(path, "a", encoding="utf-8") as f:
-        f.write(json.dumps({"at": fetched_at.astimezone(JST).isoformat(), "hours": hours}, ensure_ascii=False) + "\n")
+        f.write(json.dumps({"at": fetched_at.astimezone(JST).isoformat(), "icao": icao, "hours": hours},
+                           ensure_ascii=False) + "\n")
     _prune(base_dir, fetched_at)
     return True
 
 
-def record_blended(taf=None, rain_hours=None, at=None, base_dir=None, ahead_h=30):
+def record_blended(taf=None, rain_hours=None, at=None, base_dir=None, ahead_h=30, icao=None):
     """TAF・降水短時間予報が届いたときに呼ぶ。この先 ahead_h 時間の「直した値」を 1 行に。
     風：その時刻の TAF の風（ふだんの風と「ときどき」のうち強い方。m/s）
     雨：その時刻からの 1 時間の降水短時間予報（mm/h。rain_hours はその 1 時間の終わりの時刻で引く）"""
@@ -92,7 +96,7 @@ def record_blended(taf=None, rain_hours=None, at=None, base_dir=None, ahead_h=30
     base_dir = base_dir or BASE_DIR
     os.makedirs(base_dir, exist_ok=True)
     with open(os.path.join(base_dir, f"bl_{at:%Y%m%d}.jsonl"), "a", encoding="utf-8") as f:
-        f.write(json.dumps({"at": at.isoformat(), "hours": hours}, ensure_ascii=False) + "\n")
+        f.write(json.dumps({"at": at.isoformat(), "icao": icao, "hours": hours}, ensure_ascii=False) + "\n")
     return True
 
 
@@ -106,7 +110,7 @@ def _forecast_records(base_dir, obs_dt, prefix="fc"):
                 for line in f:
                     try:
                         r = json.loads(line)
-                        recs.append((datetime.datetime.fromisoformat(r["at"]), r["hours"]))
+                        recs.append((datetime.datetime.fromisoformat(r["at"]), r["hours"], r.get("icao")))
                     except (ValueError, KeyError):
                         continue
         except OSError:
@@ -115,11 +119,16 @@ def _forecast_records(base_dir, obs_dt, prefix="fc"):
     return recs
 
 
-def forecast_for(obs_dt, lead_h, records):
-    """obs_dt（毎時ちょうど）について、lead_h 時間より前に出した予報のうちいちばん新しいもの（無ければ None）"""
+def forecast_for(obs_dt, lead_h, records, icao=None):
+    """obs_dt（毎時ちょうど）について、lead_h 時間より前に出した予報のうちいちばん新しいもの（無ければ None）。
+    icao を渡すと、その空港の予報だけ（空港を書く前の古い記録は、どの空港ともみなす）"""
     key = _hour_key(obs_dt)
     limit = obs_dt - datetime.timedelta(hours=lead_h)
-    for at, hours in reversed(records):
+    for rec in reversed(records):
+        at, hours = rec[0], rec[1]
+        rec_icao = rec[2] if len(rec) > 2 else None
+        if icao and rec_icao and rec_icao != icao:
+            continue
         if at <= limit and key in hours:
             return hours[key]
     return None
@@ -153,13 +162,13 @@ def record_observation(metar, radar_mmh=None, base_dir=None):
            "code": obs_now.icon_code_from_metar(metar), "rain": int(rain),
            "radar_mmh": "" if radar_mmh is None else radar_mmh}
     for L in LEADS_H:
-        fc = forecast_for(obs_jst, L, records) or {}
+        fc = forecast_for(obs_jst, L, records, metar.get("icao")) or {}
         row[f"fc{L}_temp"] = "" if fc.get("temp") is None else fc["temp"]
         row[f"fc{L}_wind"] = "" if fc.get("wind") is None else fc["wind"]
         row[f"fc{L}_code"] = "" if fc.get("wmo") is None else CODE_MAPPING.get(fc["wmo"], "999")
         row[f"fc{L}_prec"] = "" if fc.get("prec") is None else fc["prec"]
         # 表示した予報：直した値があればそれ、無ければ元の予報（元の予報も無ければ空）
-        bl = forecast_for(obs_jst, L, blended) or {}
+        bl = forecast_for(obs_jst, L, blended, metar.get("icao")) or {}
         for k in ("wind", "prec"):
             v = bl.get(k, fc.get(k))
             row[f"bl{L}_{k}"] = "" if v is None else v
@@ -173,6 +182,24 @@ def record_observation(metar, radar_mmh=None, base_dir=None):
         w.writerow(row)
     safe_write.write_text(state, obs_jst.isoformat())
     return True
+
+
+def export_csv(base_dir=None):
+    """記録（vf_*.csv。最大 4 か月分）を 1 つの CSV の文字列にまとめる（見出しは 1 回。診断ページのダウンロード用）"""
+    base_dir = base_dir or BASE_DIR
+    buf = io.StringIO()
+    w = csv.DictWriter(buf, fieldnames=FIELDS, extrasaction="ignore")
+    w.writeheader()
+    n = 0
+    for p in sorted(glob.glob(os.path.join(base_dir, "vf_*.csv"))):
+        try:
+            with open(p, encoding="utf-8") as f:
+                for r in csv.DictReader(f):
+                    w.writerow({k: r.get(k) or "" for k in FIELDS})
+                    n += 1
+        except OSError:
+            continue
+    return buf.getvalue(), n
 
 
 def _upgrade_header(path):
@@ -255,8 +282,8 @@ def _blended_line(rows, L):
     return "　└ 表示した予報（TAF・降水短時間予報で直した値。同じ時間どうし）：" + "・".join(parts)
 
 
-def summarize(base_dir=None, now=None, days=30, leads=(3, 24)):
-    """過去 days 日の「予報のずれ」を、画面に出せる文の並びで返す（記録が無ければ空）"""
+def summarize(base_dir=None, now=None, days=30, leads=(3, 24), icao=None):
+    """過去 days 日の「予報のずれ」を、画面に出せる文の並びで返す（記録が無ければ空）。icao を渡すとその空港の分だけ"""
     base_dir = base_dir or BASE_DIR
     now = (now or datetime.datetime.now(JST)).astimezone(JST)
     since = (now - datetime.timedelta(days=days)).strftime("%Y-%m-%d %H:%M")
@@ -264,12 +291,13 @@ def summarize(base_dir=None, now=None, days=30, leads=(3, 24)):
     for p in sorted(glob.glob(os.path.join(base_dir, "vf_*.csv"))):
         try:
             with open(p, encoding="utf-8") as f:
-                rows += [r for r in csv.DictReader(f) if r.get("obs_time", "") >= since]
+                rows += [r for r in csv.DictReader(f) if r.get("obs_time", "") >= since
+                         and (not icao or r.get("icao") in ("", icao))]
         except OSError:
             continue
     if not rows:
         return []
-    out = [f"記録 {len(rows)} 時間分（過去 {days} 日・毎時 00 分の観測）"]
+    out = [f"記録 {len(rows)} 時間分（{icao + '・' if icao else ''}過去 {days} 日・毎時 00 分の観測）"]
     for L in leads:
         t = [(_num(r[f"fc{L}_temp"]), _num(r["temp"])) for r in rows]
         t = [(f, o) for f, o in t if f is not None and o is not None]

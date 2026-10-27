@@ -40,7 +40,7 @@ def test_pages_are_served_without_password(client):
 
 
 # ---------------------------------------------------------------- パスワードと保護
-@pytest.mark.parametrize("url", ["/scan", "/wifi/list", "/diag/data", "/shots/list", "/shots/file/screen_20261013_215945.png"])
+@pytest.mark.parametrize("url", ["/scan", "/wifi/list", "/diag/data", "/diag/verify.csv", "/shots/list", "/shots/file/screen_20261013_215945.png"])
 def test_protected_reads_need_login(client, url):
     assert client.get(url).status_code == 401
 
@@ -151,3 +151,15 @@ def test_shots_take_failure_message(client, shots_dir, monkeypatch):
     client.post("/login", json={"password": "1048"})
     r = client.post("/shots/take")
     assert r.status_code == 500 and "撮れませんでした" in r.get_data(as_text=True)
+
+
+def test_verify_csv_download(client, monkeypatch):
+    """予報の精度の記録を CSV でダウンロード（Excel で開けるよう BOM 付き・ファイル名に Pi の名前と空港）"""
+    import verify
+    monkeypatch.setattr(verify, "export_csv", lambda: ("obs_time,icao\n2026-10-24 10:00,RJTT\n", 1))
+    monkeypatch.setattr(wp, "_load_config", lambda: {"airport": "haneda"})
+    assert client.post("/login", json={"password": "1048"}).status_code == 200
+    r = client.get("/diag/verify.csv")
+    assert r.status_code == 200 and r.headers["Content-Type"].startswith("text/csv")
+    assert "_RJTT_" in r.headers["Content-Disposition"] and r.data.startswith("\ufeff".encode("utf-8"))
+    assert b"2026-10-24 10:00,RJTT" in r.data

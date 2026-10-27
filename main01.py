@@ -700,7 +700,7 @@ def main():
                 if rainfc_result is None or _res["hours"] != rainfc_result["hours"]:
                     needs_redraw = True
                 rainfc_result, rainfc_ok_at = _res, time.time()
-                _record_blended(taf_state.get("taf"), rainfc_result)
+                _record_blended(taf_state.get("taf"), rainfc_result, cfg.get("icao"))
             _save_state()
 
         # TAF（30 分ごと。裏で取得）
@@ -718,7 +718,7 @@ def main():
                     needs_redraw = True
                 taf_state.update(taf=_res["taf"], raw=_res["raw"], ok_at=time.time())
                 _record_blended(taf_state.get("taf"),
-                                rainfc_result if fetch_rainfcst.is_fresh(rainfc_result, now) else None)
+                                rainfc_result if fetch_rainfcst.is_fresh(rainfc_result, now) else None, cfg.get("icao"))
             _save_state()
 
         # 雷ナウキャスト（5 分ごと。裏で取得）
@@ -820,7 +820,7 @@ def main():
                     _save_state()
                     logging.info("天気取得完了")
                     try:
-                        verify.record_forecast(hourly, now)          # 予報の精度の記録（1 時間ごとの予報）
+                        verify.record_forecast(hourly, now, icao=cfg.get("icao"))          # 予報の精度の記録（1 時間ごとの予報）
                     except Exception as e:
                         logging.info(f"予報の記録に失敗: {e}")
                 else:
@@ -969,11 +969,12 @@ def _with_forecasts(hourly, now, taf, rainfc=None):
         return hourly
 
 
-def _record_blended(taf, rainfc):
+def _record_blended(taf, rainfc, icao=None):
     """予報の精度の記録：TAF・降水短時間予報で直した「表示した予報」も記録する（verify.py）"""
     try:
         now_utc = datetime.datetime.now(datetime.timezone.utc)
-        verify.record_blended(taf if taf_mod.is_valid(taf, now_utc) else None, rainfc["hours"] if rainfc else None)
+        verify.record_blended(taf if taf_mod.is_valid(taf, now_utc) else None, rainfc["hours"] if rainfc else None,
+                              icao=icao)
     except Exception as e:
         logging.info(f"表示した予報の記録に失敗: {e}")
 

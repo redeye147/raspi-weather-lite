@@ -303,7 +303,7 @@ def collect() -> dict:
         "snap": snap,
         "version": _git_version(),
         "problems": recent_problems(),
-        "accuracy": _accuracy(),
+        "accuracy": _accuracy(AIRPORT_CONFIG.get(airport, {}).get("icao")),
     }
 
 
@@ -422,11 +422,11 @@ def _thunder_item(now, snap):
     return _item("THN", "雷ナウキャスト", level, value, detail)
 
 
-def _accuracy():
-    """予報の精度（過去 30 日の予報と観測のずれ。verify.py）"""
+def _accuracy(icao=None):
+    """予報の精度（過去 30 日の予報と観測のずれ。verify.py）。今の空港の分だけ"""
     try:
         import verify
-        return verify.summarize()
+        return verify.summarize(icao=icao)
     except Exception:
         return []
 
