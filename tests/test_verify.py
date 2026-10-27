@@ -92,7 +92,7 @@ def test_blended_recorded_and_compared(tmp_path):
     assert r["fc3_prec"] == "0.0" and r["bl3_prec"] == "3.0"
     lines = verify.summarize(d, now=datetime.datetime(2026, 10, 24, 13, 0, tzinfo=JST))
     bl = next(l for l in lines if "表示した予報" in l and "1件" in l)
-    assert "風速のずれ平均 0.0m/s（元の予報 4.2m/s）" in bl and "雨の有無の的中 100%（元の予報 0%）" in bl
+    assert "風速 +0.0m/s（ずれ平均 0.0m/s、元の予報 -4.2・4.2m/s）1件" in bl and "雨の有無の的中 100%（元の予報 0%）1件" in bl
 
 
 def test_old_csv_header_upgraded(tmp_path):
@@ -117,3 +117,22 @@ def test_past_hours_not_recorded(tmp_path):
     verify.record_forecast(_hourly(0, 15.0, 2.0, 0, 0.0), datetime.datetime(2026, 10, 24, 11, 0, tzinfo=JST), d)
     with open(os.path.join(d, "fc_20261024.jsonl"), encoding="utf-8") as f:
         assert sorted(json.loads(f.readline())["hours"]) == ["2026-10-24T11:00", "2026-10-24T12:00"]
+
+
+def test_blended_compared_on_same_hours_only(tmp_path):
+    """元の予報が無い時間は、表示した予報の方からも外して比べる（件数がそろう）"""
+    d = str(tmp_path)
+    fields = verify.FIELDS
+    rows = [{"obs_time": "2026-10-24 10:00", "temp": "19", "wind": "5", "rain": "0",
+             "fc3_wind": "3", "fc3_prec": "0", "bl3_wind": "6", "bl3_prec": "0"},
+            {"obs_time": "2026-10-24 11:00", "temp": "19", "wind": "5", "rain": "1",
+             "fc3_wind": "", "fc3_prec": "", "bl3_wind": "9", "bl3_prec": "3"}]   # 元の予報が無い時間
+    import csv as _csv
+    with open(os.path.join(d, "vf_202610.csv"), "w", encoding="utf-8", newline="") as f:
+        w = _csv.DictWriter(f, fieldnames=fields)
+        w.writeheader()
+        for r in rows:
+            w.writerow({k: r.get(k, "") for k in fields})
+    line = next(l for l in verify.summarize(d, now=datetime.datetime(2026, 10, 24, 13, 0, tzinfo=JST)) if "表示した予報" in l)
+    assert "風速 +1.0m/s（ずれ平均 1.0m/s、元の予報 -2.0・2.0m/s）1件" in line
+    assert "雨の有無の的中 100%（元の予報 100%）1件" in line

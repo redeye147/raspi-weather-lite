@@ -234,21 +234,25 @@ def _hit(rr):
 
 
 def _blended_line(rows, L):
-    """表示した予報と、同じ時間の元の予報を比べた 1 行（表示した予報を記録する前の時間しか無ければ None）"""
+    """表示した予報と元の予報を、両方の値と観測がそろった同じ時間どうしで比べた 1 行（無ければ None）。
+    以前は表示した予報と元の予報で比べる時間の数が違っていた（2026-10-27：24 時間前で 35 件と 12 件）"""
     rows = [r for r in rows if r.get(f"bl{L}_wind", "") != "" or r.get(f"bl{L}_prec", "") != ""]
-    if not rows:
-        return None
-    bw, brr = _wind_rain(rows, "bl", L)
-    fw, frr = _wind_rain(rows, "fc", L)
+    w = [(_num(r.get(f"bl{L}_wind")), _num(r.get(f"fc{L}_wind")), _num(r["wind"])) for r in rows]
+    w = [x for x in w if None not in x]
+    rr = [(_num(r.get(f"bl{L}_prec")), _num(r.get(f"fc{L}_prec")), r["rain"] == "1") for r in rows]
+    rr = [(b >= RAIN_MM, f >= RAIN_MM, o) for b, f, o in rr if b is not None and f is not None]
     parts = []
-    if bw and fw:
-        parts.append(f"風速のずれ平均 {sum(abs(f - o) for f, o in bw) / len(bw):.1f}m/s"
-                     f"（元の予報 {sum(abs(f - o) for f, o in fw) / len(fw):.1f}m/s）")
-    if brr and frr:
-        parts.append(f"雨の有無の的中 {_hit(brr):.0f}%（元の予報 {_hit(frr):.0f}%）")
+    if w:
+        n = len(w)
+        parts.append(f"風速 {sum(b - o for b, f, o in w) / n:+.1f}m/s（ずれ平均 {sum(abs(b - o) for b, f, o in w) / n:.1f}m/s、"
+                     f"元の予報 {sum(f - o for b, f, o in w) / n:+.1f}・{sum(abs(f - o) for b, f, o in w) / n:.1f}m/s）{n}件")
+    if rr:
+        n = len(rr)
+        parts.append(f"雨の有無の的中 {_hit([(b, o) for b, f, o in rr]):.0f}%"
+                     f"（元の予報 {_hit([(f, o) for b, f, o in rr]):.0f}%）{n}件")
     if not parts:
         return None
-    return f"　└ 表示した予報（TAF・降水短時間予報で直した値、{len(rows)}件）：" + "・".join(parts)
+    return "　└ 表示した予報（TAF・降水短時間予報で直した値。同じ時間どうし）：" + "・".join(parts)
 
 
 def summarize(base_dir=None, now=None, days=30, leads=(3, 24)):
