@@ -876,7 +876,7 @@ def main():
         _metar = aviation_state.get("metar")
         draw_header(
             screen, width, height, BASE_FONT,
-            airport_label, sunrise_str, sunset_str, "", "",
+            header_label(airport_label, cfg.get("icao")), sunrise_str, sunset_str, "", "",
             wbgt_level_info=(wbgt_level_info if _wbgt_today else None),
             aviation_metar=(_metar if _show_aviation_band and aviation_band_visible(now)
                             and not aviation.is_stale(_metar, datetime.datetime.now(datetime.timezone.utc)) else None),
@@ -970,6 +970,11 @@ def _with_forecasts(hourly, now, taf, rainfc=None):
     except Exception as e:                       # 直せなくても、今までの予報のまま表示を続ける
         logging.warning(f"TAF・降水短時間予報での直し失敗: {e}")
         return hourly
+
+
+def header_label(name, icao):
+    """ヘッダーの空港名のあとに、空港の 4 文字の記号（ICAO）を付ける（例「成田空港（RJAA）」）"""
+    return f"{name}（{icao}）" if icao else name
 
 
 def _record_blended(taf, rainfc, icao=None):

@@ -265,3 +265,11 @@ def test_taf_and_rain_forecast_shown_in_table(signage, monkeypatch):
         snap = json.load(f)
     assert snap["taf_raw"] == raw and snap["rainfc_hours"] == hours
     assert all(not it.get("taf") for it in snap["hourly"])                       # 保存する予報はそのまま
+
+
+def test_header_label_has_icao():
+    """ヘッダーの空港名のあとに ICAO（成田は RJAA。RJCC は新千歳）"""
+    from config import AIRPORT_CONFIG
+    assert main01.header_label("成田空港", AIRPORT_CONFIG["narita"]["icao"]) == "成田空港（RJAA）"
+    assert AIRPORT_CONFIG["chitose"]["icao"] == "RJCC"
+    assert main01.header_label("成田空港", None) == "成田空港"
