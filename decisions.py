@@ -8,6 +8,10 @@ import datetime
 
 WEATHER_REFRESH_START_HOUR = 5   # この時刻より後（6時〜23時台）だけ定期取得する
 
+# 朝 6 時からサイネージを見られるよう、6 時前に最新にしておく（2026-10-30）
+MORNING_FETCH = datetime.time(5, 45)   # 天気（予報・警報・概況）を取り直す。気象庁の朝の発表（5 時）を反映
+MORNING_FETCH_END = datetime.time(6, 10)
+
 
 def decide_snapshot(snap, airport: str, synced: bool, now_ts: float,
                     interval_hours: float, table_start: str) -> dict:
@@ -49,13 +53,17 @@ def should_fetch_2350(now: datetime.datetime, done_date: str, fetch_pending: boo
 
 def should_fetch_0600(now: datetime.datetime, last_weather_update: datetime.datetime,
                       done_date: str, fetch_pending: bool) -> bool:
-    """6:00 の定時取得をするか。
-    時間別の表は 6 時で「今日の 6 時〜」に切り替わるが、夜間は取得を先送りするため次の定期取得が
-    7:50 頃になる。それまで前日の列が残らないよう取り直す。
-    6:00〜6:09 の間に 1 日 1 回（起動直後などで 6 時以降のデータが既にあれば不要）。"""
-    if now.hour == 6 and now.minute < 10:
-        fetched_after_6 = last_weather_update.date() == now.date() and last_weather_update.hour >= 6
-        return done_date != now.strftime("%Y-%m-%d") and not fetch_pending and not fetched_after_6
+    """朝の定時取得をするか（名前は以前の 6:00 のまま。今は 5:45）。
+    夜間（0:00〜5:59）は取得しないので、6 時に画面を見たときに最新になっているよう 5:45 に取り直す。
+    5:45〜6:09 の間に 1 日 1 回（失敗したら 6:09 まで取り直す。5:40 以降のデータが既にあれば不要）。"""
+    t = now.time()
+    if MORNING_FETCH <= t < MORNING_FETCH_END:
+        prep = datetime.datetime.combine(now.date(), datetime.time(5, 40), now.tzinfo)
+        try:
+            fetched = last_weather_update >= prep
+        except TypeError:                              # 時刻の持ち方が違う（テストなど）ときは取る
+            fetched = False
+        return done_date != now.strftime("%Y-%m-%d") and not fetch_pending and not fetched
     return False
 
 
@@ -91,7 +99,8 @@ def retry_base_after_failure(now: datetime.datetime, interval_hours: float) -> d
     return now - datetime.timedelta(hours=interval_hours) + datetime.timedelta(minutes=30)
 
 
-AVIATION_START_HOUR = 6          # 航空気象は 6 時台から取得・表示（0:00〜6:06 は取得せず、0:00 に帯を消す）
+AVIATION_START_HOUR = 6          # 航空気象の帯は 6 時台から表示（0:00 に帯を消す）
+AVIATION_START = datetime.time(5, 30)   # 5:30 の観測から取得する（5:40 に取得。6 時に画面を見たとき今の列が観測になっている）
 # 観測（毎時 00・30 分）から最初の取得までの待ち時間（分）。NOAA に届くまでの実測（2026-10-04 成田 28 回）：
 # 00 分の観測は 7〜10 分後（7 分が最多）、30 分の観測は 9〜12 分後（10〜11 分が多い）
 AVIATION_FIRST_WAIT_MIN = {0: 7, 30: 10}
@@ -106,7 +115,7 @@ def aviation_expected_obs(now: datetime.datetime):
     mark = now.replace(minute=30 if now.minute >= 30 else 0, second=0, microsecond=0)
     if now < mark + datetime.timedelta(minutes=AVIATION_FIRST_WAIT_MIN[mark.minute]):
         mark -= datetime.timedelta(minutes=30)
-    if mark.date() != now.date() or mark.hour < AVIATION_START_HOUR:
+    if mark.date() != now.date() or mark.time() < AVIATION_START:
         return None
     return mark
 
@@ -143,7 +152,13 @@ def aviation_band_visible(now: datetime.datetime) -> bool:
     return now.hour >= AVIATION_START_HOUR
 
 
-WBGT_START_HOUR = 6              # WBGT は 6 時〜23 時台だけ取得（0:00〜5:59 は取得しない）
+WBGT_START_HOUR = 6              # （以前の取得開始。今は WBGT_START）
+WBGT_START = datetime.time(5, 45)   # WBGT は 5:45〜23 時台だけ取得（6 時に画面を見たときバッジが出ているように）
+
+
+def wbgt_active(now: datetime.datetime) -> bool:
+    """WBGT を取りに行く時間帯か（5:45〜23:59）"""
+    return now.time() >= WBGT_START
 WBGT_INTERVAL_MIN = 60           # 通常は 1 時間ごと
 WBGT_RECENT_DATA_DAYS = 2        # 直近 2 日以内に値が取れていれば、データなしは一時的とみなして 1 時間後に再確認
 
@@ -158,11 +173,11 @@ def wbgt_off_season(now: datetime.datetime, last_status, last_data_at) -> bool:
 
 def wbgt_fetch_due(now: datetime.datetime, last_attempt, last_status, last_data_at) -> bool:
     """WBGT を今取得するか。
-    - 0:00〜5:59 は取得しない
+    - 0:00〜5:44 は取得しない
     - 通常（値あり・通信エラー）は前回の取得から 1 時間ごと
     - 提供期間外（wbgt_off_season）は 1 日 1 回（朝 6 時、その日まだ確認していなければ）。翌年の開始も自動で見つける
     """
-    if now.hour < WBGT_START_HOUR:
+    if not wbgt_active(now):
         return False
     if last_attempt is None:
         return True

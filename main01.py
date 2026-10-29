@@ -632,7 +632,7 @@ def main():
             fetcher.start()
             _fetch_pending = True
             main._updated_0600_date = now.strftime("%Y-%m-%d")
-            logging.info("6:00定時取得開始")
+            logging.info("朝の定時取得開始（5:45。6 時に最新の表に）")
 
         # 航空気象（METAR）：00 分の観測は 7 分後・30 分の観測は 10 分後に取得し、新しい観測がまだ届いていなければ 2 分おきに最大6回取り直す
         # （6:07〜23:50）。裏で取得し、生電文と観測時刻はログにも出る。更新されたら再描画

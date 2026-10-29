@@ -285,12 +285,12 @@ def test_git_version_time_is_japan_time():
     {"wbgt_status": "error"},                                           # 夜になる前の取得が失敗していた
 ])
 def test_wbgt_at_night_is_ok_even_without_data(snap_over):
-    """夜間（0:00〜5:59）は WBGT を取りに行かない決まりなので、データなし・前回失敗でも注意にしない"""
+    """夜間（0:00〜5:44）は WBGT を取りに行かない決まりなので、データなし・前回失敗でも注意にしない"""
     snap = dict(healthy()["snap"], **snap_over)
     it = item(dg.evaluate(healthy(snap=snap), datetime.datetime(2026, 10, 20, 2, 16, tzinfo=JST)), "WBGT")
-    assert it["level"] == "ok" and it["value"] == "夜間は取得なし（6時から）"
+    assert it["level"] == "ok" and it["value"] == "夜間は取得なし（5:45 から）"
     if not snap_over.get("wbgt_status") == "error":
-        assert it["detail"] == "起動後まだ取得していません（6時に取得）"
+        assert it["detail"] == "起動後まだ取得していません（5:45 に取得）"
 
 
 def test_wbgt_no_data_in_daytime_is_warn():

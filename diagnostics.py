@@ -15,7 +15,7 @@ import time
 
 import aviation
 from config import AIRPORT_CONFIG, BASE_DIR, LOG_FILE
-from decisions import AVIATION_START_HOUR, WBGT_START_HOUR, wbgt_off_season
+from decisions import AVIATION_START, AVIATION_FIRST_WAIT_MIN, wbgt_active, wbgt_off_season
 from netstate import get_connection_kind
 
 JST = datetime.timezone(datetime.timedelta(hours=9))
@@ -366,12 +366,12 @@ def _wbgt_item(now, snap):
     data_dt = datetime.datetime.fromtimestamp(data_ts, JST) if data_ts else None
     if wbgt_off_season(now, status, data_dt):
         return _item("WBGT", "WBGT（熱中症）", INFO, "提供期間外（データなし）",
-                     f"1日1回（朝6時）確認中（最後の確認 {_hm(attempt)}）")
+                     f"1日1回（朝5:45）確認中（最後の確認 {_hm(attempt)}）")
     # 夜間（0:00〜5:59）は取りに行かない決まりなので、まだ取っていない・前回失敗でも正常（夜に起動し直すと
     # 朝まで「データなし」の注意になっていた。2026-10-20 の 112）
-    if now.hour < WBGT_START_HOUR:
-        return _item("WBGT", "WBGT（熱中症）", OK, "夜間は取得なし（6時から）",
-                     f"最後の取得 {_hm(attempt)}" if attempt else "起動後まだ取得していません（6時に取得）")
+    if not wbgt_active(now):
+        return _item("WBGT", "WBGT（熱中症）", OK, "夜間は取得なし（5:45 から）",
+                     f"最後の取得 {_hm(attempt)}" if attempt else "起動後まだ取得していません（5:45 に取得）")
     if not attempt:
         return _item("WBGT", "WBGT（熱中症）", WARN, "データなし", "まだ取得していません")
     age = now.timestamp() - attempt
@@ -388,8 +388,10 @@ def _aviation_item(now, snap, icao):
         return _item("AVI", "航空気象", INFO, "対象外（空港コードなし）")
     raw = (snap or {}).get("metar_raw")
     m = aviation.parse_metar(raw, now.astimezone(datetime.timezone.utc)) if raw else None
-    if now.hour < AVIATION_START_HOUR or (now.hour == AVIATION_START_HOUR and now.minute < 7):
-        return _item("AVI", "航空気象", OK, "夜間は取得なし（6:07 から）",
+    first = (datetime.datetime.combine(now.date(), AVIATION_START)
+             + datetime.timedelta(minutes=AVIATION_FIRST_WAIT_MIN[AVIATION_START.minute])).time()
+    if now.time() < first:
+        return _item("AVI", "航空気象", OK, f"夜間は取得なし（{first:%H:%M} から）",
                      f"最後の観測 {m['obs_utc'].astimezone(JST):%m/%d %H:%M}" if m else "")
     if not m:
         return _item("AVI", "航空気象", BAD, "データなし", "METAR を取得できていません")

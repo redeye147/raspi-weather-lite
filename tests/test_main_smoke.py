@@ -120,7 +120,7 @@ def test_cold_start_without_snapshot(signage):
     assert snap["hourly"] and snap["daily"] and snap["airport"]
     assert calls["thunder"] and "雷: near 南西 8.2km" in log          # 雷は起動直後に取りに行き、帯を出す
     # WBGT は起動直後に取りに行く（0:00〜5:59 は取得しない決まりなので、その時間に試験すると呼ばれない）
-    if main01.datetime.datetime.now(main01.JST).hour >= decisions.WBGT_START_HOUR:
+    if decisions.wbgt_active(main01.datetime.datetime.now(main01.JST)):
         assert calls["wbgt"]
     else:
         assert not calls["wbgt"]
@@ -211,7 +211,7 @@ def test_headless_keeps_fetching_and_restarts_when_hdmi_attached(signage, monkey
         assert json.load(f)["hourly"]                     # 画面が無くても天気を取って保存している
     assert calls["thunder"]
     # WBGT は 0:00〜5:59 は取りに行かない決まり（その時間に試験すると呼ばれない）
-    assert bool(calls["wbgt"]) == (main01.datetime.datetime.now(main01.JST).hour >= decisions.WBGT_START_HOUR)
+    assert bool(calls["wbgt"]) == (decisions.wbgt_active(main01.datetime.datetime.now(main01.JST)))
 
 
 def test_aviation_band_hidden_but_metar_still_fetched(signage, monkeypatch):

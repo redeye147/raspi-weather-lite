@@ -82,16 +82,17 @@ def test_fetch_2350_once_per_day_and_not_while_pending():
     assert should_fetch_2350(now, "", True) is False              # 取得中
 
 
-@pytest.mark.parametrize("hh, mm, expected", [(5, 59, False), (6, 0, True), (6, 9, True), (6, 10, False)])
+@pytest.mark.parametrize("hh, mm, expected", [(5, 44, False), (5, 45, True), (6, 9, True), (6, 10, False)])
 def test_fetch_0600_window(hh, mm, expected):
+    """朝の定時取得は 5:45〜6:09（6 時に画面を見たとき最新になっているように）"""
     last = at(2, 23, 50)
     assert should_fetch_0600(at(3, hh, mm), last, "", False) is expected
 
 
 def test_fetch_0600_skipped_if_already_fetched_after_6():
-    """起動直後などで 6 時以降のデータが既にあれば取り直さない"""
-    assert should_fetch_0600(at(3, 6, 5), at(3, 6, 1), "", False) is False
-    assert should_fetch_0600(at(3, 6, 5), at(3, 5, 59), "", False) is True
+    """起動直後などで 5:40 以降のデータが既にあれば取り直さない"""
+    assert should_fetch_0600(at(3, 6, 5), at(3, 5, 41), "", False) is False
+    assert should_fetch_0600(at(3, 6, 5), at(3, 5, 39), "", False) is True
 
 
 def test_fetch_0600_once_per_day_and_not_while_pending():
@@ -166,18 +167,18 @@ def simulate_night(fail_at=None, interval=2.0):
 
 
 def test_overnight_schedule():
-    """夜間は先送りし、6:00 に当日の表へ切り替え、以後は2時間ごと"""
-    assert simulate_night() == ["23:50[23:50]", "06:00[6:00]", "08:00"]
+    """夜間は先送りし、5:45 に取り直して 6 時に当日の表へ切り替わったとき最新に。以後は2時間ごと"""
+    assert simulate_night() == ["23:50[23:50]", "05:45[6:00]", "07:45"]
 
 
 def test_overnight_schedule_with_failure_at_6():
-    """6:00 の取得に失敗したら 30 分後に再試行"""
-    assert simulate_night(fail_at="06:00") == ["23:50[23:50]", "06:00[6:00](失敗)", "06:30", "08:30"]
+    """5:45 の取得に失敗したら 30 分後に再試行"""
+    assert simulate_night(fail_at="05:45") == ["23:50[23:50]", "05:45[6:00](失敗)", "06:15", "08:15"]
 
 
 # ---------------------------------------------------------------- 航空気象の取得（00 分の観測は 7 分後・30 分は 10 分後、届くまで 2 分おきに最大 6 回）
 @pytest.mark.parametrize("hh, mm, mark", [
-    (0, 0, None), (5, 59, None), (6, 6, None),                     # 0:00〜6:06 は取得しない
+    (0, 0, None), (5, 39, None), (5, 40, (5, 30)), (6, 6, (5, 30)),  # 0:00〜5:39 は取得しない（5:30 の観測から）
     (6, 7, (6, 0)), (6, 39, (6, 0)), (6, 40, (6, 30)), (7, 6, (6, 30)), (7, 7, (7, 0)),
     (23, 40, (23, 30)), (23, 59, (23, 30)),
 ])
