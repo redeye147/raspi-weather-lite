@@ -200,7 +200,7 @@ WIND_ARROW_COLORS = [
     (1, (70, 170, 255)),     # 1〜4：水色
     (0, (205, 210, 205)),    # 0：灰色
 ]
-WIND_ARROW_OUTLINE = (90, 90, 90)        # 黄色・灰色でも白地で見えるように縁取り
+WIND_ARROW_OUTLINE = (0, 0, 0)           # 黄色・水色でも見えるように黒で縁取り（2026-10-29 に灰 1px → 黒 2px）
 
 
 def wind_arrow_color(speed):
@@ -258,10 +258,11 @@ def wind_arrow_points(cx, cy, size, deg):
 def draw_wind_arrow(screen, cx, cy, size, deg, speed):
     pts = wind_arrow_points(cx, cy, size, deg)
     pygame.draw.polygon(screen, wind_arrow_color(speed), pts)
-    pygame.draw.polygon(screen, WIND_ARROW_OUTLINE, pts, 1)
+    pygame.draw.polygon(screen, WIND_ARROW_OUTLINE, pts, WIND_ARROW_OUTLINE_W)
 
 
-RUNWAY_FILL, RUNWAY_EDGE, RUNWAY_TEXT = (200, 200, 200), (130, 130, 130), (70, 70, 70)
+WIND_ARROW_OUTLINE_W = 2       # 矢印の縁取りの太さ
+RUNWAY_FILL, RUNWAY_EDGE, RUNWAY_TEXT = (232, 232, 232), (185, 185, 185), (70, 70, 70)   # 下地は薄く（矢印を目立たせる）
 WIND_ROW_RATIO = 0.072        # 風速の行の高さ（画面の高さに対する割合）。滑走路の絵を読める大きさに描くため 0.055 → 0.072（2026-10-29）。
                               # 1366×768・1280×720 は列が狭く絵の大きさは幅で決まるので、高くしても大きくならない。帯が 2 本出ると
                               # 下にはみ出すので 0.055 のまま
