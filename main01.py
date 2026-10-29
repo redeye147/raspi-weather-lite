@@ -207,8 +207,8 @@ def main():
     AIRPORT_LABELS = {
         "narita":   "成田空港",
         "haneda":   "羽田空港",
-        "centrair": "中部国際空港",
-        "kanku":    "関西国際空港",
+        "centrair": "中部空港",
+        "kanku":    "関西空港",
         "chitose":  "新千歳空港",
         "fukuoka":  "福岡空港",
         "naha":     "那覇空港",

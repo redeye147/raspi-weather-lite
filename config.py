@@ -45,13 +45,13 @@ AIRPORT_CONFIG = {
             "area_codes": ("2321600", "230010"),
             "latitude": 34.8583,
             "longitude": 136.8053,
-            "name": "中部国際空港"
+            "name": "中部空港"
         },
 
         "kanku": {
             "runway": {"ends": ("06", "24"), "deg": 238},   # 風の矢印の下に描く滑走路（2 つ目の番号の向き・真方位のおおよそ）
             "icao": "RJBB",          # 航空気象（METAR/TAF）の空港コード
-            "name": "関西国際空港",
+            "name": "関西空港",
             "latitude": 34.4347,
             "longitude": 135.2440,
             "office_code": "270000",
@@ -99,7 +99,7 @@ WEEK_ROW_LABELS = ["日付", "天気", "降水確率", "気温"]
 
 JST = pytz.timezone("Asia/Tokyo")
 
-AIRPORT_NAME = "中部国際空港"
+AIRPORT_NAME = "中部空港"
 
 # Open-Meteo（WMO）の天気コード → 気象庁の天気コード（アイコン weather_icons/{コード}.png）
 # 表示プログラムの CPU 使用率（直近 1 分の平均）を診断ページへ渡すファイル。/run はメモリ上（SD に書かない・再起動で消える）
