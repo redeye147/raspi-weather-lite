@@ -262,25 +262,38 @@ def draw_wind_arrow(screen, cx, cy, size, deg, speed):
 
 
 WIND_ARROW_OUTLINE_W = 2       # 矢印の縁取りの太さ
-RUNWAY_FILL, RUNWAY_EDGE, RUNWAY_TEXT = (232, 232, 232), (185, 185, 185), (70, 70, 70)   # 下地は薄く（矢印を目立たせる）
+RUNWAY_FILL, RUNWAY_EDGE, RUNWAY_TEXT = (236, 236, 236), (190, 190, 190), (110, 110, 110)   # 下地と番号は控えめに（矢印を目立たせる）
 WIND_ROW_RATIO = 0.072        # 風速の行の高さ（画面の高さに対する割合）。滑走路の絵を読める大きさに描くため 0.055 → 0.072（2026-10-29）。
                               # 1366×768・1280×720 は列が狭く絵の大きさは幅で決まるので、高くしても大きくならない。帯が 2 本出ると
                               # 下にはみ出すので 0.055 のまま
-RUNWAY_ARROW_RATIO = 0.58     # 滑走路の円（行の高さいっぱい）に対する、上に描く矢印の大きさ
+WIND_VALUE_SIZE = 28          # 風速の数字の大きさ（単位 m/s は 17。2026-10-30 に 26・24 から）
+RUNWAY_LABEL_RATIO = 0.17     # 滑走路の番号の文字の大きさ（絵の直径に対する割合。2026-10-30 に 0.22 → 0.17）
+
+
+def runway_arrow_size(size, runway, font_path):
+    """滑走路の絵（直径 size の円）の上に描く矢印の大きさ。矢印の先が番号に当たらない大きさ"""
+    _, half, _, _ = _runway_geometry(size, runway, font_path)
+    return int(2 * half / 0.89)                     # 矢じりの先は半径の 0.89（wind_arrow_points）。先が滑走路の端まで
+
+
+def _runway_geometry(size, runway, font_path):
+    """(番号の文字, 滑走路の半分の長さ, 滑走路の幅, 番号の中心までの距離)。番号まで含めて直径 size の円に収める"""
+    font = get_font(font_path, max(9, int(size * RUNWAY_LABEL_RATIO)), bold=True)
+    ext = max(max(font.size(t)) for t in runway["ends"])          # 番号の大きさ（どの向きでも収まるよう幅と高さの大きい方）
+    gap = max(3, size * 0.06)                                     # 滑走路の端と番号のすき間
+    half = max(size * 0.18, size * 0.5 - ext - gap)
+    return font, half, max(4, size * 0.16), half + gap + ext / 2
 
 
 def draw_runway(screen, cx, cy, size, runway, font_path):
-    """風の矢印の下に描く滑走路（灰色の帯）と、両端の番号（例 16・34）。
+    """風の矢印の下に描く滑走路（薄い灰色の帯）と、両端の番号（例 16・34）。
     runway = {"ends": ("16", "34"), "deg": 337}：deg は 2 つ目の番号（34）の向きの真方位。
-    番号は、その番号の向きに降りるときの手前の端（34 は南の端、16 は北の端）に書く（実際の滑走路と同じ）"""
+    番号は、その番号の向きに降りるときの手前の端（34 は南の端、16 は北の端）の少し外に書く（実際の滑走路と同じ置き方）"""
     if not runway:
         return
     t = math.radians(runway["deg"])
     ux, uy = math.sin(t), -math.cos(t)                  # 画面の上が北
-    # 番号まで含めて矢印と同じ円（直径 size）の中に収める（上下の行・隣の列にはみ出さない）
-    font = get_font(font_path, max(9, int(size * 0.22)), bold=True)
-    lab = max(font.size(t)[0] for t in runway["ends"]) * 0.5 + 1
-    half, w = max(size * 0.18, size * 0.5 - lab * 2), max(4, size * 0.20)
+    font, half, w, d = _runway_geometry(size, runway, font_path)
     px, py = -uy * w / 2, ux * w / 2
     a = (cx - ux * half, cy - uy * half)                # 2 つ目の番号の手前の端（34 なら南）
     b = (cx + ux * half, cy + uy * half)
@@ -288,11 +301,10 @@ def draw_runway(screen, cx, cy, size, runway, font_path):
     pygame.draw.polygon(screen, RUNWAY_FILL, pts)
     pygame.draw.polygon(screen, RUNWAY_EDGE, pts, 1)
     first, second = runway["ends"]
-    for label, end, sign in ((second, a, -1), (first, b, 1)):
+    for label, sign in ((second, -1), (first, 1)):
         surf = font.render(label, True, RUNWAY_TEXT)
-        d = lab                                         # 端のすぐ外側
-        x = end[0] + sign * ux * d - surf.get_width() / 2
-        y = end[1] + sign * uy * d - surf.get_height() / 2
+        x = cx + sign * ux * d - surf.get_width() / 2
+        y = cy + sign * uy * d - surf.get_height() / 2
         screen.blit(surf, (round(x), round(y)))
 
 
@@ -750,10 +762,10 @@ def draw_weather(
                     text = item["wind"]
                 else:
                     wcolor = wind_text_color(v)          # 矢印と同じ区切り（0・1〜4・5〜7・8〜11・12〜17・18〜）
-                    val_surf  = get_font(base_font_path, 26, bold=v >= WIND_BOLD_FROM).render(str(int(v)), True, wcolor)
-                    # 列が狭い画面（1366・1280 幅）は単位を小さくして、風向の矢印の場所を空ける
-                    unit_surf = (get_font(base_font_path, 24).render(" m/s", True, wcolor) if col_w >= 140
-                                 else get_font(base_font_path, 16).render("m/s", True, wcolor))
+                    val_surf  = get_font(base_font_path, WIND_VALUE_SIZE, bold=v >= WIND_BOLD_FROM).render(str(int(v)), True, wcolor)
+                    # 単位は数字より小さく（数字が目立つように）。列が狭い画面（1366・1280 幅）はさらに小さく、風向の絵の場所を空ける
+                    unit_surf = (get_font(base_font_path, 17).render(" m/s", True, wcolor) if col_w >= 140
+                                 else get_font(base_font_path, 14).render("m/s", True, wcolor))
                     x_pos = x + 5
                     y_pos = y + (row_heights[row_idx] - val_surf.get_height()) // 2
                     screen.blit(val_surf,  (x_pos, y_pos))
@@ -765,12 +777,12 @@ def draw_weather(
                     # 0 m/s（ほぼ無風）・実況で風向が変動（VRB）のときは向きが無いので、矢印の代わりに「---」
                     calm = int(v) == 0 or bool(item.get("wind_variable"))
                     if calm or isinstance(wdir, (int, float)):
-                        widest = get_font(base_font_path, 26, bold=True).size("88")[0] + unit_surf.get_width()
+                        widest = get_font(base_font_path, WIND_VALUE_SIZE, bold=True).size("88")[0] + unit_surf.get_width()
                         text_right = x_pos + max(widest, val_surf.get_width() + unit_surf.get_width())
                         if runway:
                             # 滑走路（番号まで）を行いっぱいの円に描き、矢印はその上に少し小さく（滑走路の両端が見えるように）
-                            fig = min(row_heights[row_idx] - 6, x + col_w - text_right - 8)
-                            size = int(fig * RUNWAY_ARROW_RATIO)
+                            fig = min(row_heights[row_idx] - 4, x + col_w - text_right - 8)
+                            size = runway_arrow_size(fig, runway, base_font_path)
                         else:
                             fig = size = min(int(row_heights[row_idx] * WIND_ARROW_SCALE), x + col_w - text_right - 8)
                         if size >= 16:
