@@ -17,7 +17,9 @@ import time
 JST = datetime.timezone(datetime.timedelta(hours=9))
 UTC = datetime.timezone.utc
 
-METAR_URL = "https://aviationweather.gov/api/data/metar?ids={icao}&format=raw"
+# 直近 3 時間ぶんをもらい、いちばん新しい観測を使う。1 件だけだと、NOAA が古い観測を返すことがあった
+# （2026-10-30 06:28 の 110：06:00 の観測が出ていたのに 22:30 の観測が返ってきた）
+METAR_URL = "https://aviationweather.gov/api/data/metar?ids={icao}&format=raw&hours=3"
 
 KT_TO_MS = 0.514444
 FT_TO_M = 0.3048
@@ -247,8 +249,14 @@ def fetch_and_parse(icao: str, now_utc=None):
     """METAR を取得して解析。戻り値 (metar, raw)。失敗したら (None, None)"""
     now_utc = now_utc or datetime.datetime.now(UTC)
     try:
-        raw = fetch_raw(METAR_URL.format(icao=icao)).splitlines()[0]
-        metar = parse_metar(raw, now_utc)
+        found = []
+        for line in fetch_raw(METAR_URL.format(icao=icao)).splitlines():
+            m = parse_metar(line, now_utc) if line.strip() else None
+            if m:
+                found.append((m["obs_utc"], m, line.strip()))
+        if not found:
+            raise ValueError("METAR を読めない")
+        _, metar, raw = max(found, key=lambda x: x[0])         # いちばん新しい観測
     except Exception as e:
         _failures(icao).failed(e)          # 一時的な失敗は INFO、15 分以上続いたら WARNING
         return None, None
@@ -280,6 +288,11 @@ def fetch_into(icao: str, holder: dict, expected_obs=None) -> None:
         sec = int((now - metar["obs_utc"]).total_seconds())
         lag = f" 観測から {sec // 60}分{sec % 60:02d}秒後"
     logging.info(f"[aviation] 期待 {exp} 観測 / 取得 {got} 観測（{state}）{lag} 表示: {format_metar_line(metar)}")
+    old = holder.get("metar")
+    if metar and old and metar["obs_utc"] < old["obs_utc"]:
+        # 手元より古い観測が返ってきたら使わない（新しい観測を古い観測で上書きしない）
+        logging.info(f"[aviation] 手元の {old['obs_utc'].astimezone(JST):%H:%M} 観測より古いので使わない")
+        return
     if metar:
         holder.update({"metar": metar, "raw": raw, "fetched_at": time.time()})
 

@@ -461,7 +461,9 @@ def main():
 
     # 航空気象（METAR）：前回の生電文があれば起動直後から帯を出す（古すぎれば is_stale で出さない）
     aviation_state = {}
-    if synced and snap and snap.get("metar_raw"):
+    # 時刻合わせの前でも戻す（以前は時刻合わせ済みのときだけで、毎朝の再起動のあと観測が空になり、
+    # 古い観測で埋まることがあった。古すぎる観測は is_stale・診断ページで判断する）
+    if snap and snap.get("metar_raw"):
         _m = aviation.parse_metar(snap["metar_raw"], datetime.datetime.now(datetime.timezone.utc))
         if _m:
             aviation_state.update({"metar": _m, "raw": snap["metar_raw"]})

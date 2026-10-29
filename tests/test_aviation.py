@@ -205,3 +205,24 @@ def test_fetch_into_logs_expected_and_obtained(monkeypatch, caplog):
     with caplog.at_level(logging.INFO):
         av.fetch_into("RJAA", {}, expected_obs=datetime.datetime(2026, 10, 3, 22, 30, tzinfo=JST))
     assert "取得 22:30 観測（新しい観測） 観測から " in caplog.text      # 届くまでの時間も出す
+
+
+def test_fetch_and_parse_uses_newest_of_several(monkeypatch):
+    """直近 3 時間ぶんの中から、いちばん新しい観測を使う（NOAA が古い観測を先に返すことがあった）"""
+    monkeypatch.setattr(av, "fetch_raw", lambda url, timeout=10: (
+        "METAR RJGG 031130Z 33012KT 9999 FEW030 22/15 Q1013\n"
+        "METAR RJGG 031200Z 33010KT 9999 FEW030 21/15 Q1013\n"
+        "METAR RJGG 031100Z 33012KT 9999 FEW030 22/15 Q1013\n"))
+    m, raw = av.fetch_and_parse("RJGG", NOW)
+    assert raw.startswith("METAR RJGG 031200Z") and m["temp"] == 21
+    assert "hours=3" in av.METAR_URL
+
+
+def test_fetch_into_ignores_older_observation(monkeypatch):
+    """手元より古い観測が返ってきても上書きしない（2026-10-30 の 110：06:00 のあと 22:30 で上書きされた）"""
+    holder = {}
+    monkeypatch.setattr(av, "fetch_and_parse", lambda icao, now=None: (metar(REAL_METAR), "NEW"))
+    av.fetch_into("RJAA", holder)
+    monkeypatch.setattr(av, "fetch_and_parse", lambda icao, now=None: (metar(REAL_METAR.replace("031300Z", "031130Z")), "OLD"))
+    av.fetch_into("RJAA", holder)
+    assert holder["raw"] == "NEW"
