@@ -167,11 +167,13 @@ def main():
     _default_airport = "centrair"
     _default_interval = 1.0
     _show_aviation_band = SHOW_AVIATION_BAND
+    _show_runway = True             # 風の矢印の下に滑走路を描く（config.json に "show_runway": false で止める）
     try:
         _cfg = _json.load(open(_cfg_path))
         _default_airport = _cfg.get("airport", "centrair")
         _default_interval = float(_cfg.get("interval_hours", 1.0))
         _show_aviation_band = bool(_cfg.get("show_aviation_band", SHOW_AVIATION_BAND))
+        _show_runway = bool(_cfg.get("show_runway", True))
     except Exception:
         pass
 
@@ -868,6 +870,7 @@ def main():
             latitude=cfg["latitude"], longitude=cfg["longitude"],
             overview_text=overview_text,
             thunder=thunder_info,
+            runway=cfg.get("runway") if _show_runway else None,
         )
 
         _metar = aviation_state.get("metar")

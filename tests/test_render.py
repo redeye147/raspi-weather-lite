@@ -541,3 +541,38 @@ def test_overview_fits_with_many_warnings(size, monkeypatch):
                               overview_text="２５日の東海地方は、前線や湿った空気の影響によりおおむね雨となるでしょう。",
                               now=datetime.datetime(2026, 10, 25, 12, 0, tzinfo=JST))
     assert any(t.startswith("【天気概況】") for t in drawn)
+
+
+def test_runway_under_wind_arrow(monkeypatch):
+    """風の矢印の下に滑走路（灰色の帯）と両端の番号を描く。絵は風速の行からはみ出さない"""
+    import numpy as np
+    import weather_draw
+    from config import AIRPORT_CONFIG
+    assert all(c.get("runway") and len(c["runway"]["ends"]) == 2 for c in AIRPORT_CONFIG.values())
+    texts = []
+    real = weather_draw.get_font
+
+    class Spy:
+        def __init__(self, f):
+            self.f = f
+
+        def render(self, t, *a, **k):
+            texts.append(t)
+            return self.f.render(t, *a, **k)
+
+        def __getattr__(self, n):
+            return getattr(self.f, n)
+    W, H = 1920, 1080
+    s = pygame.Surface((W, H))
+    s.fill((255, 255, 255))
+    weather_draw.draw_runway(s, 500, 500, 72, AIRPORT_CONFIG["narita"]["runway"], BASE_FONT)
+    a = pygame.surfarray.array3d(s)
+    gray = (a[:, :, 0] == weather_draw.RUNWAY_FILL[0]) & (a[:, :, 1] == weather_draw.RUNWAY_FILL[1])
+    xs, ys = np.nonzero(gray)
+    assert len(xs) > 100
+    ink = np.nonzero((a != 255).any(axis=2))
+    assert ink[0].min() >= 500 - 37 and ink[0].max() <= 500 + 37 and ink[1].min() >= 500 - 37 and ink[1].max() <= 500 + 37
+    monkeypatch.setattr(weather_draw, "get_font", lambda *a, **k: Spy(real(*a, **k)))
+    weather_draw.draw_runway(s, 500, 500, 72, AIRPORT_CONFIG["narita"]["runway"], BASE_FONT)
+    assert "16" in texts and "34" in texts
+    weather_draw.draw_runway(s, 500, 500, 72, None, BASE_FONT)               # 滑走路なしなら何も描かない

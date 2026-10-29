@@ -17,6 +17,7 @@ BASE_FONT = "/usr/share/fonts/opentype/ipafont-gothic/ipag.ttf"
 
 AIRPORT_CONFIG = {
         "narita": {
+            "runway": {"ends": ("16", "34"), "deg": 337},   # 風の矢印の下に描く滑走路（2 つ目の番号の向き・真方位のおおよそ）
             "icao": "RJAA",          # 航空気象（METAR/TAF）の空港コード
             "office_code": "120000",
             "area_codes": ("1221100", "120010"),   # 成田市 + 千葉県北西部（warning用）
@@ -26,6 +27,7 @@ AIRPORT_CONFIG = {
         },
 
         "haneda": {
+            "runway": {"ends": ("16", "34"), "deg": 337},   # 風の矢印の下に描く滑走路（2 つ目の番号の向き・真方位のおおよそ）
             "icao": "RJTT",          # 航空気象（METAR/TAF）の空港コード
             "office_code": "130000",
             # 大田区 + 東京地方
@@ -36,6 +38,7 @@ AIRPORT_CONFIG = {
         },
 
         "centrair": {
+            "runway": {"ends": ("18", "36"), "deg": 356},   # 風の矢印の下に描く滑走路（2 つ目の番号の向き・真方位のおおよそ）
             "icao": "RJGG",          # 航空気象（METAR/TAF）の空港コード
             "office_code": "230000",
             # 常滑市 + 愛知県西部
@@ -46,6 +49,7 @@ AIRPORT_CONFIG = {
         },
 
         "kanku": {
+            "runway": {"ends": ("06", "24"), "deg": 238},   # 風の矢印の下に描く滑走路（2 つ目の番号の向き・真方位のおおよそ）
             "icao": "RJBB",          # 航空気象（METAR/TAF）の空港コード
             "name": "関西国際空港",
             "latitude": 34.4347,
@@ -55,6 +59,7 @@ AIRPORT_CONFIG = {
         },
 
         "chitose": {
+            "runway": {"ends": ("18", "36"), "deg": 351},   # 風の矢印の下に描く滑走路（2 つ目の番号の向き・真方位のおおよそ）
             "icao": "RJCC",          # 航空気象（METAR/TAF）の空港コード
             "name": "新千歳空港",
             "latitude": 42.7752,
@@ -64,6 +69,7 @@ AIRPORT_CONFIG = {
         },
 
         "fukuoka": {
+            "runway": {"ends": ("16", "34"), "deg": 337},   # 風の矢印の下に描く滑走路（2 つ目の番号の向き・真方位のおおよそ）
             "icao": "RJFF",          # 航空気象（METAR/TAF）の空港コード
             "name": "福岡空港",
             "latitude": 33.5859,
@@ -73,6 +79,7 @@ AIRPORT_CONFIG = {
         },
 
         "naha": {
+            "runway": {"ends": ("18", "36"), "deg": 356},   # 風の矢印の下に描く滑走路（2 つ目の番号の向き・真方位のおおよそ）
             "icao": "ROAH",          # 航空気象（METAR/TAF）の空港コード
             "name": "那覇空港",
             "latitude": 26.1958,
