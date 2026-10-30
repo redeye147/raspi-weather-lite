@@ -13,12 +13,30 @@ table_cols.py
 
 import datetime
 
+LAYOUTS = {                   # 表の形（config.json の "table_layout"。設定画面で選ぶ）
+    "fixed": "今まで（朝6時〜翌朝9時。今の時間帯の列を観測で置き換え）",
+    "insert": "今を割り込ませる（6〜24時は朝6時から、0〜6時は0時から。今の時間帯の右に「今」）",
+    "now": "今から並べる（今・今の時間帯の残り・その先）",
+}
 TABLE_COLS = 10               # 表の列の数
 REST_MIN_MINUTES = 60         # 今の 3 時間帯の残りがこれより短ければ「〜21」の列を出さない
 
 
+def build_insert(hourly, now, observe=None):
+    """案 D：決まった表（hourly。6 時か 0 時から 9 列）の、今の時間帯の列の右に「今」の列を割り込ませる。
+    今の時間帯の列は予報のまま（残りの時間の予報も見える）。「今」は観測"""
+    import weather_draw
+    cur = weather_draw.current_slot_index(hourly, now)
+    if cur is None:
+        return list(hourly[:TABLE_COLS])
+    observed = observe(hourly, cur) if observe else hourly
+    now_item = dict(observed[cur], hour=f"今 {now:%H:%M}", slot_hour=hourly[cur].get("hour"), is_now=True,
+                    datetime=now.replace(second=0, microsecond=0))
+    return (list(hourly[:cur + 1]) + [now_item] + list(hourly[cur + 1:]))[:TABLE_COLS]
+
+
 def build(hourly, now, observe=None):
-    """hourly（予報。3 時間ごと・今の時間帯から先）から、表に出す列を作る。
+    """案 C：hourly（予報。3 時間ごと・今の時間帯から先）から、表に出す列を作る。
     observe(hourly, cur) は cur 列を観測で置き換えた写しを返す関数（obs_now.apply_observation など）"""
     import weather_draw
     cur = weather_draw.current_slot_index(hourly, now)

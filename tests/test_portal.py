@@ -163,3 +163,13 @@ def test_verify_csv_download(client, monkeypatch):
     assert r.status_code == 200 and r.headers["Content-Type"].startswith("text/csv")
     assert "_RJTT_" in r.headers["Content-Disposition"] and r.data.startswith("\ufeff".encode("utf-8"))
     assert b"2026-10-24 10:00,RJTT" in r.data
+
+
+def test_save_layout(client, monkeypatch):
+    """表の形は空港と同じくパスワードなしで変えられる。知らない値は断る"""
+    saved, cmds = {}, []
+    monkeypatch.setattr(wp, "_save_config", lambda u: saved.update(u))
+    monkeypatch.setattr(wp.subprocess, "Popen", lambda cmd, *a, **k: cmds.append(cmd))
+    r = client.post("/save-layout", json={"table_layout": "insert"})
+    assert r.status_code == 200 and saved == {"table_layout": "insert"} and "restart main01" in cmds[0][-1]
+    assert client.post("/save-layout", json={"table_layout": "x"}).status_code == 400

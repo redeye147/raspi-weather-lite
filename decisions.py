@@ -83,11 +83,10 @@ def should_fetch_0600(now: datetime.datetime, last_weather_update: datetime.date
 
 def periodic_fetch_action(now: datetime.datetime, last_weather_update: datetime.datetime,
                           fetch_pending: bool, interval_hours: float):
-    """定期取得の判断。'fetch'（取得する）/ 'postpone'（夜間なので次回へ先送り）/ None（まだ）"""
+    """定期取得の判断。'fetch'（取得する）/ None（まだ）。
+    2026-10-31 から夜も取る（夜勤の人も見るので。以前は CPU を下げるため 0:00〜5:59 は 'postpone' で先送りしていた）"""
     if not fetch_pending and (now - last_weather_update).total_seconds() >= interval_hours * 3600:
-        if WEATHER_REFRESH_START_HOUR < now.hour <= 23:
-            return "fetch"
-        return "postpone"
+        return "fetch"
     return None
 
 
@@ -98,10 +97,10 @@ def startup_refresh_action(now: datetime.datetime, now_ts: float, refresh_at, fe
                            fetched_since_boot: bool):
     """前回データ（2 時間以内）で即表示して起動したあとの取り直し。'fetch' / 'cancel'（不要になった）/ None（まだ）
     - 起動 5 分後に 1 回だけ。それより前に別の取得（定期・6:00 など）で最新になっていれば取り消す
-    - 夜間（0:00〜5:59）は取得しない方針なので取り消す（6:00 の定時取得で最新になる）"""
+    （2026-10-31 から夜も取るので、夜でも取り消さない）"""
     if refresh_at is None:
         return None
-    if fetched_since_boot or not (WEATHER_REFRESH_START_HOUR < now.hour <= 23):
+    if fetched_since_boot:
         return "cancel"
     if now_ts >= refresh_at and not fetch_pending:
         return "fetch"
@@ -114,7 +113,7 @@ def retry_base_after_failure(now: datetime.datetime, interval_hours: float) -> d
 
 
 AVIATION_START_HOUR = 6          # 航空気象の帯は 6 時台から表示（0:00 に帯を消す）
-AVIATION_START = datetime.time(5, 30)   # 5:30 の観測から取得する（5:40 に取得。6 時に画面を見たとき今の列が観測になっている）
+AVIATION_START = datetime.time(0, 0)    # 1 日中取得する（2026-10-31 から。夜勤の人も見るので、夜の「今」も観測に）
 # 観測（毎時 00・30 分）から最初の取得までの待ち時間（分）。NOAA に届くまでの実測（2026-10-04 成田 28 回）：
 # 00 分の観測は 7〜10 分後（7 分が最多）、30 分の観測は 9〜12 分後（10〜11 分が多い）
 AVIATION_FIRST_WAIT_MIN = {0: 7, 30: 10}

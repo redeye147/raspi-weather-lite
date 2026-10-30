@@ -169,12 +169,14 @@ def main():
     _default_interval = 1.0
     _show_aviation_band = SHOW_AVIATION_BAND
     _show_runway = True             # 風の矢印の下に滑走路を描く（config.json に "show_runway": false で止める）
+    _table_layout = "fixed"         # 今日の天気の表の形（config.json の "table_layout"。table_cols.LAYOUTS）
     try:
         _cfg = _json.load(open(_cfg_path))
         _default_airport = _cfg.get("airport", "centrair")
         _default_interval = float(_cfg.get("interval_hours", 1.0))
         _show_aviation_band = bool(_cfg.get("show_aviation_band", SHOW_AVIATION_BAND))
         _show_runway = bool(_cfg.get("show_runway", True))
+        _table_layout = _cfg.get("table_layout", "fixed")
     except Exception:
         pass
 
@@ -379,8 +381,13 @@ def main():
     # 時刻同期は最大3秒だけ確認（再起動直後は同期に十数秒かかることがあり、待つと起動が遅くなる）
     synced = wait_time_sync(3)
     now_ts = time.time()
+    import utils as _utils
+    _utils.TABLE_LAYOUT = _table_layout if _table_layout in table_cols.LAYOUTS else "fixed"
     table_start = get_target_datetimes()[0].strftime("%Y-%m-%dT%H")
-    snap_decision = decide_snapshot(load_snapshot(), airport, synced, now_ts, args.interval_hours, table_start)
+    _snap0 = load_snapshot()
+    if _snap0 and _snap0.get("table_layout", "fixed") != _utils.TABLE_LAYOUT:
+        _snap0 = dict(_snap0, table_start="")      # 表の形を変えたら前回の表は使わない（すぐ取り直す）
+    snap_decision = decide_snapshot(_snap0, airport, synced, now_ts, args.interval_hours, table_start)
     snap = snap_decision["snap"]
     weather_fresh, kick_fetch = snap_decision["weather_fresh"], snap_decision["kick_fetch"]
     jma_fresh, wbgt_fresh = snap_decision["jma_fresh"], snap_decision["wbgt_fresh"]
@@ -473,6 +480,7 @@ def main():
         save_snapshot({
             "airport": airport, "saved_at": time.time(),
             "weather_at": weather_at, "jma_at": jma_at, "wbgt_at": wbgt_at,
+            "table_layout": _utils.TABLE_LAYOUT,
             "table_start": (hourly[0]["datetime"].strftime("%Y-%m-%dT%H")
                             if hourly and isinstance(hourly[0].get("datetime"), datetime.datetime) else ""),
             "hourly": hourly, "daily": daily, "weather_updated_text": weather_updated_text,
@@ -991,10 +999,16 @@ def _record_blended(taf, rainfc, icao=None):
 
 
 def _table_columns(hourly, now, metar, rain=None):
-    """表に出す列：「今」（観測）・「〜21」（今の時間帯の残りの予報）・次の時間帯から（table_cols.py）"""
+    """表に出す列（table_cols.py）。表の形ごとに
+    fixed：今の時間帯の列を観測で置き換え／insert：今の時間帯の右に「今」／now：今・〜21・次の時間帯から"""
+    import utils as _utils
+    observe = lambda h, cur: obs_now.apply_observation(h, cur, metar, rain=rain)
     try:
-        return table_cols.build(hourly, now,
-                                observe=lambda h, cur: obs_now.apply_observation(h, cur, metar, rain=rain))
+        if _utils.TABLE_LAYOUT == "insert":
+            return table_cols.build_insert(hourly, now, observe=observe)
+        if _utils.TABLE_LAYOUT == "now":
+            return table_cols.build(hourly, now, observe=observe)
+        return _with_observation(hourly, now, metar, rain)
     except Exception as e:                       # 並べ替えに失敗しても、予報のまま表示を続ける
         logging.warning(f"表の列の並べ替え失敗: {e}")
         return _with_observation(hourly, now, metar, rain)

@@ -180,7 +180,7 @@ HTML = """<!DOCTYPE html>
 <div class="section-box">
   <h3>✈ 空港（天気表示場所）</h3>
   <select id="airport">
-    <option value="narita">成田国際空港</option>
+    <option value="narita">成田空港</option>
     <option value="haneda">羽田空港</option>
     <option value="centrair">中部空港</option>
     <option value="kanku">関西空港</option>
@@ -190,6 +190,17 @@ HTML = """<!DOCTYPE html>
   </select>
   <button id="airport-btn" onclick="saveAirport()">空港を保存して再起動</button>
   <p id="airport-msg" class="msg"></p>
+</div>
+
+<div class="section-box">
+  <h3>📋 今日の天気の表の形</h3>
+  <select id="layout">
+    <option value="fixed">今まで（朝6時〜翌朝9時。今の時間帯の列を観測で置き換え）</option>
+    <option value="insert">今を割り込ませる（6〜24時は朝6時から、0〜6時は0時から。今の時間帯の右に「今」）</option>
+    <option value="now">今から並べる（今・今の時間帯の残り・その先）</option>
+  </select>
+  <button id="layout-btn" onclick="saveLayout()">表の形を保存（表示プログラムを再起動）</button>
+  <p id="layout-msg" class="msg"></p>
 </div>
 
 <button id="wifi-open-btn" class="sub-btn" onclick="openWifi()">🔒 WiFi 設定（パスワードが必要）</button>
@@ -269,6 +280,7 @@ async function init() {
       badge.textContent = 'WiFi未接続';
     }
     if (st.airport) document.getElementById('airport').value = st.airport;
+    if (st.table_layout) document.getElementById('layout').value = st.table_layout;
     if (st.admin) showWifi();
   } catch(e) {
     setMsg('airport-msg', '接続エラー: ' + e, false);
@@ -286,6 +298,18 @@ async function saveAirport() {
     setMsg('airport-msg', 'エラー: ' + e, false);
     btn.disabled = false; btn.textContent = '空港を保存して再起動';
   }
+}
+
+async function saveLayout() {
+  const btn = document.getElementById('layout-btn');
+  btn.disabled = true;
+  try {
+    const r = await post('/save-layout', {table_layout: document.getElementById('layout').value});
+    setMsg('layout-msg', r.text, r.ok);
+  } catch(e) {
+    setMsg('layout-msg', 'エラー: ' + e, false);
+  }
+  btn.disabled = false;
 }
 
 function openWifi() {
@@ -660,7 +684,8 @@ def status():
         "ssid": ssid,
         "wired": wired,
         "admin": bool(session.get("admin")),
-        "airport": cfg.get("airport", "centrair")
+        "airport": cfg.get("airport", "centrair"),
+        "table_layout": cfg.get("table_layout", "fixed"),
     }))
 
 
@@ -807,6 +832,18 @@ def save_airport():
     _save_config({"airport": airport})
     subprocess.Popen(["bash", "-c", "sleep 3 && reboot"])
     return "空港を変更しました。Piが再起動します。しばらくお待ちください..."
+
+
+@app.route("/save-layout", methods=["POST"])
+def save_layout():
+    """今日の天気の表の形（table_cols.LAYOUTS）。空港と同じくパスワードは不要。表示プログラムだけ起動し直す（数十秒）"""
+    data = request.get_json() or {}
+    layout = str(data.get("table_layout", "fixed")).strip()
+    if layout not in ("fixed", "insert", "now"):
+        return "表の形が正しくありません", 400
+    _save_config({"table_layout": layout})
+    subprocess.Popen(["bash", "-c", "sleep 2 && systemctl restart main01"])
+    return "表の形を変更しました。数十秒で画面が切り替わります。"
 
 
 _reboot_scheduled = False

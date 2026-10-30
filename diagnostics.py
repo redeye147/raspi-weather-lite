@@ -390,7 +390,7 @@ def _aviation_item(now, snap, icao):
     m = aviation.parse_metar(raw, now.astimezone(datetime.timezone.utc)) if raw else None
     first = (datetime.datetime.combine(now.date(), AVIATION_START)
              + datetime.timedelta(minutes=AVIATION_FIRST_WAIT_MIN[AVIATION_START.minute])).time()
-    if now.time() < first:
+    if AVIATION_START > datetime.time(0, 0) and now.time() < first:      # 夜に取らない設定のときだけ
         return _item("AVI", "航空気象", OK, f"夜間は取得なし（{first:%H:%M} から）",
                      f"最後の観測 {m['obs_utc'].astimezone(JST):%m/%d %H:%M}" if m else "")
     if not m:

@@ -103,8 +103,9 @@ def test_fetch_0600_once_per_day_and_not_while_pending():
 
 
 # ---------------------------------------------------------------- 定期取得
-@pytest.mark.parametrize("hh, expected", [(3, "postpone"), (5, "postpone"), (6, "fetch"), (12, "fetch"), (23, "fetch")])
-def test_periodic_fetch_daytime_only(hh, expected):
+@pytest.mark.parametrize("hh, expected", [(3, "fetch"), (5, "fetch"), (6, "fetch"), (12, "fetch"), (23, "fetch")])
+def test_periodic_fetch_all_day(hh, expected):
+    """夜も定期取得する（2026-10-31 から）"""
     now = at(3, hh)
     assert periodic_fetch_action(now, now - datetime.timedelta(hours=2), False, 2.0) == expected
 
@@ -138,7 +139,7 @@ def test_startup_refresh_cancelled_when_not_needed():
     refresh_at = boot + STARTUP_REFRESH_DELAY_S
     assert startup_refresh_action(at(11, 11, 21), boot + 300, None, False, False) is None          # 取り直し不要の起動
     assert startup_refresh_action(at(11, 11, 19), boot + 180, refresh_at, False, True) == "cancel"  # 先に定期取得で最新に
-    assert startup_refresh_action(at(11, 1, 5), boot + 300, refresh_at, False, False) == "cancel"   # 夜間は取得しない
+    assert startup_refresh_action(at(11, 1, 5), boot + 300, refresh_at, False, False) == "fetch"    # 夜も取る
 
 
 # ---------------------------------------------------------------- 一晩の流れ（main() のループと同じ順で判断）
@@ -169,18 +170,18 @@ def simulate_night(fail_at=None, interval=2.0):
 
 
 def test_overnight_schedule():
-    """夜間は先送りし、5:45 に取り直して 6 時に当日の表へ切り替わったとき最新に。以後は2時間ごと"""
-    assert simulate_night() == ["23:50[23:50]", "05:45[6:00]", "07:45"]
+    """夜も定期取得する（2026-10-31 から。夜勤の人も見る）。5:45 の朝の取り直しも残す"""
+    assert simulate_night() == ["23:50[23:50]", "01:50", "03:50", "05:45[6:00]", "07:45"]
 
 
 def test_overnight_schedule_with_failure_at_6():
     """5:45 の取得に失敗したら 30 分後に再試行"""
-    assert simulate_night(fail_at="05:45") == ["23:50[23:50]", "05:45[6:00](失敗)", "06:15", "08:15"]
+    assert simulate_night(fail_at="05:45") == ["23:50[23:50]", "01:50", "03:50", "05:45[6:00](失敗)", "06:15", "08:15"]
 
 
 # ---------------------------------------------------------------- 航空気象の取得（00 分の観測は 7 分後・30 分は 10 分後、届くまで 2 分おきに最大 6 回）
 @pytest.mark.parametrize("hh, mm, mark", [
-    (0, 0, None), (5, 39, None), (5, 40, (5, 30)), (6, 6, (5, 30)),  # 0:00〜5:39 は取得しない（5:30 の観測から）
+    (0, 0, None), (0, 7, (0, 0)), (3, 40, (3, 30)), (5, 39, (5, 0)), (5, 40, (5, 30)), (6, 6, (5, 30)),  # 1 日中（0:00 の観測から）
     (6, 7, (6, 0)), (6, 39, (6, 0)), (6, 40, (6, 30)), (7, 6, (6, 30)), (7, 7, (7, 0)),
     (23, 40, (23, 30)), (23, 59, (23, 30)),
 ])

@@ -10,7 +10,7 @@ from utils import JST, get_target_datetimes
 def _hourly(now):
     return [dict(datetime=t, date=t.strftime("%-m/%-d"), hour=t.strftime("%H"), code="101", pop=f"{i}.0mm",
                  temp_val=20, temp="20℃", wind_val=3, wind="3m", wind_dir=90)
-            for i, t in enumerate(get_target_datetimes(now))]
+            for i, t in enumerate(get_target_datetimes(now, layout="now"))]
 
 
 def at(h, m):
@@ -18,7 +18,7 @@ def at(h, m):
 
 
 def test_targets_start_at_current_slot():
-    ts = get_target_datetimes(at(20, 50))
+    ts = get_target_datetimes(at(20, 50), layout="now")
     assert ts[0] == at(18, 0) and len(ts) == 12 and ts[1] == at(21, 0)
 
 
@@ -45,3 +45,32 @@ def test_rest_threshold(h, m, rest):
     now = at(h, m)
     cols = table_cols.build(_hourly(now), now)
     assert (cols[1]["hour"] == "〜09") is rest
+
+
+@pytest.mark.parametrize("h, m, start, now_after", [
+    (13, 15, "06", "12"),        # 昼の表（6 時から）：12 の列の右に今
+    (23, 50, "06", "21"),
+    (0, 20, "00", "00"),         # 夜の表（0 時から）：00 の列の右に今
+    (5, 50, "00", "03"),
+])
+def test_insert_layout(h, m, start, now_after):
+    """案 D：6:00〜23:59 は今日の 6 時から、0:00〜5:59 は今日の 0 時から 9 列。今の時間帯の右に「今」を割り込ませる"""
+    now = at(h, m)
+    ts = get_target_datetimes(now, layout="insert")
+    hourly = [dict(datetime=t, date=t.strftime("%-m/%-d"), hour=t.strftime("%H"), code="101", pop="1.0mm")
+              for t in ts]
+    cols = table_cols.build_insert(hourly, now, observe=lambda hh, cur: [dict(x, pop="9.0mm") if i == cur else x
+                                                                         for i, x in enumerate(hh)])
+    hours = [c["hour"] for c in cols]
+    assert hours[0] == start and len(cols) == 10
+    i = hours.index(f"今 {now:%H:%M}")
+    assert hours[i - 1] == now_after and cols[i]["is_now"] and cols[i]["pop"] == "9.0mm"
+    assert cols[i - 1]["pop"] == "1.0mm"                                  # 今の時間帯の列は予報のまま
+
+
+def test_fixed_layout_targets_unchanged():
+    """今までの表：朝 6 時〜翌朝 9 時（6 時より前は前の日の 6 時から）"""
+    ts = get_target_datetimes(at(13, 15), layout="fixed")
+    assert ts[0] == at(6, 0) and len(ts) == 10
+    ts = get_target_datetimes(at(3, 0), layout="fixed")
+    assert ts[0] == datetime.datetime(2026, 10, 29, 6, tzinfo=JST)

@@ -112,9 +112,10 @@ def test_aviation_age(obs, level):
     assert item(dg.evaluate(healthy(snap=snap), NOW), "AVI")["level"] == level
 
 
-def test_aviation_night_is_ok():
+def test_aviation_is_checked_at_night_too():
+    """夜も取得するので（2026-10-31 から）、夜でも観測の古さで判断する"""
     r = dg.evaluate(healthy(), datetime.datetime(2026, 10, 6, 3, 0, tzinfo=JST))
-    assert item(r, "AVI")["level"] == "ok" and "夜間" in item(r, "AVI")["value"]
+    assert "夜間" not in item(r, "AVI")["value"]
 
 
 def test_no_snapshot():

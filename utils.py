@@ -185,13 +185,23 @@ def get_japanese_weekday(date_obj):
 # =========================
 # 表示対象時間生成
 # =========================
-def get_target_datetimes(now=None, slots=12):
-    """今日の天気の表のもとになる 3 時間ごとの時刻（今の 3 時間帯の始まりから slots 個。日本時間）。
-    2026-10-30 から、朝 6 時〜翌朝 9 時の決まった表ではなく、今の時間帯から先を並べる（table_cols.py）。
-    表は 10 列だが、取得から次の取得まで（夜は最大 6 時間）たっても足りるよう多めに取る"""
+TABLE_LAYOUT = "fixed"     # 今日の天気の表の形（main01 が config.json の table_layout で設定。table_cols.py）
+
+
+def get_target_datetimes(now=None, layout=None):
+    """今日の天気の表のもとになる 3 時間ごとの時刻（日本時間）。表の形（table_cols.LAYOUTS）ごとに
+      fixed  : 朝 6 時〜翌朝 9 時の 10 個（6 時より前は前の日の 6 時から）。今までの表
+      insert : 6:00〜23:59 は今日の 6 時から、0:00〜5:59 は今日の 0 時から 9 個（「今」の列を割り込ませる）
+      now    : 今の 3 時間帯の始まりから 12 個（取得から次の取得までたっても 10 列が足りるよう多めに）"""
+    layout = layout or TABLE_LAYOUT
     now = (now or datetime.datetime.now(JST)).astimezone(JST).replace(minute=0, second=0, microsecond=0)
-    start = now.replace(hour=now.hour // 3 * 3)
-    return [start + datetime.timedelta(hours=3 * i) for i in range(slots)]
+    if layout == "now":
+        start, n = now.replace(hour=now.hour // 3 * 3), 12
+    elif layout == "insert":
+        start, n = now.replace(hour=6 if now.hour >= 6 else 0), 9
+    else:
+        start, n = now.replace(hour=6) - datetime.timedelta(days=0 if now.hour >= 6 else 1), 10
+    return [start + datetime.timedelta(hours=3 * i) for i in range(n)]
 
 
 # =========================
