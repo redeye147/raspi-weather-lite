@@ -74,3 +74,37 @@ def test_fixed_layout_targets_unchanged():
     assert ts[0] == at(6, 0) and len(ts) == 10
     ts = get_target_datetimes(at(3, 0), layout="fixed")
     assert ts[0] == datetime.datetime(2026, 10, 29, 6, tzinfo=JST)
+
+
+def test_insert_fills_past_columns_with_observations():
+    """案 D：過ぎた時間帯の列は、記録した毎時 00 分の観測で埋める（今の時間帯の列は予報のまま）"""
+    now = at(13, 15)
+    ts = get_target_datetimes(now, layout="insert")
+    hourly = [dict(datetime=t, date=t.strftime("%-m/%-d"), hour=t.strftime("%H"), code="100", pop="0.0mm",
+                   temp_val=20, temp="20℃", wind_val=3, wind="3m", wind_dir=90) for t in ts]
+    observed = {
+        "2026-10-30 06:00": {"temp": 15, "wind": 2.1, "wind_dir": 330, "code": "200", "rain": False, "radar_mmh": 0.0},
+        "2026-10-30 07:00": {"temp": 16, "wind": 5.7, "wind_dir": 10, "code": "302", "rain": True, "radar_mmh": 7.5},
+        "2026-10-30 08:00": {"temp": 17, "wind": 4.0, "wind_dir": None, "code": "300", "rain": True, "radar_mmh": 3.0},
+        "2026-10-30 12:00": {"temp": 25, "wind": 9.0, "wind_dir": 200, "code": "350", "rain": True, "radar_mmh": 40.0},
+    }
+    cols = table_cols.build_insert(hourly, now, observed=observed)
+    c06, c09, c12 = cols[0], cols[1], cols[2]
+    assert c06["code"] == "302" and c06["temp"] == "16℃" and c06["wind_val"] == 6 and c06["wind_dir"] == 10
+    assert c06["pop"] == "7.5mm" and c06["past_observed"]
+    assert c09["code"] == "100" and not c09.get("past_observed")        # 観測の記録が無い列は予報のまま
+    assert c12["code"] == "100" and not c12.get("past_observed")        # 今の時間帯の列は予報のまま
+    assert cols[3]["is_now"]
+
+
+def test_verify_observed_hours_roundtrip(tmp_path):
+    import aviation
+    import verify
+    d = str(tmp_path)
+    m = aviation.parse_metar("RJGG 300300Z 33012KT 9999 -RA BKN020 19/15 Q1012",
+                             datetime.datetime(2026, 10, 30, 3, 10, tzinfo=datetime.timezone.utc))
+    verify.record_observation(m, 3.0, d)
+    obs = verify.observed_hours("RJGG", base_dir=d)
+    r = obs["2026-10-30 12:00"]
+    assert r["temp"] == 19 and r["wind_dir"] == 330 and r["code"] == "300" and r["radar_mmh"] == 3.0
+    assert verify.observed_hours("RJTT", base_dir=d) == {}

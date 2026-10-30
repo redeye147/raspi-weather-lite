@@ -22,13 +22,54 @@ TABLE_COLS = 10               # 表の列の数
 REST_MIN_MINUTES = 60         # 今の 3 時間帯の残りがこれより短ければ「〜21」の列を出さない
 
 
-def build_insert(hourly, now, observe=None):
-    """案 D：決まった表（hourly。6 時か 0 時から 9 列）の、今の時間帯の列の右に「今」の列を割り込ませる。
-    今の時間帯の列は予報のまま（残りの時間の予報も見える）。「今」は観測"""
+_CALM_ORDER = {"200": 2, "101": 1, "100": 0}
+
+
+def _worst(codes):
+    """いちばん悪い天気（雷＞大雨・大雪＞…＞曇り＞晴時々曇＞晴）"""
+    from fc_blend import _rank
+    return max(codes, key=lambda c: (_rank(c), _CALM_ORDER.get(str(c), 0)))
+
+
+def fill_with_observed(item, observed):
+    """過ぎた 3 時間の列を、記録した毎時 00 分の観測（verify.observed_hours）で埋めた写し（観測が無ければ item のまま）。
+    天気は 3 回のうちいちばん悪い天気、気温は平均、風速はいちばん強い値（その風向）、降水量は雨雲レーダーのいちばん強い値"""
+    start = item.get("datetime")
+    if not isinstance(start, datetime.datetime) or not observed:
+        return item
+    rows = [observed.get((start + datetime.timedelta(hours=h)).strftime("%Y-%m-%d %H:%M")) for h in range(3)]
+    rows = [r for r in rows if r]
+    if not rows:
+        return item
+    out = dict(item, past_observed=True)
+    codes = [r["code"] for r in rows if r.get("code")]
+    if codes:
+        out["code"] = _worst(codes)
+    temps = [r["temp"] for r in rows if r.get("temp") is not None]
+    if temps:
+        t = round(sum(temps) / len(temps))
+        out.update(temp_val=t, temp=f"{t}℃")
+    winds = [r for r in rows if r.get("wind") is not None]
+    if winds:
+        w = max(winds, key=lambda r: r["wind"])
+        out.update(wind_val=round(w["wind"]), wind=f"{round(w['wind'])}m", wind_dir=w.get("wind_dir"),
+                   wind_variable=w.get("wind_dir") is None and round(w["wind"]) > 0)
+    radar = [r["radar_mmh"] for r in rows if r.get("radar_mmh") is not None]
+    if radar:
+        out["pop"] = f"{max(radar):.1f}mm"
+    return out
+
+
+def build_insert(hourly, now, observe=None, observed=None):
+    """案 D：決まった表（hourly。6 時か前の日の 18 時から 9 列）の、今の時間帯の列の右に「今」の列を割り込ませる。
+    今の時間帯の列は予報のまま（残りの時間の予報も見える）。「今」は観測。
+    observed（verify.observed_hours）を渡すと、過ぎた時間帯の列を記録した観測で埋める（2026-10-31）"""
     import weather_draw
     cur = weather_draw.current_slot_index(hourly, now)
     if cur is None:
         return list(hourly[:TABLE_COLS])
+    if observed:
+        hourly = [fill_with_observed(it, observed) if i < cur else it for i, it in enumerate(hourly)]
     observed = observe(hourly, cur) if observe else hourly
     now_item = dict(observed[cur], hour=f"今 {now:%H:%M}", slot_hour=hourly[cur].get("hour"), is_now=True,
                     datetime=now.replace(second=0, microsecond=0))

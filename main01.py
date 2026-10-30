@@ -870,7 +870,7 @@ def main():
                 _with_forecasts(hourly, now, taf_state.get("taf"),
                                 rainfc_result if fetch_rainfcst.is_fresh(rainfc_result, now) else None),
                 now, aviation_state.get("metar"),
-                rain_result if fetch_rainnow.is_fresh(rain_result, now) else None),
+                rain_result if fetch_rainnow.is_fresh(rain_result, now) else None, icao=cfg.get("icao")),
             daily, icon_cache, BASE_FONT,
             warning_text, headline_text, updated_text,
             weather_updated_text, airport_label,
@@ -998,14 +998,18 @@ def _record_blended(taf, rainfc, icao=None):
         logging.info(f"表示した予報の記録に失敗: {e}")
 
 
-def _table_columns(hourly, now, metar, rain=None):
+def _table_columns(hourly, now, metar, rain=None, icao=None):
     """表に出す列（table_cols.py）。表の形ごとに
     fixed：今の時間帯の列を観測で置き換え／insert：今の時間帯の右に「今」／now：今・〜21・次の時間帯から"""
     import utils as _utils
     observe = lambda h, cur: obs_now.apply_observation(h, cur, metar, rain=rain)
     try:
         if _utils.TABLE_LAYOUT == "insert":
-            return table_cols.build_insert(hourly, now, observe=observe)
+            try:
+                observed = verify.observed_hours(icao)
+            except Exception:
+                observed = None
+            return table_cols.build_insert(hourly, now, observe=observe, observed=observed)
         if _utils.TABLE_LAYOUT == "now":
             return table_cols.build(hourly, now, observe=observe)
         return _with_observation(hourly, now, metar, rain)

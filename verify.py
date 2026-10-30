@@ -43,6 +43,7 @@ for _L in LEADS_H:
     FIELDS += [f"fc{_L}_temp", f"fc{_L}_wind", f"fc{_L}_code", f"fc{_L}_prec"]
 for _L in LEADS_H:
     FIELDS += [f"bl{_L}_wind", f"bl{_L}_prec"]          # 表示した予報（TAF・降水短時間予報で直した値。2026-10 追加）
+FIELDS += ["wind_dir"]                                   # 観測の風向（過ぎた列を観測で埋めるとき矢印に使う。2026-10-31 追加）
 
 
 def _hour_key(dt):
@@ -160,7 +161,8 @@ def record_observation(metar, radar_mmh=None, base_dir=None):
     row = {"obs_time": obs_jst.strftime("%Y-%m-%d %H:%M"), "icao": metar.get("icao", ""),
            "temp": metar.get("temp") if metar.get("temp") is not None else "", "wind": wind,
            "code": obs_now.icon_code_from_metar(metar), "rain": int(rain),
-           "radar_mmh": "" if radar_mmh is None else radar_mmh}
+           "radar_mmh": "" if radar_mmh is None else radar_mmh,
+           "wind_dir": "" if metar.get("wind_dir") is None else metar["wind_dir"]}
     for L in LEADS_H:
         fc = forecast_for(obs_jst, L, records, metar.get("icao")) or {}
         row[f"fc{L}_temp"] = "" if fc.get("temp") is None else fc["temp"]
@@ -182,6 +184,34 @@ def record_observation(metar, radar_mmh=None, base_dir=None):
         w.writerow(row)
     safe_write.write_text(state, obs_jst.isoformat())
     return True
+
+
+_obs_cache = {}
+
+
+def observed_hours(icao=None, base_dir=None, months=2):
+    """記録した毎時 00 分の観測 {"2026-10-30 18:00": {temp, wind, wind_dir, code, rain, radar_mmh}}（今月と先月）。
+    表の過ぎた列を観測で埋めるのに使う（table_cols.py）。ファイルが変わっていなければ読み直さない"""
+    base_dir = base_dir or BASE_DIR
+    paths = sorted(glob.glob(os.path.join(base_dir, "vf_*.csv")))[-months:]
+    key = (icao, tuple((p, os.path.getmtime(p)) for p in paths))
+    if _obs_cache.get("key") == key:
+        return _obs_cache["data"]
+    data = {}
+    for p in paths:
+        try:
+            with open(p, encoding="utf-8") as f:
+                for r in csv.DictReader(f):
+                    if icao and r.get("icao") not in ("", icao):
+                        continue
+                    data[r.get("obs_time", "")] = {
+                        "temp": _num(r.get("temp")), "wind": _num(r.get("wind")),
+                        "wind_dir": _num(r.get("wind_dir")), "code": r.get("code") or None,
+                        "rain": r.get("rain") == "1", "radar_mmh": _num(r.get("radar_mmh"))}
+        except OSError:
+            continue
+    _obs_cache.update(key=key, data=data)
+    return data
 
 
 def export_csv(base_dir=None):
