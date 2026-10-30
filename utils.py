@@ -185,35 +185,14 @@ def get_japanese_weekday(date_obj):
 # =========================
 # 表示対象時間生成
 # =========================
-def get_target_datetimes():
+def get_target_datetimes(now=None, slots=12):
+    """今日の天気の表のもとになる 3 時間ごとの時刻（今の 3 時間帯の始まりから slots 個。日本時間）。
+    2026-10-30 から、朝 6 時〜翌朝 9 時の決まった表ではなく、今の時間帯から先を並べる（table_cols.py）。
+    表は 10 列だが、取得から次の取得まで（夜は最大 6 時間）たっても足りるよう多めに取る"""
+    now = (now or datetime.datetime.now(JST)).astimezone(JST).replace(minute=0, second=0, microsecond=0)
+    start = now.replace(hour=now.hour // 3 * 3)
+    return [start + datetime.timedelta(hours=3 * i) for i in range(slots)]
 
-    now = datetime.datetime.now(JST).replace(minute=0, second=0, microsecond=0)
-
-    # ★6時基準：6時未満なら「昨日」を基準日にする
-    if now.hour >= 6:
-        base_date = now.date()
-    else:
-        base_date = now.date() - datetime.timedelta(days=1)
-
-    tlist = [
-        datetime.datetime.combine(
-            base_date,
-            datetime.time(h, 0)
-        )
-        for h in [6, 9, 12, 15, 18, 21]
-    ]
-
-    next_day = base_date + datetime.timedelta(days=1)
-
-    tlist += [
-        datetime.datetime.combine(
-            next_day,
-            datetime.time(h, 0)
-        )
-        for h in [0, 3, 6, 9]
-    ]
-
-    return tlist
 
 # =========================
 # 06時日付表示制御

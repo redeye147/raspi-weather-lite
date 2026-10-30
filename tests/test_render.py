@@ -576,3 +576,19 @@ def test_runway_under_wind_arrow(monkeypatch):
     weather_draw.draw_runway(s, 500, 500, 72, AIRPORT_CONFIG["narita"]["runway"], BASE_FONT)
     assert "16" in texts and "34" in texts
     weather_draw.draw_runway(s, 500, 500, 72, None, BASE_FONT)               # 滑走路なしなら何も描かない
+
+
+@pytest.mark.parametrize("size", [(1920, 1080), (1366, 768), (1280, 720)])
+def test_wind_arrows_drawn_with_runway_on_every_screen(size, monkeypatch):
+    """滑走路ありでも、どの画面でも風の矢印は描く（1280×720 で矢印が消えていた。狭い画面は滑走路を省く）"""
+    import weather_draw
+    from config import AIRPORT_CONFIG
+    calls = []
+    real = weather_draw.draw_wind_arrow
+    monkeypatch.setattr(weather_draw, "draw_wind_arrow", lambda *a, **k: (calls.append(a), real(*a, **k)))
+    W, H = size
+    s = pygame.Surface((W, H))
+    weather_draw.draw_weather(s, W, H, _hourly(), _daily()[:5], {}, BASE_FONT, "警報・注意報なし", "", "",
+                              "天気更新 09:00", "中部空港", "06:06", "17:06", "", "",
+                              runway=AIRPORT_CONFIG["centrair"]["runway"])
+    assert len(calls) >= 8

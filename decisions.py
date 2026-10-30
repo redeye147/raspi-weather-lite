@@ -13,6 +13,20 @@ MORNING_FETCH = datetime.time(5, 45)   # 天気（予報・警報・概況）を
 MORNING_FETCH_END = datetime.time(6, 10)
 
 
+TABLE_COVER_HOURS = 24     # 前回の表の始まりがこれより前なら、今の時間帯から先が足りないとみなす
+
+
+def _covers(snap_start: str, now_start: str) -> bool:
+    """前回の表（snap_start から 3 時間ごと 12 列＝36 時間）が、今の時間帯（now_start）から先を十分に含むか。
+    表は今の時間帯から並べる（table_cols.py）ので、日付をまたいでも 24 時間以内に始まった表なら使える"""
+    try:
+        a = datetime.datetime.strptime(snap_start, "%Y-%m-%dT%H")
+        b = datetime.datetime.strptime(now_start, "%Y-%m-%dT%H")
+    except ValueError:
+        return False
+    return datetime.timedelta(0) <= b - a <= datetime.timedelta(hours=TABLE_COVER_HOURS)
+
+
 def decide_snapshot(snap, airport: str, synced: bool, now_ts: float,
                     interval_hours: float, table_start: str) -> dict:
     """起動時に前回の表示データ（スナップショット）をどう使うかを決める。
@@ -31,7 +45,7 @@ def decide_snapshot(snap, airport: str, synced: bool, now_ts: float,
         weather_fresh = bool(
             snap and snap.get("hourly")
             and now_ts - snap.get("weather_at", 0) < interval_hours * 3600
-            and snap.get("table_start") == table_start
+            and _covers(snap.get("table_start", ""), table_start)   # 前回の表が今の時間帯から先を含む
         )
         kick_fetch = False
     else:

@@ -137,6 +137,8 @@ def _draw_sun_markers(screen, hourly, latitude, longitude, margin_x, col_w,
             if pos is None:
                 continue
             ci = min(n - 1, int(pos))
+            if hourly[ci].get("is_now"):
+                continue                                # 「今」の列には描かない（時刻「今 06:30」と重なる。次の列で分かる）
             x = margin_x + (1 + pos) * col_w
             cell_x = margin_x + (1 + ci) * col_w
             text_right = cell_x + 5 + hour_font.size(hourly[ci]["hour"])[0]
@@ -323,11 +325,16 @@ def draw_calm_mark(screen, cx, cy, size):
         x += seg + gap
 
 
+def _is_night_hour(item) -> bool:
+    """列の時間帯が夜（18・21・00・03）か。「今 20:50」「〜21」の列は、元の 3 時間帯（slot_hour）で決める"""
+    return item.get("slot_hour", item.get("hour")) in NIGHT_HOURS
+
+
 def night_mix(hourly, i, frac):
     """時刻の行の i 列目の、左端から frac（0〜1）の位置の「夜らしさ」（0 = 昼、1 = 夜）。
     昼と夜が変わる手前の列（15 時・03 時）の中で、なめらかに移り変わる（急に色が変わらないように）"""
-    night = hourly[i].get("hour") in NIGHT_HOURS
-    if i + 1 >= len(hourly) or (hourly[i + 1].get("hour") in NIGHT_HOURS) == night:
+    night = _is_night_hour(hourly[i])
+    if i + 1 >= len(hourly) or _is_night_hour(hourly[i + 1]) == night:
         return 1.0 if night else 0.0
     f = max(0.0, min(1.0, frac))
     s = f * f * (3 - 2 * f)                           # はじめと終わりをゆるやかに
@@ -339,7 +346,7 @@ _time_row_cache = {}
 
 def _time_row_surface(hourly, col_w, row_h):
     """時刻の行の背景（全列ぶん）。上下は 上の色→下の色、左右は昼↔夜をなめらかにつなぐ。同じ並びなら作り直さない"""
-    key = (tuple(h.get("hour") in NIGHT_HOURS for h in hourly), col_w, row_h)
+    key = (tuple(_is_night_hour(h) for h in hourly), col_w, row_h)
     surf = _time_row_cache.get(key)
     if surf is None:
         # 上端の色・下端の色の 2 行だけを 1 画素ずつ作り、縦に引き伸ばす（引き伸ばしで上下の間がなめらかになる）。
@@ -400,7 +407,7 @@ def _draw_rel_legend(screen, base_font_path, right_x, top_y, screen_h):
 
 def _is_night_item(item) -> bool:
     """18・21・00・03 時の列は夜（月アイコン）。日の出・日の入りの時刻では判断しない"""
-    return item["hour"] in NIGHT_HOURS
+    return _is_night_hour(item)
 
 # 「気　温」「風　速」は全角スペースで「降水量」と同じ 3 文字幅にし、右の絵の位置をそろえる
 ROW_LABELS = ["日付", "時刻", "天気", "降水量", "気　温", "風　速"]
@@ -779,15 +786,18 @@ def draw_weather(
                     if calm or isinstance(wdir, (int, float)):
                         widest = get_font(base_font_path, WIND_VALUE_SIZE, bold=True).size("88")[0] + unit_surf.get_width()
                         text_right = x_pos + max(widest, val_surf.get_width() + unit_surf.get_width())
-                        if runway:
+                        rw = runway
+                        if rw:
                             # 滑走路（番号まで）を行いっぱいの円に描き、矢印はその上に少し小さく（滑走路の両端が見えるように）
                             fig = min(row_heights[row_idx] - 4, x + col_w - text_right - 8)
-                            size = runway_arrow_size(fig, runway, base_font_path)
-                        else:
+                            size = runway_arrow_size(fig, rw, base_font_path)
+                            if size < 16:
+                                rw = None               # 列が狭くて矢印が小さくなりすぎる画面（1280×720 など）は滑走路を描かない
+                        if not rw:
                             fig = size = min(int(row_heights[row_idx] * WIND_ARROW_SCALE), x + col_w - text_right - 8)
                         if size >= 16:
                             cx, cy = text_right + 6 + fig / 2, y + row_heights[row_idx] / 2
-                            draw_runway(screen, cx, cy, fig, runway, base_font_path)   # 滑走路を下地に
+                            draw_runway(screen, cx, cy, fig, rw, base_font_path)   # 滑走路を下地に
                             if calm:
                                 draw_calm_mark(screen, cx, cy, size)
                             else:
@@ -819,7 +829,10 @@ def draw_weather(
                           y_offset + row_heights[0], row_heights[1], base_font_path)
 
     # 今の時間帯（3 時間ごと）の列を、時刻〜風速の 5 行まとめて太い枠で囲む（日付行は日ごとにまとめてあるので除く）
-    cur = current_slot_index(hourly, now or datetime.datetime.now(JST))
+    # 「今」の列（table_cols.build）があればそれ、無ければ今の時刻が入っている列
+    cur = next((i for i, it in enumerate(hourly) if it.get("is_now")), None)
+    if cur is None:
+        cur = current_slot_index(hourly, now or datetime.datetime.now(JST))
     if cur is not None and cur < data_cols:
         pygame.draw.rect(screen, NOW_FRAME_COLOR,
                          (margin_x + (1 + cur) * col_w, y_offset + row_heights[0], col_w + 1, sum(row_heights[1:]) + 1),

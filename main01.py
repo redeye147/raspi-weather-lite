@@ -39,6 +39,7 @@ import anim_icons
 import fetch_rainnow
 import fetch_rainfcst
 import fc_blend
+import table_cols
 import taf as taf_mod
 import obs_now
 import verify
@@ -857,7 +858,7 @@ def main():
         _wbgt_today = args.wbgt_test is not None or wbgt_badge_visible(now, _ts_to_dt(wbgt_data_at))
         draw_weather(
             screen, width, height,
-            _with_observation(
+            _table_columns(
                 _with_forecasts(hourly, now, taf_state.get("taf"),
                                 rainfc_result if fetch_rainfcst.is_fresh(rainfc_result, now) else None),
                 now, aviation_state.get("metar"),
@@ -987,6 +988,16 @@ def _record_blended(taf, rainfc, icao=None):
                               icao=icao)
     except Exception as e:
         logging.info(f"表示した予報の記録に失敗: {e}")
+
+
+def _table_columns(hourly, now, metar, rain=None):
+    """表に出す列：「今」（観測）・「〜21」（今の時間帯の残りの予報）・次の時間帯から（table_cols.py）"""
+    try:
+        return table_cols.build(hourly, now,
+                                observe=lambda h, cur: obs_now.apply_observation(h, cur, metar, rain=rain))
+    except Exception as e:                       # 並べ替えに失敗しても、予報のまま表示を続ける
+        logging.warning(f"表の列の並べ替え失敗: {e}")
+        return _with_observation(hourly, now, metar, rain)
 
 
 def _with_observation(hourly, now, metar, rain=None):

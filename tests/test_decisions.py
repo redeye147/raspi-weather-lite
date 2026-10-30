@@ -47,9 +47,11 @@ class TestDecideSnapshot:
         assert not self.decide(snapshot(weather_at=T - 2 * 3600))["weather_fresh"]
         assert self.decide(snapshot(weather_at=T - 2 * 3600 + 1))["weather_fresh"]
 
-    def test_table_of_previous_day_is_not_used(self):
-        """朝6時をまたいだら前日の表は使わない"""
-        assert not self.decide(snapshot(table_start="2026-10-02T06"))["weather_fresh"]
+    def test_table_too_old_or_from_future_is_not_used(self):
+        """表は今の時間帯から並べるので、24 時間以内に始まった表なら日付をまたいでも使える。それより古い・先の表は使わない"""
+        assert self.decide(snapshot(table_start="2026-10-02T06"))["weather_fresh"]           # 24 時間前に始まった表
+        assert not self.decide(snapshot(table_start="2026-10-02T03"))["weather_fresh"]       # 27 時間前
+        assert not self.decide(snapshot(table_start="2026-10-03T09"))["weather_fresh"]       # 先の時刻から（時計のずれ）
 
     def test_empty_hourly_is_not_used(self):
         assert not self.decide(snapshot(hourly=[]))["weather_fresh"]
