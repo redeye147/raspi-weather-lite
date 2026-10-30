@@ -191,14 +191,16 @@ TABLE_LAYOUT = "fixed"     # 今日の天気の表の形（main01 が config.jso
 def get_target_datetimes(now=None, layout=None):
     """今日の天気の表のもとになる 3 時間ごとの時刻（日本時間）。表の形（table_cols.LAYOUTS）ごとに
       fixed  : 朝 6 時〜翌朝 9 時の 10 個（6 時より前は前の日の 6 時から）。今までの表
-      insert : 6:00〜23:59 は今日の 6 時から、0:00〜5:59 は今日の 0 時から 9 個（「今」の列を割り込ませる）
+      insert : 6:00〜23:59 は今日の 6 時から、0:00〜5:59 は前の日の 18 時から 9 個（「今」の列を割り込ませる）
       now    : 今の 3 時間帯の始まりから 12 個（取得から次の取得までたっても 10 列が足りるよう多めに）"""
     layout = layout or TABLE_LAYOUT
     now = (now or datetime.datetime.now(JST)).astimezone(JST).replace(minute=0, second=0, microsecond=0)
     if layout == "now":
         start, n = now.replace(hour=now.hour // 3 * 3), 12
     elif layout == "insert":
-        start, n = now.replace(hour=6 if now.hour >= 6 else 0), 9
+        # 夜勤（0 時から）の人が前の日の夕方からの流れも見られるよう、夜の表は前の日の 18 時から（2026-10-31）
+        start = now.replace(hour=6) if now.hour >= 6 else now.replace(hour=18) - datetime.timedelta(days=1)
+        n = 9
     else:
         start, n = now.replace(hour=6) - datetime.timedelta(days=0 if now.hour >= 6 else 1), 10
     return [start + datetime.timedelta(hours=3 * i) for i in range(n)]

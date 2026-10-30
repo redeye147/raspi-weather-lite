@@ -196,7 +196,7 @@ HTML = """<!DOCTYPE html>
   <h3>📋 今日の天気の表の形</h3>
   <select id="layout">
     <option value="fixed">今まで（朝6時〜翌朝9時。今の時間帯の列を観測で置き換え）</option>
-    <option value="insert">今を割り込ませる（6〜24時は朝6時から、0〜6時は0時から。今の時間帯の右に「今」）</option>
+    <option value="insert">今を割り込ませる（6〜24時は朝6時から、0〜6時は前日18時から。今の時間帯の右に「今」）</option>
     <option value="now">今から並べる（今・今の時間帯の残り・その先）</option>
   </select>
   <button id="layout-btn" onclick="saveLayout()">表の形を保存（表示プログラムを再起動）</button>

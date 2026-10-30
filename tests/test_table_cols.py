@@ -50,11 +50,11 @@ def test_rest_threshold(h, m, rest):
 @pytest.mark.parametrize("h, m, start, now_after", [
     (13, 15, "06", "12"),        # 昼の表（6 時から）：12 の列の右に今
     (23, 50, "06", "21"),
-    (0, 20, "00", "00"),         # 夜の表（0 時から）：00 の列の右に今
-    (5, 50, "00", "03"),
+    (0, 20, "18", "00"),         # 夜の表（前の日の 18 時から）：00 の列の右に今
+    (5, 50, "18", "03"),
 ])
 def test_insert_layout(h, m, start, now_after):
-    """案 D：6:00〜23:59 は今日の 6 時から、0:00〜5:59 は今日の 0 時から 9 列。今の時間帯の右に「今」を割り込ませる"""
+    """案 D：6:00〜23:59 は今日の 6 時から、0:00〜5:59 は前の日の 18 時から 9 列。今の時間帯の右に「今」を割り込ませる"""
     now = at(h, m)
     ts = get_target_datetimes(now, layout="insert")
     hourly = [dict(datetime=t, date=t.strftime("%-m/%-d"), hour=t.strftime("%H"), code="101", pop="1.0mm")
