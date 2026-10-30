@@ -52,8 +52,11 @@ def fill_with_observed(item, observed):
     winds = [r for r in rows if r.get("wind") is not None]
     if winds:
         w = max(winds, key=lambda r: r["wind"])
-        out.update(wind_val=round(w["wind"]), wind=f"{round(w['wind'])}m", wind_dir=w.get("wind_dir"),
-                   wind_variable=w.get("wind_dir") is None and round(w["wind"]) > 0)
+        d = w.get("wind_dir")
+        # 風向が変動（VRB）なら「---」。記録に風向が無い（2026-10-31 より前の行）ときは矢印も「---」も描かない
+        out.update(wind_val=round(w["wind"]), wind=f"{round(w['wind'])}m",
+                   wind_dir=d if isinstance(d, (int, float)) else None,
+                   wind_variable=d == "VRB" and round(w["wind"]) > 0)
     radar = [r["radar_mmh"] for r in rows if r.get("radar_mmh") is not None]
     if radar:
         out["pop"] = f"{max(radar):.1f}mm"

@@ -108,3 +108,14 @@ def test_verify_observed_hours_roundtrip(tmp_path):
     r = obs["2026-10-30 12:00"]
     assert r["temp"] == 19 and r["wind_dir"] == 330 and r["code"] == "300" and r["radar_mmh"] == 3.0
     assert verify.observed_hours("RJTT", base_dir=d) == {}
+
+
+def test_past_column_without_recorded_direction_has_no_calm_mark():
+    """記録に風向が無い行（項目を足す前）は「---」（変動・無風の印）にしない。VRB のときだけ「---」"""
+    item = dict(datetime=at(18, 0), date="10/30", hour="18", code="100", pop="0.0mm", temp_val=18, temp="18℃",
+                wind_val=3, wind="3m", wind_dir=90)
+    no_dir = {"2026-10-30 18:00": {"temp": 18, "wind": 3.1, "wind_dir": None, "code": "100", "rain": False, "radar_mmh": None}}
+    out = table_cols.fill_with_observed(item, no_dir)
+    assert out["wind_dir"] is None and not out["wind_variable"]
+    vrb = {"2026-10-30 18:00": dict(no_dir["2026-10-30 18:00"], wind_dir="VRB")}
+    assert table_cols.fill_with_observed(item, vrb)["wind_variable"]

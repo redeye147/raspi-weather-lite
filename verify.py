@@ -162,7 +162,9 @@ def record_observation(metar, radar_mmh=None, base_dir=None):
            "temp": metar.get("temp") if metar.get("temp") is not None else "", "wind": wind,
            "code": obs_now.icon_code_from_metar(metar), "rain": int(rain),
            "radar_mmh": "" if radar_mmh is None else radar_mmh,
-           "wind_dir": "" if metar.get("wind_dir") is None else metar["wind_dir"]}
+           # 風向が変動（VRB）なら "VRB"。空は「記録が無い」（この項目を足す前の行など）
+           "wind_dir": metar["wind_dir"] if metar.get("wind_dir") is not None
+           else ("VRB" if metar.get("wind_kt") else "")}
     for L in LEADS_H:
         fc = forecast_for(obs_jst, L, records, metar.get("icao")) or {}
         row[f"fc{L}_temp"] = "" if fc.get("temp") is None else fc["temp"]
@@ -206,7 +208,8 @@ def observed_hours(icao=None, base_dir=None, months=2):
                         continue
                     data[r.get("obs_time", "")] = {
                         "temp": _num(r.get("temp")), "wind": _num(r.get("wind")),
-                        "wind_dir": _num(r.get("wind_dir")), "code": r.get("code") or None,
+                        "wind_dir": "VRB" if r.get("wind_dir") == "VRB" else _num(r.get("wind_dir")),
+                        "code": r.get("code") or None,
                         "rain": r.get("rain") == "1", "radar_mmh": _num(r.get("radar_mmh"))}
         except OSError:
             continue
