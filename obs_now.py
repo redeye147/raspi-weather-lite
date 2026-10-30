@@ -40,15 +40,16 @@ def icon_code_from_metar(m):
 
 def apply_observation(hourly, cur, metar, now_utc=None, rain=None):
     """hourly の cur 列を、METAR の実況と降水ナウキャスト（rain）で置き換えた「表示用の写し」を返す（元の予報は変えない）。
-    rain = {"max_mmh": 1 時間先までのいちばん強い雨}（新しいときだけ渡す）。
+    rain = {"now_mmh": 今の雨}（降水ナウキャストの結果。新しいときだけ渡す）。
     置き換えられないとき（観測なし・古い・列なし）は hourly をそのまま返す"""
     if cur is None or not (0 <= cur < len(hourly)):
         return hourly
     now_utc = now_utc or datetime.datetime.now(datetime.timezone.utc)
     out = list(hourly)
     if rain is not None:
-        # 降水量は、雨雲レーダーの実測と 1 時間先までの予測のいちばん強い雨（1 時間あたり）
-        out[cur] = dict(out[cur], pop=f"{rain['max_mmh']:.1f}mm", radar=True)
+        # 降水量は、雨雲レーダーで今降っている雨（1 時間あたり）。以前は 1 時間先までの予測のいちばん強い雨も
+        # 含めていたが、実際の雨より強めに出たので今の雨だけにした（2026-10-30：雷雲の予測で 40.0 mm/h と出た）
+        out[cur] = dict(out[cur], pop=f"{rain['now_mmh']:.1f}mm", radar=True)
     obs = metar.get("obs_utc") if metar else None
     if obs is None or (now_utc - obs).total_seconds() > OBS_MAX_AGE_MIN * 60:
         return out if rain is not None else hourly

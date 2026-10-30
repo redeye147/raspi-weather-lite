@@ -77,3 +77,12 @@ def test_calm_is_not_variable():
     """無風（00000KT）は「変動」ではなく 0 m/s（画面では同じ「---」）"""
     out = obs_now.apply_observation(_hourly(), 1, metar("RJGG 240100Z 00000KT 9999 FEW020 19/10 Q1015"), NOW)
     assert out[1]["wind_val"] == 0 and not out[1]["wind_variable"]
+
+
+def test_current_rain_is_now_not_forecast_max():
+    """今の列の降水量は雨雲レーダーの「今の雨」。1 時間先までの予測の最大は使わない（実際より強めに出た）"""
+    import datetime as _dt
+    hourly = [{"datetime": _dt.datetime(2026, 10, 30, 18), "code": "300", "pop": "1.0mm"}]
+    out = obs_now.apply_observation(hourly, 0, None, rain={"now_mmh": 3.0, "max_mmh": 40.0})
+    assert out[0]["pop"] == "3.0mm" and out[0]["radar"] is True
+    assert hourly[0]["pop"] == "1.0mm"                                     # 元の予報は変えない
