@@ -495,10 +495,11 @@ NOW_HTML = """<!DOCTYPE html>
   #ahead { flex: 2; display: flex; gap: 1.5vmin; }
   #ahead .card { flex: 1; }
   .label { font-size: 3.6vmin; font-weight: bold; }
-  #now .label { font-size: 5vmin; color: #0068dc; }
+  #now .label { font-size: 4.6vmin; color: #0068dc; }
   .icon { width: 90%; max-height: 40%; object-fit: contain; }
   .row { font-size: 3.6vmin; white-space: nowrap; }
-  #now .row { font-size: 6vmin; }
+  #now .row { font-size: 4.8vmin; }
+  #now .icon { max-height: 26%; }
   .unit { font-size: 0.55em; }
   .strong { color: #0000ff; font-weight: bold; }
   .wind { display: flex; align-items: center; gap: 1vmin; }
@@ -511,9 +512,28 @@ NOW_HTML = """<!DOCTYPE html>
   .warnbox { border: 2px solid #bbb; }
   .headline { font-size: 2.8vmin; font-weight: normal; color: #000; margin-top: 0.5vmin; }
   .card, #ahead { min-height: 0; overflow: hidden; }
+  /* 1 週間の天気（土日の作業の予定用。土は青・日は赤、背景も薄く色を付ける） */
+  #week { display: flex; gap: 1vmin; height: 24vh; min-height: 0; }
+  #week:empty { display: none; }
+  .day { flex: 1; border: 2px solid #bbb; border-radius: 1.2vmin; display: flex; flex-direction: column;
+    align-items: center; justify-content: space-around; padding: 0.6vmin; min-width: 0; overflow: hidden; }
+  .day.sat { background: #eef4ff; border-color: #7aa0ff; } .day.sun { background: #fff0f0; border-color: #ff8a8a; }
+  .day .d { font-size: 2.8vmin; font-weight: bold; white-space: nowrap; }
+  .day.sat .d { color: #0000ff; } .day.sun .d { color: #ff0000; }
+  .day img { width: 80%; max-height: 38%; object-fit: contain; }
+  .day .p, .day .t { font-size: 2.6vmin; white-space: nowrap; }
+  .rel { display: inline-block; font-size: 0.75em; font-weight: bold; color: #fff; border-radius: 0.4em;
+    padding: 0 0.3em; margin-left: 0.3em; }
+  .rel-A { background: #e62814; } .rel-B { background: #f0e100; color: #282828; } .rel-C { background: #46aaff; }
+  #wtitle { font-size: 2.6vmin; font-weight: bold; margin-bottom: -0.8vmin; }
+  #wtitle:empty { display: none; }
   @media (orientation: portrait) {
+    #week { height: 17vh; }
+    .day .wd { display: block; text-align: center; }
+    .day .d { font-size: 2.4vmin; text-align: center; } .day .p, .day .t { font-size: 2.3vmin; }
+    .day img { max-height: 30%; }
     #main { flex-direction: column; } #now { flex: 1.3; } #ahead { flex: 1; }
-    #now .icon { max-height: 34%; } #ahead .icon { max-height: 26%; }
+    #now .icon { max-height: 28%; } #ahead .icon { max-height: 26%; }
     #ahead .row { font-size: 3.2vmin; } #ahead .label { font-size: 3.4vmin; }
   }
 </style></head><body>
@@ -523,6 +543,8 @@ NOW_HTML = """<!DOCTYPE html>
   <div id="now" class="card"></div>
   <div id="ahead"></div>
 </div>
+<div id="wtitle"></div>
+<div id="week"></div>
 <script>
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function arrow(c) {
@@ -559,6 +581,15 @@ async function load() {
     a += '<div class="band warnbox"><span class="' + d.warning_level + '">' + esc(d.warning) + '</span>' +
       (d.headline ? '<div class="headline">' + esc(d.headline) + '</div>' : '') + '</div>';
     document.getElementById('alerts').innerHTML = a;
+    const wk = d.week || [];
+    document.getElementById('wtitle').textContent = wk.length ? '1 週間の天気（降水確率・最高／最低気温。A・B・C は予報の確からしさ）' : '';
+    document.getElementById('week').innerHTML = wk.map(w =>
+      '<div class="day ' + w.weekend + '"><div class="d">' + esc(w.label) + '<span class="wd">（' + esc(w.weekday) + '）</span></div>' +
+      '<img src="/icon/' + esc(w.icon) + '.png" alt="">' +
+      '<div class="p">' + (w.pop == null ? '--' : w.pop) + '%' + (w.rel ? '<span class="rel rel-' + w.rel + '">' + w.rel + '</span>' : '') + '</div>' +
+      '<div class="t"><span style="color:' + w.tmax_color + (w.tmax >= 28 ? ';font-weight:bold' : '') + '">' +
+      (w.tmax == null ? '--' : w.tmax) + '</span>／<span>' + (w.tmin == null ? '--' : w.tmin) + '</span>℃</div></div>'
+    ).join('');
   } catch (e) {
     document.getElementById('stale').textContent = 'サイネージにつながりません';
   }

@@ -79,9 +79,54 @@ def column(item):
     }
 
 
+WEEK_DAYS = 7                     # 週間天気の日数（土日の作業の予定を立てられるよう、1 週間先まで）
+WEEKDAYS = "月火水木金土日"
+
+
+def _max_temp_color(t):
+    """週間の最高気温の色（サイネージの１週間の天気と同じ）"""
+    if not isinstance(t, int):
+        return "#000000"
+    if t >= 34:
+        return "#800080"
+    if t >= 30:
+        return "#ff0000"
+    if t >= 28:
+        return "#ffa500"
+    return "#000000"
+
+
+def week_day(d, today=None):
+    """１週間の天気の 1 日（fetch_weather の daily の 1 件）を、ページで使う形に"""
+    try:
+        day = datetime.date.fromisoformat(d.get("date", ""))
+    except (TypeError, ValueError):
+        return None
+    tmax = tmin = None
+    try:
+        a, b = str(d.get("temp", "")).split("/")
+        tmax, tmin = int(a), int(b)
+    except ValueError:
+        pass
+    pop = str(d.get("pop", "")).replace("%", "")
+    wd = WEEKDAYS[day.weekday()]
+    return {
+        "date": day.isoformat(),
+        "label": f"{day.month}/{day.day}",
+        "weekday": wd,
+        "weekend": "sat" if wd == "土" else "sun" if wd == "日" else "",
+        "today": today is not None and day == today,
+        "icon": str(d.get("code") or "999"),
+        "pop": int(pop) if pop.isdigit() else None,
+        "tmax": tmax, "tmin": tmin, "tmax_color": _max_temp_color(tmax),
+        "rel": d.get("rel", "") if d.get("rel") in ("A", "B", "C") else "",
+    }
+
+
 def build_payload(cols, now, airport_label, icao="", warning_text="", headline_text="",
-                  thunder=None, wbgt=None, sunrise="", sunset="", weather_updated=""):
-    """cols：「今」から並んだ列（table_cols.build の結果）"""
+                  thunder=None, wbgt=None, sunrise="", sunset="", weather_updated="", daily=None):
+    """cols：「今」から並んだ列（table_cols.build の結果）。daily：１週間の天気（fetch_weather の daily）"""
+    week = [w for w in (week_day(d, now.date()) for d in (daily or [])) if w][:WEEK_DAYS]
     cols = list(cols or [])
     th = None
     if thunder:
@@ -100,6 +145,7 @@ def build_payload(cols, now, airport_label, icao="", warning_text="", headline_t
         "headline": headline_text if active else "",
         "thunder": th,
         "wbgt": ({"label": wbgt.get("label"), "value": wbgt.get("value")} if wbgt else None),
+        "week": week,
     }
 
 

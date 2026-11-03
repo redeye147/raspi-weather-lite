@@ -247,7 +247,7 @@ def fetch_weather_openmeteo(latitude=LATITUDE, longitude=LONGITUDE):
     # -------- キャッシュ保存 ----------
     try:
         # 電源が突然切れても前の予報が残るように（safe_write）
-        safe_write.write_json(CACHE_FILE, {"hourly": hourly, "daily": daily[:5]}, default=iso_dump_default)
+        safe_write.write_json(CACHE_FILE, {"hourly": hourly, "daily": daily[:7]}, default=iso_dump_default)
     except:
         pass
     return hourly, daily
@@ -319,7 +319,7 @@ def fetch_weather_jma(office_code, target_area_codes):
     candidate_days = [
         d for d in candidate_days
         if d >= tomorrow
-    ][:5]
+    ][:7]                      # 明日から 7 日分（気象庁の週間予報の終わりまで）。サイネージは 5 日、子機用のページは 7 日
 
     daily = []
 
@@ -409,7 +409,7 @@ class WeatherFetcher:
                 _, jma_daily = fetch_weather_jma(cfg["office_code"], cfg["area_codes"])
                 om_map = {d["date"]: d for d in om_daily}
                 daily = []
-                for d in jma_daily[:5]:
+                for d in jma_daily[:7]:
                     od = om_map.get(d.get("date"))
                     if od:
                         if d.get("pop") in ("-%", "", None):
@@ -419,7 +419,7 @@ class WeatherFetcher:
                     daily.append(d)
             else:
                 hourly, daily = fetch_weather_openmeteo(cfg["latitude"], cfg["longitude"])
-                daily = daily[:5]
+                daily = daily[:7]
             self._result = (hourly, daily)
             self._ok = True
         except Exception as e:

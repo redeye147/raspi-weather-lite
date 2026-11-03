@@ -606,6 +606,7 @@ def draw_weather(
     thunder=None,
     runway=None,
 ):
+    daily = list(daily or [])[:5]      # 画面の１週間の天気は 5 日分（子機用のページは 7 日分を出す）
     screen.fill((255, 255, 255))
 
     margin_x = int(width * 0.05)

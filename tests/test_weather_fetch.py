@@ -63,6 +63,8 @@ def test_jma_weekly_pops_and_temps_are_read(monkeypatch, today_1013):
     """週間予報の 5 日目（10/18）まで降水確率と気温が入る（2026-10-13 の画面では 18 日が「-%」「-/-」だった）"""
     monkeypatch.setattr(fw.SESS, "get", lambda url, timeout=10: _Resp(JMA))
     _, daily = fw.fetch_weather_jma("120000", ("1221100", "120010"))
+    assert daily[-1]["date"] == "2026-10-19"              # 週間予報の終わりまで（子機用のページは 7 日分）
+    daily = daily[:5]                                     # サイネージに出す 5 日
     assert [d["date"] for d in daily] == ["2026-10-14", "2026-10-15", "2026-10-16", "2026-10-17", "2026-10-18"]
     assert [d["pop"] for d in daily] == ["30%", "55%", "23%", "8%", "40%"]
     assert [d["temp"] for d in daily] == ["26/21", "22/16", "24/15", "21/14", "23/13"]
@@ -93,8 +95,9 @@ def test_fetcher_merges_jma_with_openmeteo(monkeypatch, today_1013):
                            "area_codes": ("1221100", "120010")}, type("A", (), {"jma": True})())
     f._run()
     _, daily = f._result
-    assert len(daily) == 5 and daily[-1]["date"] == "2026-10-18"
-    assert daily[-1]["pop"] == "18%" and daily[-1]["temp"] == "20/10"
+    assert len(daily) == 6 and daily[-1]["date"] == "2026-10-19"     # 週間予報の終わりまで（子機用のページ用）
+    assert daily[4]["pop"] == "18%" and daily[4]["temp"] == "20/10"
+    assert daily[-1]["pop"] == "19%"
 
 
 # ---------------------------------------------------------------- 今日の天気：Open-Meteo の気象庁モデル
@@ -277,7 +280,7 @@ def test_jma_weekly_reliability(monkeypatch):
             return _dt.date(2026, 10, 22)
     monkeypatch.setattr(fw.datetime, "date", D)
     daily = fw.fetch_weather_jma("230000", ["230010"])[1]
-    assert [d["rel"] for d in daily] == ["", "", "A", "A", "B"]
+    assert [d["rel"] for d in daily][:5] == ["", "", "A", "A", "B"]
 
 
 def test_openmeteo_past_day_fills_yesterday_columns(monkeypatch):
@@ -304,3 +307,19 @@ def test_openmeteo_past_day_fills_yesterday_columns(monkeypatch):
     assert "past_days=1" in urls[0]
     assert all(h["code"] == "200" and h["temp"] == "15℃" for h in hourly)      # 前の日の列も埋まる
     assert daily[0]["date"] == "2026-10-25" and len(daily) == 7
+
+
+def test_now_page_week_has_seven_days_with_weekend():
+    """子機用のページの週間天気：7 日分・土日の印・最高気温の色・信頼度"""
+    import datetime as _d
+    import now_page
+    now = _d.datetime(2026, 11, 3, 10, 0)            # 火曜
+    daily = [{"date": f"2026-11-{d:02d}", "code": "101", "pop": "30%", "temp": "31/18", "rel": "B"} for d in range(4, 12)]
+    p = now_page.build_payload([], now, "中部空港", daily=daily)
+    w = p["week"]
+    assert len(w) == 7 and w[0]["label"] == "11/4" and w[0]["weekday"] == "水"
+    assert [x["weekend"] for x in w][3:5] == ["sat", "sun"]
+    assert w[0]["tmax"] == 31 and w[0]["tmin"] == 18 and w[0]["tmax_color"] == "#ff0000"
+    assert w[0]["pop"] == 30 and w[0]["rel"] == "B"
+    bad = now_page.build_payload([], now, "x", daily=[{"date": "", "temp": "-/-", "pop": "-%"}])
+    assert bad["week"] == []

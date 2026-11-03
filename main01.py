@@ -870,7 +870,8 @@ def main():
         _rain_now = rain_result if fetch_rainnow.is_fresh(rain_result, now) else None
         _write_now_page(_blended, now, aviation_state.get("metar"), _rain_now, cfg, airport_label,
                         warning_text, headline_text, thunder_info,
-                        wbgt_level_info if _wbgt_today else None, sunrise_str, sunset_str, weather_updated_text)
+                        wbgt_level_info if _wbgt_today else None, sunrise_str, sunset_str, weather_updated_text,
+                        daily=daily)
         draw_weather(
             screen, width, height,
             _table_columns(_blended, now, aviation_state.get("metar"), _rain_now, icao=cfg.get("icao")),
@@ -987,14 +988,14 @@ def _with_forecasts(hourly, now, taf, rainfc=None):
 
 
 def _write_now_page(blended, now, metar, rain, cfg, airport_label, warning_text, headline_text, thunder,
-                    wbgt, sunrise, sunset, weather_updated):
+                    wbgt, sunrise, sunset, weather_updated, daily=None):
     """子機用のページ（/now）のデータを書き出す（now_page.py）。「今」から並べた列（案 C と同じ並び）を使う"""
     try:
         cols = table_cols.build(blended, now,
                                 observe=lambda h, cur: obs_now.apply_observation(h, cur, metar, rain=rain))
         now_page.write(now_page.build_payload(
             cols, now, airport_label, cfg.get("icao"), warning_text, headline_text, thunder, wbgt,
-            sunrise, sunset, weather_updated))
+            sunrise, sunset, weather_updated, daily=daily))
     except Exception as e:
         logging.info(f"子機用のページのデータを書けなかった: {e}")
 
