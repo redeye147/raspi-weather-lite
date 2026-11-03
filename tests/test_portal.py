@@ -173,3 +173,17 @@ def test_save_layout(client, monkeypatch):
     r = client.post("/save-layout", json={"table_layout": "insert"})
     assert r.status_code == 200 and saved == {"table_layout": "insert"} and "restart main01" in cmds[0][-1]
     assert client.post("/save-layout", json={"table_layout": "x"}).status_code == 400
+
+
+def test_now_page_and_icons_without_login(client, monkeypatch):
+    """子機用のページ・データ・アイコンはパスワードなしで見られる。アイコンは番号の名前だけ"""
+    import now_page
+    assert client.get("/now").status_code == 200 and "今の天気" in client.get("/now").get_data(as_text=True)
+    monkeypatch.setattr(now_page, "read", lambda path=None: None)
+    assert client.get("/now.json").status_code == 503
+    monkeypatch.setattr(now_page, "read", lambda path=None: {"airport": "中部空港"})
+    assert client.get("/now.json").get_json() == {"airport": "中部空港"}
+    assert client.get("/icon/100.png").status_code == 200
+    assert client.get("/icon/1000A.png").status_code == 200
+    assert client.get("/icon/..%2Fconfig.png").status_code == 404
+    assert client.get("/icon/abc.png").status_code == 404

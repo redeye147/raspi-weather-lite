@@ -40,6 +40,7 @@ import fetch_rainnow
 import fetch_rainfcst
 import fc_blend
 import table_cols
+import now_page
 import taf as taf_mod
 import obs_now
 import verify
@@ -864,13 +865,15 @@ def main():
 
         # WBGT は「その日の最高予測」なので、取得した日のうちだけ出す（0:00 に消え、6 時台の取得で再表示）
         _wbgt_today = args.wbgt_test is not None or wbgt_badge_visible(now, _ts_to_dt(wbgt_data_at))
+        _blended = _with_forecasts(hourly, now, taf_state.get("taf"),
+                                   rainfc_result if fetch_rainfcst.is_fresh(rainfc_result, now) else None)
+        _rain_now = rain_result if fetch_rainnow.is_fresh(rain_result, now) else None
+        _write_now_page(_blended, now, aviation_state.get("metar"), _rain_now, cfg, airport_label,
+                        warning_text, headline_text, thunder_info,
+                        wbgt_level_info if _wbgt_today else None, sunrise_str, sunset_str, weather_updated_text)
         draw_weather(
             screen, width, height,
-            _table_columns(
-                _with_forecasts(hourly, now, taf_state.get("taf"),
-                                rainfc_result if fetch_rainfcst.is_fresh(rainfc_result, now) else None),
-                now, aviation_state.get("metar"),
-                rain_result if fetch_rainnow.is_fresh(rain_result, now) else None, icao=cfg.get("icao")),
+            _table_columns(_blended, now, aviation_state.get("metar"), _rain_now, icao=cfg.get("icao")),
             daily, icon_cache, BASE_FONT,
             warning_text, headline_text, updated_text,
             weather_updated_text, airport_label,
@@ -981,6 +984,19 @@ def _with_forecasts(hourly, now, taf, rainfc=None):
     except Exception as e:                       # 直せなくても、今までの予報のまま表示を続ける
         logging.warning(f"TAF・降水短時間予報での直し失敗: {e}")
         return hourly
+
+
+def _write_now_page(blended, now, metar, rain, cfg, airport_label, warning_text, headline_text, thunder,
+                    wbgt, sunrise, sunset, weather_updated):
+    """子機用のページ（/now）のデータを書き出す（now_page.py）。「今」から並べた列（案 C と同じ並び）を使う"""
+    try:
+        cols = table_cols.build(blended, now,
+                                observe=lambda h, cur: obs_now.apply_observation(h, cur, metar, rain=rain))
+        now_page.write(now_page.build_payload(
+            cols, now, airport_label, cfg.get("icao"), warning_text, headline_text, thunder, wbgt,
+            sunrise, sunset, weather_updated))
+    except Exception as e:
+        logging.info(f"子機用のページのデータを書けなかった: {e}")
 
 
 def header_label(name, icao):

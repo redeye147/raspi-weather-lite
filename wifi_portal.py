@@ -204,6 +204,7 @@ HTML = """<!DOCTYPE html>
 </div>
 
 <button id="wifi-open-btn" class="sub-btn" onclick="openWifi()">🔒 WiFi 設定（パスワードが必要）</button>
+<button class="sub-btn" onclick="location.href='/now'">📱 子機用のページ（今の天気。スマホ・タブレットで開いておく）</button>
 <button class="sub-btn" onclick="location.href='/diag'">🩺 診断（本体の状態を見る・パスワードが必要）</button>
 <button class="sub-btn" onclick="location.href='/shots'">📷 画面のスクリーンショット（パスワードが必要）</button>
 
@@ -455,6 +456,101 @@ init();
 </body></html>"""
 
 
+NOW_HTML = """<!DOCTYPE html>
+<html lang="ja"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>今の天気</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #fff; color: #000;
+    font-family: -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; }
+  body { display: flex; flex-direction: column; padding: 2vmin 3vmin; gap: 1.5vmin; }
+  #head { display: flex; justify-content: space-between; align-items: baseline; font-size: 3.2vmin; }
+  #head b { font-size: 4.4vmin; }
+  #stale { color: #c00; font-weight: bold; }
+  #main { flex: 1; display: flex; gap: 2vmin; min-height: 0; }
+  .card { border: 2px solid #bbb; border-radius: 1.5vmin; padding: 1.5vmin; display: flex; flex-direction: column;
+    align-items: center; justify-content: space-around; }
+  #now { flex: 1.5; border: 0.8vmin solid #0068dc; }
+  #ahead { flex: 2; display: flex; gap: 1.5vmin; }
+  #ahead .card { flex: 1; }
+  .label { font-size: 3.6vmin; font-weight: bold; }
+  #now .label { font-size: 5vmin; color: #0068dc; }
+  .icon { width: 90%; max-height: 40%; object-fit: contain; }
+  .row { font-size: 3.6vmin; white-space: nowrap; }
+  #now .row { font-size: 6vmin; }
+  .unit { font-size: 0.55em; }
+  .strong { color: #0000ff; font-weight: bold; }
+  .wind { display: flex; align-items: center; gap: 1vmin; }
+  .arrow { width: 1.2em; height: 1.2em; }
+  #alerts { display: flex; flex-direction: column; gap: 1vmin; }
+  .band { padding: 1vmin 2vmin; border-radius: 1vmin; font-size: 3.6vmin; font-weight: bold; }
+  .thunder-near { background: #a00000; color: #fff; }
+  .thunder-watch { background: #ffd200; color: #000; }
+  .warning { color: #ff0000; } .advisory { color: #cc5500; } .none { color: #000; font-weight: normal; }
+  .warnbox { border: 2px solid #bbb; }
+  .headline { font-size: 2.8vmin; font-weight: normal; color: #000; margin-top: 0.5vmin; }
+  .card, #ahead { min-height: 0; overflow: hidden; }
+  @media (orientation: portrait) {
+    #main { flex-direction: column; } #now { flex: 1.3; } #ahead { flex: 1; }
+    #now .icon { max-height: 34%; } #ahead .icon { max-height: 26%; }
+    #ahead .row { font-size: 3.2vmin; } #ahead .label { font-size: 3.4vmin; }
+  }
+</style></head><body>
+<div id="head"><span><b id="airport">--</b></span><span><span id="stale"></span> <span id="time">--</span> 更新</span></div>
+<div id="alerts"></div>
+<div id="main">
+  <div id="now" class="card"></div>
+  <div id="ahead"></div>
+</div>
+<script>
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function arrow(c) {
+  if (c.calm) return '<span style="color:#999;font-weight:bold">---</span>';
+  if (c.wind_dir == null) return '';
+  // 風が吹いていく向き（北風なら下向き）。画面の矢印と同じ形
+  return '<svg class="arrow" viewBox="-50 -50 100 100"><g transform="rotate(' + c.wind_dir + ')">' +
+    '<polygon points="0,44 22,-44 0,-5 -22,-44" fill="' + c.arrow_color + '" stroke="#000" stroke-width="6" stroke-linejoin="round"/></g></svg>';
+}
+function card(c, isNow) {
+  if (!c) return '';
+  const pop = c.pop == null ? '--' : c.pop.toFixed(1);
+  return '<div class="label">' + esc(c.label) + '</div>' +
+    '<img class="icon" src="/icon/' + esc(c.icon) + '.png" alt="">' +
+    '<div class="row"><span class="' + (c.pop_strong ? 'strong' : '') + '">' + pop + '</span><span class="unit"> mm/h</span></div>' +
+    '<div class="row" style="color:' + c.temp_color + '">' + (c.temp == null ? '--' : c.temp) + '<span class="unit">℃</span></div>' +
+    '<div class="row wind"><span style="color:' + c.wind_color + ';' + (c.wind >= 9 ? 'font-weight:bold' : '') + '">' +
+    (c.wind == null ? '--' : c.wind) + '<span class="unit"> m/s</span></span>' + arrow(c) + '</div>';
+}
+async function load() {
+  try {
+    const r = await fetch('/now.json', {cache: 'no-store'});
+    if (!r.ok) throw new Error(r.status);
+    const d = await r.json();
+    document.getElementById('airport').textContent = d.airport + (d.icao ? '（' + d.icao + '）' : '');
+    document.getElementById('time').textContent = d.time;
+    const age = Date.now() / 1000 - d.written_at;
+    document.getElementById('stale').textContent = age > 300 ? '更新が止まっています' : '';
+    document.getElementById('now').innerHTML = card(d.now, true);
+    document.getElementById('ahead').innerHTML = d.ahead.map(c => '<div class="card">' + card(c) + '</div>').join('');
+    let a = '';
+    if (d.thunder) a += '<div class="band ' + (d.thunder.kind === 'near' ? 'thunder-near' : 'thunder-watch') + '">⚡ ' +
+      (d.thunder.kind === 'near' ? '雷接近' : '雷注意') + '　空港の' + esc(d.thunder.dir) + ' ' + d.thunder.km + 'km（' + esc(d.thunder.at) + ' 解析）</div>';
+    a += '<div class="band warnbox"><span class="' + d.warning_level + '">' + esc(d.warning) + '</span>' +
+      (d.headline ? '<div class="headline">' + esc(d.headline) + '</div>' : '') + '</div>';
+    document.getElementById('alerts').innerHTML = a;
+  } catch (e) {
+    document.getElementById('stale').textContent = 'サイネージにつながりません';
+  }
+}
+load();
+setInterval(load, 60000);
+</script></body></html>
+"""
+
+
 DIAG_HTML = """<!DOCTYPE html>
 <html><head>
 <meta charset="utf-8">
@@ -687,6 +783,36 @@ def status():
         "airport": cfg.get("airport", "centrair"),
         "table_layout": cfg.get("table_layout", "fixed"),
     }))
+
+
+@app.route("/now")
+def now_page_html():
+    """子機用のページ（使っていないスマホ・タブレットで開いておく）。パスワード不要（画面と同じ天気の情報だけ）"""
+    return _no_cache(make_response(NOW_HTML))
+
+
+@app.route("/now.json")
+def now_page_data():
+    import now_page
+    d = now_page.read()
+    if d is None:
+        return "まだデータがありません（表示プログラムが動いていない）", 503
+    return _no_cache(jsonify(d))
+
+
+@app.route("/icon/<name>.png")
+def weather_icon(name):
+    """天気のアイコン（子機用のページで使う）。weather_icons の中の番号の名前だけ"""
+    import re as _re
+    from config import ICON_DIR
+    if not _re.fullmatch(r"\d{3,4}A?", name):
+        return "not found", 404
+    path = os.path.join(ICON_DIR, f"{name}.png")
+    if not os.path.exists(path):
+        return "not found", 404
+    resp = make_response(send_file(path, mimetype="image/png"))
+    resp.headers["Cache-Control"] = "max-age=86400"
+    return resp
 
 
 @app.route("/diag")
