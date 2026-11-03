@@ -187,3 +187,10 @@ def test_now_page_and_icons_without_login(client, monkeypatch):
     assert client.get("/icon/1000A.png").status_code == 200
     assert client.get("/icon/..%2Fconfig.png").status_code == 404
     assert client.get("/icon/abc.png").status_code == 404
+
+
+def test_status_has_hostname_for_child_page(client, monkeypatch):
+    """子機用のページは「名前.local」で開けるよう、設定画面に Pi の名前を渡す"""
+    monkeypatch.setattr(wp, "_hostname", lambda: "raspi2w")
+    html = client.get("/").get_data(as_text=True)
+    assert ".local:8080/now" in html and "openNow()" in html

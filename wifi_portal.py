@@ -30,6 +30,15 @@ CONFIG_PATH = "/home/pi/raspi-weather-lite/config.json"
 # ==========================================
 # config.json ヘルパー
 # ==========================================
+def _hostname() -> str:
+    """Pi の名前（例 raspi2w）。子機は「名前.local」で探せる（mDNS。IP アドレスが変わってもつながる）"""
+    import socket
+    try:
+        return socket.gethostname().split(".")[0]
+    except OSError:
+        return ""
+
+
 def _load_config() -> dict:
     try:
         with open(CONFIG_PATH) as f:
@@ -204,7 +213,8 @@ HTML = """<!DOCTYPE html>
 </div>
 
 <button id="wifi-open-btn" class="sub-btn" onclick="openWifi()">🔒 WiFi 設定（パスワードが必要）</button>
-<button class="sub-btn" onclick="location.href='/now'">📱 子機用のページ（今の天気。スマホ・タブレットで開いておく）</button>
+<button class="sub-btn" onclick="openNow()">📱 子機用のページ（今の天気。スマホ・タブレットで開いておく）</button>
+<p id="now-url" class="msg" style="word-break:break-all"></p>
 <button class="sub-btn" onclick="location.href='/diag'">🩺 診断（本体の状態を見る・パスワードが必要）</button>
 <button class="sub-btn" onclick="location.href='/shots'">📷 画面のスクリーンショット（パスワードが必要）</button>
 
@@ -282,6 +292,11 @@ async function init() {
     }
     if (st.airport) document.getElementById('airport').value = st.airport;
     if (st.table_layout) document.getElementById('layout').value = st.table_layout;
+    if (st.hostname) {
+      nowUrl = 'http://' + st.hostname + '.local:8080/now';
+      document.getElementById('now-url').textContent =
+        '子機では ' + nowUrl + ' を開いてホーム画面に追加すると、現場が変わって IP アドレスが変わってもつながります';
+    }
     if (st.admin) showWifi();
   } catch(e) {
     setMsg('airport-msg', '接続エラー: ' + e, false);
@@ -300,6 +315,9 @@ async function saveAirport() {
     btn.disabled = false; btn.textContent = '空港を保存して再起動';
   }
 }
+
+let nowUrl = '/now';
+function openNow() { location.href = nowUrl; }
 
 async function saveLayout() {
   const btn = document.getElementById('layout-btn');
@@ -782,6 +800,7 @@ def status():
         "admin": bool(session.get("admin")),
         "airport": cfg.get("airport", "centrair"),
         "table_layout": cfg.get("table_layout", "fixed"),
+        "hostname": _hostname(),
     }))
 
 
