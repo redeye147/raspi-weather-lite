@@ -488,6 +488,7 @@ NOW_HTML = """<!DOCTYPE html>
   #head { display: flex; justify-content: space-between; align-items: baseline; font-size: 3.2vmin; }
   #head b { font-size: 4.4vmin; }
   #stale { color: #c00; font-weight: bold; }
+  #peer { color: #888; font-size: 0.7em; margin-left: 1.5vmin; }
   #main { flex: 1; display: flex; gap: 2vmin; min-height: 0; }
   .card { border: 2px solid #bbb; border-radius: 1.5vmin; padding: 1.5vmin; display: flex; flex-direction: column;
     align-items: center; justify-content: space-around; }
@@ -537,7 +538,7 @@ NOW_HTML = """<!DOCTYPE html>
     #ahead .row { font-size: 3.2vmin; } #ahead .label { font-size: 3.4vmin; }
   }
 </style></head><body>
-<div id="head"><span><b id="airport">--</b></span><span><span id="stale"></span> <span id="time">--</span> 更新</span></div>
+<div id="head"><span><b id="airport">--</b></span><span><span id="stale"></span> <span id="time">--</span> 更新<span id="peer"></span></span></div>
 <div id="alerts"></div>
 <div id="main">
   <div id="now" class="card"></div>
@@ -571,6 +572,9 @@ async function load() {
     const d = await r.json();
     document.getElementById('airport').textContent = d.airport + (d.icao ? '（' + d.icao + '）' : '');
     document.getElementById('time').textContent = d.time;
+    // どの親（Pi）を見ているか：P＝親（サイネージの Pi）・C＝この子機。IP アドレスの最後の数字
+    const pe = d.peer || {};
+    document.getElementById('peer').textContent = pe.parent || pe.child ? 'P' + (pe.parent || '?') + '／C' + (pe.child || '?') : '';
     const age = Date.now() / 1000 - d.written_at;
     document.getElementById('stale').textContent = age > 300 ? '更新が止まっています' : '';
     document.getElementById('now').innerHTML = card(d.now, true);
@@ -847,7 +851,34 @@ def now_page_data():
     d = now_page.read()
     if d is None:
         return "まだデータがありません（表示プログラムが動いていない）", 503
+    d["peer"] = _peer_numbers(request.remote_addr)
     return _no_cache(jsonify(d))
+
+
+def _ip_tail(addr) -> str:
+    """IP アドレスの最後の数字（192.168.1.112 → 112）。IPv6 は最後の区切り"""
+    addr = str(addr or "")
+    if addr.startswith("::ffff:"):
+        addr = addr[7:]
+    if "." in addr:
+        return addr.rsplit(".", 1)[-1]
+    return addr.rsplit(":", 1)[-1] if ":" in addr else ""
+
+
+def _peer_numbers(child_addr) -> dict:
+    """子機用のページの隅に出す「どの親（Pi）を見ているか」：親と子機の IP アドレスの最後の数字。
+    親の IP は、子機へ返事をするときに使う自分の IP（WiFi と有線の両方があっても、子機と同じ側）"""
+    import socket
+    parent = ""
+    try:
+        fam = socket.AF_INET6 if ":" in str(child_addr) and not str(child_addr).startswith("::ffff:") else socket.AF_INET
+        target = str(child_addr)[7:] if str(child_addr).startswith("::ffff:") else str(child_addr)
+        with socket.socket(fam, socket.SOCK_DGRAM) as s:
+            s.connect((target, 9))                 # 送りはしない。子機へ向かうときの自分の IP を調べるだけ
+            parent = s.getsockname()[0]
+    except (OSError, ValueError):
+        pass
+    return {"parent": _ip_tail(parent), "child": _ip_tail(child_addr), "host": _hostname()}
 
 
 @app.route("/icon/<name>.png")

@@ -182,7 +182,7 @@ def test_now_page_and_icons_without_login(client, monkeypatch):
     monkeypatch.setattr(now_page, "read", lambda path=None: None)
     assert client.get("/now.json").status_code == 503
     monkeypatch.setattr(now_page, "read", lambda path=None: {"airport": "中部空港"})
-    assert client.get("/now.json").get_json() == {"airport": "中部空港"}
+    assert client.get("/now.json").get_json()["airport"] == "中部空港"
     assert client.get("/icon/100.png").status_code == 200
     assert client.get("/icon/1000A.png").status_code == 200
     assert client.get("/icon/..%2Fconfig.png").status_code == 404
@@ -194,3 +194,14 @@ def test_status_has_hostname_for_child_page(client, monkeypatch):
     monkeypatch.setattr(wp, "_hostname", lambda: "raspi2w")
     html = client.get("/").get_data(as_text=True)
     assert ".local:8080/now" in html and "openNow()" in html
+
+
+def test_now_json_tells_parent_and_child_numbers(client, monkeypatch):
+    """子機用のページの隅に「P112／C125」（親と子機の IP の最後の数字）を出すためのデータ"""
+    import now_page
+    monkeypatch.setattr(now_page, "read", lambda path=None: {"now": None, "ahead": [], "week": []})
+    monkeypatch.setattr(wp, "_hostname", lambda: "raspi2w")
+    d = client.get("/now.json", environ_base={"REMOTE_ADDR": "127.0.0.1"}).get_json()
+    assert d["peer"]["child"] == "1" and d["peer"]["parent"] == "1" and d["peer"]["host"] == "raspi2w"
+    assert wp._ip_tail("192.168.10.125") == "125" and wp._ip_tail("::ffff:192.168.0.5") == "5"
+    assert "P' + (pe.parent" in client.get("/now").get_data(as_text=True)
