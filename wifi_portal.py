@@ -491,6 +491,9 @@ NOW_HTML = """<!DOCTYPE html>
   #head b { font-size: 4.4vmin; }
   #stale { color: #c00; font-weight: bold; }
   #peer { color: #888; font-size: 0.7em; margin-left: 1.5vmin; }
+  /* 設定画面へのリンク（サイネージの QR は子機用のページへ来るので、設定はここから） */
+  #setlink { color: #555; font-size: 0.75em; text-decoration: none; border: 1px solid #bbb; border-radius: 1vmin;
+    padding: 0.3vmin 1.2vmin; margin-left: 1.5vmin; white-space: nowrap; }
   #main { flex: 1; display: flex; min-height: 0; }
   #main > * + * { margin-left: 2vmin; }
   .card { border: 2px solid #bbb; border-radius: 1.5vmin; padding: 1.5vmin; display: flex; flex-direction: column;
@@ -546,7 +549,7 @@ NOW_HTML = """<!DOCTYPE html>
     #ahead .row { font-size: 3.2vmin; } #ahead .label { font-size: 3.4vmin; }
   }
 </style></head><body>
-<div id="head"><span><b id="airport">--</b></span><span><span id="stale"></span> <span id="time">--</span> 更新<span id="peer"></span></span></div>
+<div id="head"><span><b id="airport">--</b></span><span><span id="stale"></span> <span id="time">--</span> 更新<span id="peer"></span><a id="setlink" href="/">⚙ 設定</a></span></div>
 <div id="alerts"></div>
 <div id="main">
   <div id="now" class="card"></div>
