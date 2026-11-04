@@ -57,13 +57,29 @@ def _icon(item):
     return code
 
 
+def _day(item):
+    """列の日付（11/4）と曜日。日付が変わる列が分かるように"""
+    dt = item.get("datetime")
+    if isinstance(dt, str):
+        try:
+            dt = datetime.datetime.fromisoformat(dt)
+        except ValueError:
+            dt = None
+    if not isinstance(dt, datetime.datetime):
+        return "", "", ""
+    wd = "月火水木金土日"[dt.weekday()]
+    return dt.date().isoformat(), f"{dt.month}/{dt.day}", wd
+
+
 def column(item):
     import weather_draw
     v = item.get("wind_val")
+    day_iso, day_label, weekday = _day(item)
     pop = _pop_value(item.get("pop"))
     wd = item.get("wind_dir")
     return {
         "label": item.get("hour", ""),
+        "day": day_iso, "day_label": day_label, "weekday": weekday,
         "date": item.get("date", ""),
         "is_now": bool(item.get("is_now")),
         "icon": _icon(item),
@@ -136,6 +152,7 @@ def build_payload(cols, now, airport_label, icao="", warning_text="", headline_t
     return {
         "written_at": now.timestamp(),
         "time": now.strftime("%-m/%-d %H:%M"),
+        "today": now.date().isoformat(),
         "airport": airport_label, "icao": icao or "",
         "sunrise": sunrise, "sunset": sunset, "weather_updated": weather_updated,
         "now": column(cols[0]) if cols else None,

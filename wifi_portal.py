@@ -503,11 +503,17 @@ NOW_HTML = """<!DOCTYPE html>
   #ahead > * + * { margin-left: 1.5vmin; }
   #ahead .card { flex: 1; }
   .label { font-size: 3.6vmin; font-weight: bold; }
+  /* 列の日付（日付が変わった列は濃い色の札にして、今日か明日か一目で分かるように） */
+  .dayl { font-size: 2.6vmin; color: #666; white-space: nowrap; }
+  .dayl.next { color: #fff; background: #333; border-radius: 0.8vmin; padding: 0.2vmin 1vmin; font-weight: bold; }
+  .dayl.sat { color: #0000ff; } .dayl.sun { color: #ff0000; }
+  .dayl.next.sat { background: #0000c8; color: #fff; } .dayl.next.sun { background: #d00000; color: #fff; }
+  #now .dayl { font-size: 3.6vmin; color: #0068dc; font-weight: bold; }
   #now .label { font-size: 4.6vmin; color: #0068dc; }
   .icon { width: 90%; max-height: 40%; object-fit: contain; }
   .row { font-size: 3.6vmin; white-space: nowrap; }
-  #now .row { font-size: 4.8vmin; }
-  #now .icon { max-height: 26%; }
+  #now .row { font-size: 4.6vmin; }
+  #now .icon { max-height: 21%; }
   .unit { font-size: 0.55em; }
   .strong { color: #0000ff; font-weight: bold; }
   .wind { display: flex; align-items: center; }
@@ -566,10 +572,16 @@ function arrow(c) {
   return '<svg class="arrow" viewBox="-50 -50 100 100"><g transform="rotate(' + c.wind_dir + ')">' +
     '<polygon points="0,44 22,-44 0,-5 -22,-44" fill="' + c.arrow_color + '" stroke="#000" stroke-width="6" stroke-linejoin="round"/></g></svg>';
 }
+let today = '';
+function dayLine(c, isNow) {
+  if (!c.day_label) return '';
+  const cls = (!isNow && c.day !== today ? ' next' : '') + (c.weekday === '土' ? ' sat' : c.weekday === '日' ? ' sun' : '');
+  return '<div class="dayl' + cls + '">' + esc(c.day_label) + '（' + esc(c.weekday) + '）</div>';
+}
 function card(c, isNow) {
   if (!c) return '';
   const pop = c.pop == null ? '--' : c.pop.toFixed(1);
-  return '<div class="label">' + esc(c.label) + '</div>' +
+  return dayLine(c, isNow) + '<div class="label">' + esc(c.label) + '</div>' +
     '<img class="icon" src="/icon/' + esc(c.icon) + '.png" alt="">' +
     '<div class="row"><span class="' + (c.pop_strong ? 'strong' : '') + '">' + pop + '</span><span class="unit"> mm/h</span></div>' +
     '<div class="row" style="color:' + c.temp_color + '">' + (c.temp == null ? '--' : c.temp) + '<span class="unit">℃</span></div>' +
@@ -583,6 +595,7 @@ async function load() {
     const d = await r.json();
     document.getElementById('airport').textContent = d.airport + (d.icao ? '（' + d.icao + '）' : '');
     document.getElementById('time').textContent = d.time;
+    today = d.today || '';
     // どの親（Pi）を見ているか：P＝親（サイネージの Pi）・C＝この子機。IP アドレスの最後の数字
     const pe = d.peer || {};
     document.getElementById('peer').textContent = pe.parent || pe.child ? 'P' + (pe.parent || '?') + '／C' + (pe.child || '?') : '';

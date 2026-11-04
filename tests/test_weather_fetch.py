@@ -323,3 +323,16 @@ def test_now_page_week_has_seven_days_with_weekend():
     assert w[0]["pop"] == 30 and w[0]["rel"] == "B"
     bad = now_page.build_payload([], now, "x", daily=[{"date": "", "temp": "-/-", "pop": "-%"}])
     assert bad["week"] == []
+
+
+def test_now_page_columns_have_date_and_weekday():
+    """子機用のページの列に日付と曜日（今日か明日か分かるように）"""
+    import datetime as _d
+    import now_page
+    now = _d.datetime(2026, 11, 4, 21, 24)
+    cols = [{"datetime": _d.datetime(2026, 11, 4, 21), "hour": "今 21:24", "is_now": True},
+            {"datetime": _d.datetime(2026, 11, 5, 0), "hour": "00"}]
+    p = now_page.build_payload(cols, now, "中部空港")
+    assert p["today"] == "2026-11-04"
+    assert (p["now"]["day_label"], p["now"]["weekday"]) == ("11/4", "水")
+    assert (p["ahead"][0]["day"], p["ahead"][0]["weekday"]) == ("2026-11-05", "木")
