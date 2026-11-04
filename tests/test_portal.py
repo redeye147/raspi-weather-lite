@@ -205,3 +205,8 @@ def test_now_json_tells_parent_and_child_numbers(client, monkeypatch):
     assert d["peer"]["child"] == "1" and d["peer"]["parent"] == "1" and d["peer"]["host"] == "raspi2w"
     assert wp._ip_tail("192.168.10.125") == "125" and wp._ip_tail("::ffff:192.168.0.5") == "5"
     assert "P' + (pe.parent" in client.get("/now").get_data(as_text=True)
+
+
+def test_now_page_does_not_use_flex_gap():
+    """子機用のページは flex の gap を使わない（iOS 12 の古い iPad では効かず、間隔が詰まる）"""
+    assert "gap:" not in wp.NOW_HTML

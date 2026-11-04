@@ -484,16 +484,20 @@ NOW_HTML = """<!DOCTYPE html>
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; background: #fff; color: #000;
     font-family: -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; }
-  body { display: flex; flex-direction: column; padding: 2vmin 3vmin; gap: 1.5vmin; }
+  /* 間隔は gap を使わず margin で空ける（flex の gap は iOS 14.5 から。iOS 12 の古い iPad でも同じ見た目に） */
+  body { display: flex; flex-direction: column; padding: 2vmin 3vmin; }
+  body > * + * { margin-top: 1.5vmin; }
   #head { display: flex; justify-content: space-between; align-items: baseline; font-size: 3.2vmin; }
   #head b { font-size: 4.4vmin; }
   #stale { color: #c00; font-weight: bold; }
   #peer { color: #888; font-size: 0.7em; margin-left: 1.5vmin; }
-  #main { flex: 1; display: flex; gap: 2vmin; min-height: 0; }
+  #main { flex: 1; display: flex; min-height: 0; }
+  #main > * + * { margin-left: 2vmin; }
   .card { border: 2px solid #bbb; border-radius: 1.5vmin; padding: 1.5vmin; display: flex; flex-direction: column;
     align-items: center; justify-content: space-around; }
   #now { flex: 1.5; border: 0.8vmin solid #0068dc; }
-  #ahead { flex: 2; display: flex; gap: 1.5vmin; }
+  #ahead { flex: 2; display: flex; }
+  #ahead > * + * { margin-left: 1.5vmin; }
   #ahead .card { flex: 1; }
   .label { font-size: 3.6vmin; font-weight: bold; }
   #now .label { font-size: 4.6vmin; color: #0068dc; }
@@ -503,9 +507,11 @@ NOW_HTML = """<!DOCTYPE html>
   #now .icon { max-height: 26%; }
   .unit { font-size: 0.55em; }
   .strong { color: #0000ff; font-weight: bold; }
-  .wind { display: flex; align-items: center; gap: 1vmin; }
+  .wind { display: flex; align-items: center; }
+  .wind > * + * { margin-left: 1vmin; }
   .arrow { width: 1.2em; height: 1.2em; }
-  #alerts { display: flex; flex-direction: column; gap: 1vmin; }
+  #alerts { display: flex; flex-direction: column; }
+  #alerts > * + * { margin-top: 1vmin; }
   .band { padding: 1vmin 2vmin; border-radius: 1vmin; font-size: 3.6vmin; font-weight: bold; }
   .thunder-near { background: #a00000; color: #fff; }
   .thunder-watch { background: #ffd200; color: #000; }
@@ -514,7 +520,8 @@ NOW_HTML = """<!DOCTYPE html>
   .headline { font-size: 2.8vmin; font-weight: normal; color: #000; margin-top: 0.5vmin; }
   .card, #ahead { min-height: 0; overflow: hidden; }
   /* 1 週間の天気（土日の作業の予定用。土は青・日は赤、背景も薄く色を付ける） */
-  #week { display: flex; gap: 1vmin; height: 24vh; min-height: 0; }
+  #week { display: flex; height: 24vh; min-height: 0; }
+  #week > * + * { margin-left: 1vmin; }
   #week:empty { display: none; }
   .day { flex: 1; border: 2px solid #bbb; border-radius: 1.2vmin; display: flex; flex-direction: column;
     align-items: center; justify-content: space-around; padding: 0.6vmin; min-width: 0; overflow: hidden; }
@@ -534,6 +541,7 @@ NOW_HTML = """<!DOCTYPE html>
     .day .d { font-size: 2.4vmin; text-align: center; } .day .p, .day .t { font-size: 2.3vmin; }
     .day img { max-height: 30%; }
     #main { flex-direction: column; } #now { flex: 1.3; } #ahead { flex: 1; }
+    #main > * + * { margin-left: 0; margin-top: 2vmin; }
     #now .icon { max-height: 28%; } #ahead .icon { max-height: 26%; }
     #ahead .row { font-size: 3.2vmin; } #ahead .label { font-size: 3.4vmin; }
   }
