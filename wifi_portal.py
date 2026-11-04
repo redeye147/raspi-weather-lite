@@ -295,7 +295,7 @@ async function init() {
     if (st.hostname) {
       nowUrl = 'http://' + st.hostname + '.local:8080/now';
       document.getElementById('now-url').textContent =
-        '子機では ' + nowUrl + ' を開いてホーム画面に追加すると、現場が変わって IP アドレスが変わってもつながります';
+        '名前で開く場合：' + nowUrl + '（ルーターによっては見つからないので、基本はサイネージの QR コードから開く）';
     }
     if (st.admin) showWifi();
   } catch(e) {
@@ -492,8 +492,8 @@ NOW_HTML = """<!DOCTYPE html>
   #stale { color: #c00; font-weight: bold; }
   #peer { color: #888; font-size: 0.7em; margin-left: 1.5vmin; }
   /* 設定画面へのリンク（サイネージの QR は子機用のページへ来るので、設定はここから） */
-  #setlink { color: #555; font-size: 0.75em; text-decoration: none; border: 1px solid #bbb; border-radius: 1vmin;
-    padding: 0.3vmin 1.2vmin; margin-left: 1.5vmin; white-space: nowrap; }
+  /* ⚙ のマークだけ（一般の人が気軽に押さないよう、文字も枠も付けない） */
+  #setlink { color: #aaa; font-size: 0.8em; text-decoration: none; margin-left: 1.5vmin; }
   #main { flex: 1; display: flex; min-height: 0; }
   #main > * + * { margin-left: 2vmin; }
   .card { border: 2px solid #bbb; border-radius: 1.5vmin; padding: 1.5vmin; display: flex; flex-direction: column;
@@ -503,11 +503,9 @@ NOW_HTML = """<!DOCTYPE html>
   #ahead > * + * { margin-left: 1.5vmin; }
   #ahead .card { flex: 1; }
   .label { font-size: 3.6vmin; font-weight: bold; }
-  /* 列の日付（日付が変わった列は濃い色の札にして、今日か明日か一目で分かるように） */
+  /* 列の日付（今日か明日か分かるように。土は青・日は赤） */
   .dayl { font-size: 2.6vmin; color: #666; white-space: nowrap; }
-  .dayl.next { color: #fff; background: #333; border-radius: 0.8vmin; padding: 0.2vmin 1vmin; font-weight: bold; }
   .dayl.sat { color: #0000ff; } .dayl.sun { color: #ff0000; }
-  .dayl.next.sat { background: #0000c8; color: #fff; } .dayl.next.sun { background: #d00000; color: #fff; }
   #now .dayl { font-size: 3.6vmin; color: #0068dc; font-weight: bold; }
   #now .label { font-size: 4.6vmin; color: #0068dc; }
   .icon { width: 90%; max-height: 40%; object-fit: contain; }
@@ -555,7 +553,7 @@ NOW_HTML = """<!DOCTYPE html>
     #ahead .row { font-size: 3.2vmin; } #ahead .label { font-size: 3.4vmin; }
   }
 </style></head><body>
-<div id="head"><span><b id="airport">--</b></span><span><span id="stale"></span> <span id="time">--</span> 更新<span id="peer"></span><a id="setlink" href="/">⚙ 設定</a></span></div>
+<div id="head"><span><b id="airport">--</b></span><span><span id="stale"></span> <span id="time">--</span> 更新<span id="peer"></span><a id="setlink" href="/" aria-label="設定">⚙</a></span></div>
 <div id="alerts"></div>
 <div id="main">
   <div id="now" class="card"></div>
@@ -575,7 +573,7 @@ function arrow(c) {
 let today = '';
 function dayLine(c, isNow) {
   if (!c.day_label) return '';
-  const cls = (!isNow && c.day !== today ? ' next' : '') + (c.weekday === '土' ? ' sat' : c.weekday === '日' ? ' sun' : '');
+  const cls = (c.weekday === '土' ? ' sat' : c.weekday === '日' ? ' sun' : '');
   return '<div class="dayl' + cls + '">' + esc(c.day_label) + '（' + esc(c.weekday) + '）</div>';
 }
 function card(c, isNow) {

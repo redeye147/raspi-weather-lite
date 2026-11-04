@@ -327,7 +327,7 @@ def main():
         git_surf = git_font.render(git_version_str, True, (150, 150, 150))
 
     _local_ip = get_local_ip()
-    qr_surf = make_qr_surface(f"http://{_local_ip}:8080", max_size=54) if _local_ip else None
+    qr_surf = make_qr_surface(f"http://{_local_ip}:8080/now", max_size=54)   # 子機用のページへ（設定は右上の ⚙ から） if _local_ip else None
 
     # 設定用テザリングで仮接続している場合は、手順を 30 秒案内してから天気画面へ
     conn_kind = get_connection_kind()
@@ -851,7 +851,7 @@ def main():
         # WiFi が切り替わって IP が変わったら QR（設定画面 URL）を作り直す
         _cur_ip = get_local_ip()
         if _cur_ip and _cur_ip != _local_ip:
-            qr_surf = make_qr_surface(f"http://{_cur_ip}:8080", max_size=54)
+            qr_surf = make_qr_surface(f"http://{_cur_ip}:8080/now", max_size=54)
             logging.info(f"IP 変更 {_local_ip or '-'} → {_cur_ip}: QR を更新")
             _local_ip = _cur_ip
             needs_redraw = True
