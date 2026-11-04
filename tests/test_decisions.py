@@ -281,3 +281,38 @@ def test_aviation_slow_noaa_still_caught():
 def test_aviation_band_hidden_from_midnight(hh, visible):
     """0:00 ちょうどに帯を消し、6 時台（6:05 の取得後）に再表示"""
     assert aviation_band_visible(at(3, hh)) is visible
+
+
+def test_morning_fetch_covers_6am_table_for_insert_and_fixed():
+    """5:45 に取った予報で、6 時を過ぎたら今日の 6 時始まりの表になる（2026-11-05 の 118：6:40 でも前の日の 18 時始まりだった）"""
+    import datetime as _d
+    import utils
+    from utils import JST
+    fetched = _d.datetime(2026, 11, 5, 5, 45, tzinfo=JST)
+    for layout in ("insert", "fixed", "now"):
+        times = utils.fetch_target_datetimes(fetched, layout)
+        hourly = [{"datetime": t, "hour": t.strftime("%H")} for t in times]
+        night = utils.select_table(hourly, fetched, layout)
+        assert [h["datetime"] for h in night] == utils.get_target_datetimes(fetched, layout)
+        morning = _d.datetime(2026, 11, 5, 6, 40, tzinfo=JST)
+        day = utils.select_table(hourly, morning, layout)
+        assert [h["datetime"] for h in day] == utils.get_target_datetimes(morning, layout)
+    # insert：6:40 は今日の 06 から、5:45 は前の日の 18 から
+    assert utils.get_target_datetimes(_d.datetime(2026, 11, 5, 6, 40, tzinfo=JST), "insert")[0].hour == 6
+    # 23 時に取った予報でも、0 時を過ぎたら前の日の 18 時始まり（insert）
+    late = _d.datetime(2026, 11, 4, 23, 30, tzinfo=JST)
+    hourly = [{"datetime": t} for t in utils.fetch_target_datetimes(late, "insert")]
+    after = _d.datetime(2026, 11, 5, 0, 10, tzinfo=JST)
+    assert [h["datetime"] for h in utils.select_table(hourly, after, "insert")] == utils.get_target_datetimes(after, "insert")
+
+
+def test_select_table_falls_back_when_times_missing():
+    """足りない時刻があるとき（古いデータ）は、表の始まり以降の列か、そのまま"""
+    import datetime as _d
+    import utils
+    from utils import JST
+    now = _d.datetime(2026, 11, 5, 6, 40, tzinfo=JST)
+    old = [{"datetime": _d.datetime(2026, 11, 4, 18, tzinfo=JST) + _d.timedelta(hours=3 * i)} for i in range(9)]
+    got = utils.select_table(old, now, "insert")
+    assert got[0]["datetime"].hour == 6 and len(got) == 5
+    assert utils.select_table([], now, "insert") == []

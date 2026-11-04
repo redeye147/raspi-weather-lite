@@ -71,7 +71,7 @@ from netstate import (
     network_snapshot,
     try_reconnect_wifi,
 )
-from utils import get_sunrise_sunset_str, build_work_summary, JST, get_local_ip, make_qr_surface, get_target_datetimes
+from utils import get_sunrise_sunset_str, build_work_summary, JST, get_local_ip, make_qr_surface, get_target_datetimes, select_table
 from utils import wait_ms as _wait_ms
 from utils import get_cpu_temp, format_cpu_status, clear_font_cache
 from header import _plane_cache
@@ -549,7 +549,7 @@ def main():
     boot_ts = time.time()
     startup_refresh_at = boot_ts + STARTUP_REFRESH_DELAY_S if (weather_fresh and not kick_fetch) else None
 
-    work_summary = build_work_summary(hourly)
+    work_summary = build_work_summary(select_table(hourly))
 
     # ==========================================================
     # メインループ
@@ -828,7 +828,7 @@ def main():
                     daily = new_daily
                     last_weather_update = now
                     weather_updated_text = now.strftime("天気更新 %H:%M")
-                    work_summary = build_work_summary(hourly)
+                    work_summary = build_work_summary(select_table(hourly))
                     fetch_ok = True
                     weather_at = time.time()
                     _save_state()
@@ -1020,6 +1020,7 @@ def _table_columns(hourly, now, metar, rain=None, icao=None):
     fixed：今の時間帯の列を観測で置き換え／insert：今の時間帯の右に「今」／now：今・〜21・次の時間帯から"""
     import utils as _utils
     observe = lambda h, cur: obs_now.apply_observation(h, cur, metar, rain=rain)
+    hourly = _utils.select_table(hourly, now)    # 今の時刻の表の列（6 時・0 時に表の始まりが変わる）
     try:
         if _utils.TABLE_LAYOUT == "insert":
             try:

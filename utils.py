@@ -206,6 +206,39 @@ def get_target_datetimes(now=None, layout=None):
     return [start + datetime.timedelta(hours=3 * i) for i in range(n)]
 
 
+FETCH_AHEAD_HOURS = 3     # 取得してから次の取得まで（1 時間＋失敗の取り直し）に表の始まりが変わっても足りるよう、先の分も取る
+
+
+def fetch_target_datetimes(now=None, layout=None, ahead_hours=FETCH_AHEAD_HOURS):
+    """天気を取るときの時刻：今の表の時刻に、この先 ahead_hours 時間の間に表の始まりが変わったときの時刻も足す。
+    2026-11-05：5:45 の取得で夜の表（前の日の 18 時から）だけを取っていたので、6 時を過ぎても次の取得（6:45）まで
+    18 時始まりのままだった（118）。表に出す列は描くときに select_table で今の時刻に合わせて選ぶ"""
+    now = (now or datetime.datetime.now(JST)).astimezone(JST)
+    times = set()
+    for h in range(ahead_hours + 1):
+        times.update(get_target_datetimes(now + datetime.timedelta(hours=h), layout))
+    return sorted(times)
+
+
+def select_table(hourly, now=None, layout=None):
+    """取っておいた予報（fetch_target_datetimes の時刻）から、今の時刻の表の列を選ぶ。
+    足りない時刻があるとき（古いデータなど）は、表の始まり以降の列（それも無ければそのまま）"""
+    if not hourly:
+        return hourly
+    targets = get_target_datetimes(now, layout)
+    by_time = {}
+    for it in hourly:
+        dt = it.get("datetime")
+        if isinstance(dt, datetime.datetime):
+            by_time[dt.astimezone(JST).replace(tzinfo=None)] = it
+    keys = [t.astimezone(JST).replace(tzinfo=None) for t in targets]
+    if all(k in by_time for k in keys):
+        return [by_time[k] for k in keys]
+    later = [it for it in hourly if isinstance(it.get("datetime"), datetime.datetime)
+             and it["datetime"].astimezone(JST).replace(tzinfo=None) >= keys[0]]
+    return later or hourly
+
+
 # =========================
 # 06時日付表示制御
 # =========================

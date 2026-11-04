@@ -160,7 +160,7 @@ def _run(monkeypatch, om, hours=(6, 9, 12)):
     from utils import JST
     monkeypatch.setattr(fw.SESS, "get", lambda url, timeout=10: _Resp(om))
     monkeypatch.setattr(fw, "CACHE_FILE", "/nonexistent-dir/x/cache.json")
-    monkeypatch.setattr(fw, "get_target_datetimes",
+    monkeypatch.setattr(fw, "fetch_target_datetimes",
                         lambda: [datetime.datetime(2026, 10, 14, h, tzinfo=JST) for h in hours])
     hourly, _ = fw.fetch_weather_openmeteo(35.7651, 140.3854)
     return {h["hour"]: h for h in hourly}
@@ -302,7 +302,7 @@ def test_openmeteo_past_day_fills_yesterday_columns(monkeypatch):
     monkeypatch.setattr(fw, "CACHE_FILE", "/nonexistent-dir/x/cache.json")
     targets = [datetime.datetime(2026, 10, 24, h, tzinfo=fw.JST) for h in (6, 9, 12, 15, 18, 21)] + \
               [datetime.datetime(2026, 10, 25, h, tzinfo=fw.JST) for h in (0, 3, 6, 9)]
-    monkeypatch.setattr(fw, "get_target_datetimes", lambda: targets)
+    monkeypatch.setattr(fw, "fetch_target_datetimes", lambda: targets)
     hourly, daily = fw.fetch_weather_openmeteo(35.7, 140.4)
     assert "past_days=1" in urls[0]
     assert all(h["code"] == "200" and h["temp"] == "15℃" for h in hourly)      # 前の日の列も埋まる

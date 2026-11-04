@@ -28,7 +28,8 @@ from utils import (
     session_with_retry,
     iso_dump_default,
     iso_parse_datetime,
-    get_target_datetimes
+    get_target_datetimes,
+    fetch_target_datetimes,
 )
 
 SESS = session_with_retry()
@@ -128,7 +129,7 @@ def fetch_weather_openmeteo(latitude=LATITUDE, longitude=LONGITUDE):
     H_WND  = mkm("windspeed_10m")
     H_WDIR = mkm("winddirection_10m")      # 風が吹いてくる方角（度。0 = 北から）
 
-    targets = get_target_datetimes()
+    targets = fetch_target_datetimes()        # 次の取得までに表の始まりが変わっても足りるよう、先の分も取る
 
     hourly = []
 
