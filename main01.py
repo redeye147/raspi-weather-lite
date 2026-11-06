@@ -9,6 +9,7 @@ main01.py
 - 起動時スプラッシュ画面（フェードイン/アウト・ローディングステップ・バージョン表示）
 """
 
+import quake as quake_mod
 import sys
 import os
 import signal
@@ -198,6 +199,8 @@ def main():
                         help="今の時間帯の天気アイコンを動かさない（静止画のまま）")
     parser.add_argument("--thunder-test", choices=["near", "watch"], default=None,
                         help="雷の帯をテスト表示（near=雷接近 10km 以内 / watch=雷注意 20km 以内）")
+    parser.add_argument("--quake-test", action="store_true",
+                        help="地震（震度 5 弱以上）の帯をテスト表示")
     parser.add_argument("--render",
                         choices=["auto", "kmsdrm", "fb0", "x11"], default="auto",
                         help="描画モード（既定: auto = kmsdrm を試し失敗時に fb0 へフォールバック）")
@@ -513,6 +516,12 @@ def main():
     thunder_not_before = time.time() + DEFER_INITIAL_FETCH_S
     shown_thunder_kind = None
     thunder_info = None
+    # 地震：1 分ごとに気象庁の地震情報の一覧を確かめ、空港のある市区町村で震度 5 弱以上なら 3 時間帯を出す
+    _qc = cfg.get("quake_city") or (None, "")
+    quake_state = quake_mod.QuakeState(_qc[0])
+    quake_holder = {}
+    last_quake_attempt = 0.0
+    quake_info = None                               # 帯に出す {"title", "body"}（無ければ None）
     # 降水ナウキャスト：10 分ごとに裏で取得。今の時間帯の降水量を、雨雲レーダーの実測と 1 時間先までの予測に
     rain_holder = {}
     rain_result = None                              # 最後に取れた結果（status ok）
@@ -768,6 +777,32 @@ def main():
             thunder_info = _new
             needs_redraw = True
 
+        # 地震（1 分ごと。裏で取得）
+        if (not args.quake_test and quake_state.city_code and "pending" not in quake_holder
+                and time.time() - last_quake_attempt >= quake_mod.FETCH_INTERVAL_S):
+            last_quake_attempt = time.time()
+            quake_holder["pending"] = True
+            quake_mod.start_fetch_in_background(quake_holder, etag=quake_state.etag)
+        if "result" in quake_holder:
+            _st, _entries, _etag = quake_holder.pop("result")
+            quake_holder.pop("pending", None)
+            if (_st == "ok" or _st == "same") != (quake_state.status in ("ok", "same", None)):
+                logging.info(f"地震の一覧: {_st}")
+            quake_state.update(_st, _entries, _etag, time.time())
+        if args.quake_test:
+            _q = {"eid": "test", "at": now.replace(second=0, microsecond=0) - datetime.timedelta(minutes=5),
+                  "intensity": "5+", "epicenter": "愛知県西部", "depth_km": 10, "mag": "5.8"}
+        else:
+            _q = quake_state.current(now)
+        _qnew = dict(zip(("title", "body"), quake_mod.banner_text(_q, _qc[1]))) if _q else None
+        if _qnew != quake_info:
+            if _qnew and not (quake_info and quake_info["body"] == _qnew["body"]):
+                (logging.info if args.quake_test else logging.warning)(f"地震: {_qnew['title']} {_qnew['body']}")
+            elif not _qnew:
+                logging.info("地震: 帯を消した（発生から 3 時間）")
+            quake_info = _qnew
+            needs_redraw = True
+
         if time.time() - last_jma_update > 3600:
             try:
                 new_warn, _ = fetch_warning_data(airport)
@@ -886,6 +921,7 @@ def main():
             overview_text=overview_text,
             thunder=thunder_info,
             runway=cfg.get("runway") if _show_runway else None,
+            quake=quake_info,
         )
 
         _metar = aviation_state.get("metar")

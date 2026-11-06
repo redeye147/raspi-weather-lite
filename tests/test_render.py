@@ -55,7 +55,8 @@ SCENARIOS = {
         overview_text="　台風第１９号が関東地方に接近しています。" * 6,
         wbgt=33.5, alert=True, fetch_ok=False,
         metar="RJAA 110300Z 18035G55KT 0800 +TSRA BR FEW005CB BKN010 OVC020 18/17 Q0985",
-        thunder={"kind": "near", "km": 9.6, "dir": "北東", "at": datetime.datetime(2026, 10, 11, 12, 10, tzinfo=JST)}),
+        thunder={"kind": "near", "km": 9.6, "dir": "北東", "at": datetime.datetime(2026, 10, 11, 12, 10, tzinfo=JST)},
+        quake={"title": "地震 震度6強", "body": "常滑市（11/6 10:23 発生・震源 愛知県西部 深さ 10km・M6.8）"}),
 }
 
 
@@ -67,7 +68,7 @@ def _render(w, h, sc):
                  "成田空港", "05:44", "17:09", "", "3% / 53℃",
                  fetch_ok=sc["fetch_ok"], qr_surf=make_qr_surface("http://192.168.11.13:8080", max_size=54),
                  wbgt_level_info=wbgt, wbgt_alert=sc["alert"], latitude=35.76, longitude=140.38,
-                 overview_text=sc["overview_text"], thunder=sc.get("thunder"))
+                 overview_text=sc["overview_text"], thunder=sc.get("thunder"), quake=sc.get("quake"))
     metar = aviation.parse_metar(sc["metar"], datetime.datetime(2026, 10, 11, 3, 10, tzinfo=datetime.timezone.utc)) \
         if sc["metar"] else None
     draw_header(screen, w, h, BASE_FONT, "成田空港", "05:44", "17:09", "", "",
@@ -202,7 +203,7 @@ def test_thunder_banner_is_drawn_above_heat_alert(w, h, kind):
     """雷の帯がヘッダーの直下に、熱中症アラートの帯はその下に描かれ、どちらも画面に収まる"""
     import weather_draw
     sc = dict(SCENARIOS["いちばん詰まる"], thunder={"kind": kind, "km": 18.4, "dir": "南西",
-                                                      "at": datetime.datetime(2026, 10, 11, 12, 10, tzinfo=JST)})
+                                                      "at": datetime.datetime(2026, 10, 11, 12, 10, tzinfo=JST)}, quake=None)
     screen = _render(w, h, sc)
     arr = pygame.surfarray.array3d(screen)
     bg = weather_draw.THUNDER_STYLE[kind]["bg"]
@@ -215,6 +216,24 @@ def test_thunder_banner_is_drawn_above_heat_alert(w, h, kind):
         assert heat.min() > rows.max()                               # 熱中症アラートは雷の下
     else:                                                            # 同じ赤：2 本ぶんの高さがある
         assert heat.max() - heat.min() > weather_draw.ALERT_BANNER_H_DOUBLE * 1.5
+    bottom, _ = _content_box(screen)
+    assert bottom < h - 1
+
+
+@pytest.mark.parametrize("w, h", RESOLUTIONS)
+def test_quake_banner_is_on_top_and_bands_are_at_most_two(w, h):
+    """地震の帯（紫）はヘッダーの直下。雷・熱中症と 3 つ重なっても帯は 2 本（地震・雷）で、画面に収まる"""
+    import weather_draw
+    sc = dict(SCENARIOS["いちばん詰まる"])                   # 地震・雷接近・熱中症アラート
+    screen = _render(w, h, sc)
+    arr = pygame.surfarray.array3d(screen)
+    purple = np.where(np.all(arr == weather_draw.QUAKE_STYLE["bg"], axis=2).sum(axis=0) > w * 0.5)[0]
+    assert len(purple), "地震の帯が無い"
+    header_h = int(h * 0.25)
+    assert header_h <= purple.min() < header_h + weather_draw.ALERT_BANNER_H_DOUBLE
+    red = np.where(np.all(arr == weather_draw.THUNDER_STYLE["near"]["bg"], axis=2).sum(axis=0) > w * 0.5)[0]
+    assert red.min() > purple.max()                                  # 雷は地震の下
+    assert red.max() - red.min() < weather_draw.ALERT_BANNER_H_DOUBLE * 1.5   # 熱中症の赤い帯は出さない（2 本まで）
     bottom, _ = _content_box(screen)
     assert bottom < h - 1
 

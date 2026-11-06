@@ -551,6 +551,42 @@ def draw_thunder_banner(screen, width, by, base_font_path, info, bh=ALERT_BANNER
     screen.blit(b, (x + t.get_width() + gap, by + (bh - b.get_height()) // 2))
 
 
+# 地震の帯（震度 5 弱以上。紫地に白。雷の赤・黄と見分けられるように）
+QUAKE_STYLE = dict(bg=(110, 0, 140), edge=(200, 120, 255), fg=(255, 255, 255), mark_bg=(255, 255, 255),
+                   mark_fg=(110, 0, 140))
+
+
+def _draw_quake_mark(screen, x, y, size, st):
+    """揺れの印（白い四角に波線）。フォントに無いので図形で描く"""
+    pygame.draw.rect(screen, st["mark_bg"], (x, y, size, size), border_radius=max(2, size // 8))
+    pad = max(2, size // 8)
+    amp = (size - pad * 2) * 0.38
+    pts = [(x + pad + i * (size - pad * 2) / 6, y + size / 2 + (0 if i in (0, 6) else amp * (1 if i % 2 else -1)))
+           for i in range(7)]
+    pygame.draw.lines(screen, st["mark_fg"], False, pts, max(2, size // 10))
+
+
+def draw_quake_banner(screen, width, by, base_font_path, info, bh=ALERT_BANNER_H):
+    """地震の帯。info = {"title": "地震 震度5強", "body": "常滑市（…）"}（quake.banner_text）"""
+    st = QUAKE_STYLE
+    pygame.draw.rect(screen, st["bg"], (0, by, width, bh))
+    pygame.draw.line(screen, st["edge"], (0, by), (width, by), 3)
+    pygame.draw.line(screen, st["edge"], (0, by + bh - 1), (width, by + bh - 1), 2)
+    mark = bh - 8
+    for size in ((26, 24, 22, 20, 18) if bh >= ALERT_BANNER_H else (18, 16, 14)):
+        t = get_font(base_font_path, size + 4, bold=True).render(info["title"], True, st["fg"])
+        b = get_font(base_font_path, size, bold=True).render(info["body"], True, st["fg"])
+        gap = size
+        total = mark + 8 + t.get_width() + gap + b.get_width()
+        if total <= width - 20:
+            break
+    x = max(10, (width - total) // 2)
+    _draw_quake_mark(screen, x, by + 4, mark, st)
+    x += mark + 8
+    screen.blit(t, (x, by + (bh - t.get_height()) // 2))
+    screen.blit(b, (x + t.get_width() + gap, by + (bh - b.get_height()) // 2))
+
+
 def _label_icon(name, size, icon_cache):
     """見出しの絵を、縦横とも size 以内（縦横比はそのまま）に縮めて返す。無ければ None"""
     if not name:
@@ -605,6 +641,7 @@ def draw_weather(
     now=None,
     thunder=None,
     runway=None,
+    quake=None,
 ):
     daily = list(daily or [])[:5]      # 画面の１週間の天気は 5 日分（子機用のページは 7 日分を出す）
     screen.fill((255, 255, 255))
@@ -612,15 +649,18 @@ def draw_weather(
     margin_x = int(width * 0.05)
     header_h = int(height * 0.25)
 
-    # ヘッダー直下の帯：雷（いちばん急ぐ）→ 熱中症警戒アラートの順に重ねる
+    # ヘッダー直下の帯：地震（震度 5 弱以上）→ 雷 → 熱中症警戒アラートの順に重ねる。
+    # 表が画面の下にはみ出さないよう、帯は 2 本まで（3 つ重なったら熱中症の帯を出さない）
+    bands = [b for b in (("quake", quake), ("thunder", thunder), ("wbgt", wbgt_alert)) if b[1]][:2]
+    bh = ALERT_BANNER_H_DOUBLE if len(bands) == 2 else ALERT_BANNER_H
     banner_y = header_h
-    double = bool(thunder) and bool(wbgt_alert)
-    bh = ALERT_BANNER_H_DOUBLE if double else ALERT_BANNER_H
-    if thunder:
-        draw_thunder_banner(screen, width, banner_y, base_font_path, thunder, bh)
-        banner_y += bh + 2
-    if wbgt_alert:
-        draw_alert_banner(screen, width, banner_y, base_font_path, bh)
+    for kind, val in bands:
+        if kind == "quake":
+            draw_quake_banner(screen, width, banner_y, base_font_path, val, bh)
+        elif kind == "thunder":
+            draw_thunder_banner(screen, width, banner_y, base_font_path, val, bh)
+        else:
+            draw_alert_banner(screen, width, banner_y, base_font_path, bh)
         banner_y += bh + 2
 
     # 通信エラーの帯は header.draw_fetch_error_bar（ヘッダーの白塗りの後）で描く
@@ -846,7 +886,7 @@ def draw_weather(
     # 風速の矢印の色の見方（色の帯）。今日の天気の表のすぐ下・右端（左の「１週間の天気」の題名と同じ高さ）
     _draw_wind_legend(screen, base_font_path, margin_x + col_w * (1 + data_cols), y_offset + sum(row_heights) + 3)
 
-    y_offset += sum(row_heights) + (2 if double else 8)
+    y_offset += sum(row_heights) + (2 if len(bands) == 2 else 8)
 
     week_title_surf = get_font(base_font_path, SECTION_TITLE_SIZE, bold=True).render("１週間の天気", True, (0, 0, 0))
     screen.blit(week_title_surf, (margin_x, y_offset))
