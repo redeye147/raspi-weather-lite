@@ -551,9 +551,20 @@ def draw_thunder_banner(screen, width, by, base_font_path, info, bh=ALERT_BANNER
     screen.blit(b, (x + t.get_width() + gap, by + (bh - b.get_height()) // 2))
 
 
-# 地震の帯（震度 5 弱以上。紫地に白。雷の赤・黄と見分けられるように）
-QUAKE_STYLE = dict(bg=(110, 0, 140), edge=(200, 120, 255), fg=(255, 255, 255), mark_bg=(255, 255, 255),
-                   mark_fg=(110, 0, 140))
+# 地震の帯（空港の市区町村の震度で色を変える。雷の赤・黄と見分けられる色）
+QUAKE_STYLES = {
+    "high": dict(bg=(110, 0, 140), edge=(200, 120, 255), fg=(255, 255, 255), mark_bg=(255, 255, 255),
+                 mark_fg=(110, 0, 140)),                       # 震度 5 弱以上：紫
+    "mid": dict(bg=(235, 110, 0), edge=(255, 170, 80), fg=(255, 255, 255), mark_bg=(255, 255, 255),
+                mark_fg=(235, 110, 0)),                        # 震度 4：オレンジ
+    "low": dict(bg=(175, 235, 160), edge=(80, 170, 70), fg=(0, 0, 0), mark_bg=(0, 0, 0),
+                mark_fg=(175, 235, 160)),                      # 震度 1〜3：薄緑
+}
+QUAKE_STYLE = QUAKE_STYLES["high"]
+
+# 帯の優先順位（小さいほど上。帯は 2 本まで）：震度 5 弱以上 ＞ 雷接近 ＞ 震度 4 ＞ 雷注意 ＞ 震度 1〜3 ＞ 熱中症
+BAND_PRIORITY = {("quake", "high"): 0, ("thunder", "near"): 1, ("quake", "mid"): 2, ("thunder", "watch"): 3,
+                 ("quake", "low"): 4, ("wbgt", None): 5}
 
 
 def _draw_quake_mark(screen, x, y, size, st):
@@ -567,8 +578,8 @@ def _draw_quake_mark(screen, x, y, size, st):
 
 
 def draw_quake_banner(screen, width, by, base_font_path, info, bh=ALERT_BANNER_H):
-    """地震の帯。info = {"title": "地震 震度5強", "body": "常滑市（…）"}（quake.banner_text）"""
-    st = QUAKE_STYLE
+    """地震の帯。info = {"title": "地震 震度5強", "body": "常滑市（…）", "level": "high"|"mid"|"low"}"""
+    st = QUAKE_STYLES.get(info.get("level"), QUAKE_STYLES["high"])
     pygame.draw.rect(screen, st["bg"], (0, by, width, bh))
     pygame.draw.line(screen, st["edge"], (0, by), (width, by), 3)
     pygame.draw.line(screen, st["edge"], (0, by + bh - 1), (width, by + bh - 1), 2)
@@ -649,9 +660,16 @@ def draw_weather(
     margin_x = int(width * 0.05)
     header_h = int(height * 0.25)
 
-    # ヘッダー直下の帯：地震（震度 5 弱以上）→ 雷 → 熱中症警戒アラートの順に重ねる。
-    # 表が画面の下にはみ出さないよう、帯は 2 本まで（3 つ重なったら熱中症の帯を出さない）
-    bands = [b for b in (("quake", quake), ("thunder", thunder), ("wbgt", wbgt_alert)) if b[1]][:2]
+    # ヘッダー直下の帯：地震・雷・熱中症警戒アラートを優先順（BAND_PRIORITY）に重ねる。
+    # 表が画面の下にはみ出さないよう、帯は 2 本まで（3 つ重なったら優先順のいちばん下を出さない）
+    cand = []
+    if quake:
+        cand.append((BAND_PRIORITY[("quake", quake.get("level", "high"))], "quake", quake))
+    if thunder:
+        cand.append((BAND_PRIORITY[("thunder", thunder.get("kind"))], "thunder", thunder))
+    if wbgt_alert:
+        cand.append((BAND_PRIORITY[("wbgt", None)], "wbgt", wbgt_alert))
+    bands = [(k, v) for _, k, v in sorted(cand, key=lambda c: c[0])][:2]
     bh = ALERT_BANNER_H_DOUBLE if len(bands) == 2 else ALERT_BANNER_H
     banner_y = header_h
     for kind, val in bands:

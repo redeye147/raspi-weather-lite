@@ -220,6 +220,27 @@ def test_thunder_banner_is_drawn_above_heat_alert(w, h, kind):
     assert bottom < h - 1
 
 
+def _band_rows(screen, color, w):
+    arr = pygame.surfarray.array3d(screen)
+    return np.where(np.all(arr == color, axis=2).sum(axis=0) > w * 0.5)[0]
+
+
+@pytest.mark.parametrize("level, thunder_kind, first", [("high", "near", "quake"), ("mid", "near", "thunder"),
+                                                         ("mid", "watch", "quake"), ("low", "watch", "thunder")])
+def test_band_order_by_priority(level, thunder_kind, first):
+    """帯の順番：震度 5 弱以上 ＞ 雷接近 ＞ 震度 4 ＞ 雷注意 ＞ 震度 1〜3 ＞ 熱中症（2 本まで）"""
+    import weather_draw
+    w, h = 1920, 1080
+    sc = dict(SCENARIOS["いちばん詰まる"], alert=False,
+              thunder={"kind": thunder_kind, "km": 8.0, "dir": "南", "at": datetime.datetime(2026, 10, 11, 12, 10, tzinfo=JST)},
+              quake={"title": "地震 震度3", "body": "常滑市（11/9 19:48 発生・震源 愛知県西部 深さ 10km・M4.2）", "level": level})
+    screen = _render(w, h, sc)
+    q = _band_rows(screen, weather_draw.QUAKE_STYLES[level]["bg"], w)
+    t = _band_rows(screen, weather_draw.THUNDER_STYLE[thunder_kind]["bg"], w)
+    assert len(q) and len(t)
+    assert (q.min() < t.min()) == (first == "quake")
+
+
 @pytest.mark.parametrize("w, h", RESOLUTIONS)
 def test_quake_banner_is_on_top_and_bands_are_at_most_two(w, h):
     """地震の帯（紫）はヘッダーの直下。雷・熱中症と 3 つ重なっても帯は 2 本（地震・雷）で、画面に収まる"""

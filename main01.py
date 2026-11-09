@@ -199,8 +199,9 @@ def main():
                         help="今の時間帯の天気アイコンを動かさない（静止画のまま）")
     parser.add_argument("--thunder-test", choices=["near", "watch"], default=None,
                         help="雷の帯をテスト表示（near=雷接近 10km 以内 / watch=雷注意 20km 以内）")
-    parser.add_argument("--quake-test", action="store_true",
-                        help="地震（震度 5 弱以上）の帯をテスト表示")
+    parser.add_argument("--quake-test", nargs="?", const="5+", default=None,
+                        choices=["1", "2", "3", "4", "5-", "5+", "6-", "6+", "7"],
+                        help="地震の帯をテスト表示（震度。省略すると 5+＝5 強。例 --quake-test 3）")
     parser.add_argument("--render",
                         choices=["auto", "kmsdrm", "fb0", "x11"], default="auto",
                         help="描画モード（既定: auto = kmsdrm を試し失敗時に fb0 へフォールバック）")
@@ -516,7 +517,7 @@ def main():
     thunder_not_before = time.time() + DEFER_INITIAL_FETCH_S
     shown_thunder_kind = None
     thunder_info = None
-    # 地震：1 分ごとに気象庁の地震情報の一覧を確かめ、空港のある市区町村で震度 5 弱以上なら 3 時間帯を出す
+    # 地震：1 分ごとに気象庁の地震情報の一覧を確かめ、空港のある市区町村の震度で帯を出す（1〜4 は 1 時間・5 弱以上は 3 時間）
     _qc = cfg.get("quake_city") or (None, "")
     quake_state = quake_mod.QuakeState(_qc[0])
     quake_holder = {}
@@ -791,15 +792,19 @@ def main():
             quake_state.update(_st, _entries, _etag, time.time())
         if args.quake_test:
             _q = {"eid": "test", "at": now.replace(second=0, microsecond=0) - datetime.timedelta(minutes=5),
-                  "intensity": "5+", "epicenter": "愛知県西部", "depth_km": 10, "mag": "5.8"}
+                  "intensity": args.quake_test, "level": quake_mod.level_of(args.quake_test),
+                  "epicenter": "愛知県西部", "depth_km": 10, "mag": "5.8"}
         else:
             _q = quake_state.current(now)
-        _qnew = dict(zip(("title", "body"), quake_mod.banner_text(_q, _qc[1]))) if _q else None
+        _qnew = (dict(zip(("title", "body"), quake_mod.banner_text(_q, _qc[1])), level=_q["level"])
+                 if _q else None)
         if _qnew != quake_info:
             if _qnew and not (quake_info and quake_info["body"] == _qnew["body"]):
-                (logging.info if args.quake_test else logging.warning)(f"地震: {_qnew['title']} {_qnew['body']}")
+                # 震度 4 以上は診断ページの「直近の警告」に残す（1〜3 は回数が多いのでログだけ）
+                (logging.warning if _qnew["level"] != "low" and not args.quake_test else logging.info)(
+                    f"地震: {_qnew['title']} {_qnew['body']}")
             elif not _qnew:
-                logging.info("地震: 帯を消した（発生から 3 時間）")
+                logging.info("地震: 帯を消した（表示時間が過ぎた）")
             quake_info = _qnew
             needs_redraw = True
 

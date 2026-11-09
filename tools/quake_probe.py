@@ -70,7 +70,7 @@ def main():
     else:
         print(f"\n（確認用）一覧の中に {name} で揺れた地震は無かった")
     q = quake.find_quake(data, code, now)
-    print("今の判断（震度 5 弱以上・3 時間以内）:", " ".join(quake.banner_text(q, name)) if q else "帯は出さない")
+    print("今の判断（震度 1 以上。5 弱以上は 3 時間・それ以外は 1 時間）:", " ".join(quake.banner_text(q, name)) if q else "帯は出さない")
     return 0
 
 

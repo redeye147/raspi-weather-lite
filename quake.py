@@ -1,6 +1,7 @@
 """
 quake.py
-空港のある市区町村で震度 5 弱以上の地震があったら、帯で知らせる（2026-11-06）。
+空港のある市区町村で揺れた地震（震度 1 以上）を、帯で知らせる（2026-11-06。2026-11-09 から震度 1 以上）。
+  震度 1〜3：薄緑の帯を 1 時間／震度 4：オレンジの帯を 1 時間／震度 5 弱以上：紫の帯を 3 時間
 
 データ：気象庁の地震情報の一覧 bosai/quake/data/list.json（警報と同じ気象庁のサイト）。
 揺れてから 1.5〜数分で載る（緊急地震速報のように揺れる前ではない）。
@@ -24,8 +25,10 @@ from utils import JST
 
 LIST_URL = "https://www.jma.go.jp/bosai/quake/data/list.json"
 FETCH_INTERVAL_S = 60          # 1 分ごと（変わっていなければ 304 で中身は届かない）
-SHOW_HOURS = 3                 # 地震の発生から 3 時間、帯を出す
-MIN_INTENSITY = "5-"           # 震度 5 弱以上
+SHOW_HOURS = 3                 # 震度 5 弱以上は、地震の発生から 3 時間帯を出す
+SHOW_HOURS_LOW = 1             # 震度 1〜4 は 1 時間
+STRONG_INTENSITY = "5-"        # これ以上は「強い」（紫・3 時間・ほかの地震より優先）
+MIN_INTENSITY = "1"            # 震度 1 以上で出す
 TIMEOUT = 15
 _HEADERS = {"User-Agent": "raspi-weather-lite (airport weather signage)"}
 
@@ -73,10 +76,24 @@ def city_intensity(entry, city_code):
     return None
 
 
-def find_quake(entries, city_code, now, min_intensity=MIN_INTENSITY, hours=SHOW_HOURS):
-    """一覧から、hours 時間以内に発生し、city_code の市区町村で min_intensity 以上だった地震を探す。
-    同じ地震（eid）の情報が何回か出たら、いちばん新しい発表を使う（震源や震度が直る）。
-    戻り値 {"eid", "at", "intensity", "epicenter", "depth_km", "mag"}（無ければ None）"""
+def level_of(intensity) -> str:
+    """帯の段階：high（5 弱以上・紫）／mid（4・オレンジ）／low（1〜3・薄緑）"""
+    r = intensity_rank(intensity)
+    if r >= intensity_rank(STRONG_INTENSITY):
+        return "high"
+    return "mid" if r == intensity_rank("4") else "low"
+
+
+def show_hours(intensity) -> float:
+    return SHOW_HOURS if level_of(intensity) == "high" else SHOW_HOURS_LOW
+
+
+def find_quake(entries, city_code, now, min_intensity=MIN_INTENSITY, hours=None):
+    """一覧から、city_code の市区町村で min_intensity 以上だった地震のうち、帯を出す期間内のものを探す。
+    期間は震度 5 弱以上なら 3 時間、それ以外は 1 時間（hours を渡すと全部その時間）。
+    震度 5 弱以上の地震が期間内にあれば、そちらを優先（あとの弱い揺れで強い地震の帯が消えないように）。
+    それ以外は、いちばん新しい地震。同じ地震（eid）の情報が何回か出たら、いちばん新しい発表を使う。
+    戻り値 {"eid", "at", "intensity", "level", "epicenter", "depth_km", "mag"}（無ければ None）"""
     if not city_code:
         return None
     latest = {}
@@ -89,15 +106,17 @@ def find_quake(entries, city_code, now, min_intensity=MIN_INTENSITY, hours=SHOW_
     best = None
     for _, e in latest.values():
         at = _parse_time(e.get("at"))
-        if at is None or not (datetime.timedelta(0) <= now - at <= datetime.timedelta(hours=hours)):
-            continue
         it = city_intensity(e, city_code)
-        if intensity_rank(it) < intensity_rank(min_intensity):
+        if at is None or intensity_rank(it) < intensity_rank(min_intensity):
             continue
-        q = {"eid": e["eid"], "at": at, "intensity": it,
+        h = hours if hours is not None else show_hours(it)
+        if not (datetime.timedelta(0) <= now - at <= datetime.timedelta(hours=h)):
+            continue
+        q = {"eid": e["eid"], "at": at, "intensity": it, "level": level_of(it),
              "epicenter": (e.get("anm") or "").strip(), "depth_km": depth_km(e.get("cod")),
              "mag": (str(e.get("mag") or "").strip() or None)}
-        if best is None or q["at"] > best["at"]:
+        key = (q["level"] == "high", q["at"])
+        if best is None or key > (best["level"] == "high", best["at"]):
             best = q
     return best
 
