@@ -517,7 +517,7 @@ def main():
     thunder_not_before = time.time() + DEFER_INITIAL_FETCH_S
     shown_thunder_kind = None
     thunder_info = None
-    # 地震：1 分ごとに気象庁の地震情報の一覧を確かめ、空港のある市区町村の震度で帯を出す（1〜4 は 1 時間・5 弱以上は 3 時間）
+    # 地震：1 分ごとに気象庁の地震情報の一覧を確かめ、空港のある市区町村で震度 3 以上なら帯を出す（3〜4 は 1 時間・5 弱以上は 3 時間）
     _qc = cfg.get("quake_city") or (None, "")
     quake_state = quake_mod.QuakeState(_qc[0])
     quake_holder = {}
@@ -800,7 +800,7 @@ def main():
                  if _q else None)
         if _qnew != quake_info:
             if _qnew and not (quake_info and quake_info["body"] == _qnew["body"]):
-                # 震度 4 以上は診断ページの「直近の警告」に残す（1〜3 は回数が多いのでログだけ）
+                # 震度 4 以上は診断ページの「直近の警告」に残す（3 はログだけ）
                 (logging.warning if _qnew["level"] != "low" and not args.quake_test else logging.info)(
                     f"地震: {_qnew['title']} {_qnew['body']}")
             elif not _qnew:

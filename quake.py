@@ -1,7 +1,8 @@
 """
 quake.py
-空港のある市区町村で揺れた地震（震度 1 以上）を、帯で知らせる（2026-11-06。2026-11-09 から震度 1 以上）。
-  震度 1〜3：薄緑の帯を 1 時間／震度 4：オレンジの帯を 1 時間／震度 5 弱以上：紫の帯を 3 時間
+空港のある市区町村で揺れた地震（震度 3 以上）を、帯で知らせる（2026-11-06。2026-11-09 から震度 3 以上）。
+  震度 3：薄緑の帯を 1 時間／震度 4：オレンジの帯を 1 時間／震度 5 弱以上：紫の帯を 3 時間
+  （震度 1〜2 は回数が多いので出さない）
 
 データ：気象庁の地震情報の一覧 bosai/quake/data/list.json（警報と同じ気象庁のサイト）。
 揺れてから 1.5〜数分で載る（緊急地震速報のように揺れる前ではない）。
@@ -28,7 +29,7 @@ FETCH_INTERVAL_S = 60          # 1 分ごと（変わっていなければ 304 �
 SHOW_HOURS = 3                 # 震度 5 弱以上は、地震の発生から 3 時間帯を出す
 SHOW_HOURS_LOW = 1             # 震度 1〜4 は 1 時間
 STRONG_INTENSITY = "5-"        # これ以上は「強い」（紫・3 時間・ほかの地震より優先）
-MIN_INTENSITY = "1"            # 震度 1 以上で出す
+MIN_INTENSITY = "3"            # 震度 3 以上で出す（1〜2 は出さない。2026-11-09）
 TIMEOUT = 15
 _HEADERS = {"User-Agent": "raspi-weather-lite (airport weather signage)"}
 
@@ -77,7 +78,7 @@ def city_intensity(entry, city_code):
 
 
 def level_of(intensity) -> str:
-    """帯の段階：high（5 弱以上・紫）／mid（4・オレンジ）／low（1〜3・薄緑）"""
+    """帯の段階：high（5 弱以上・紫）／mid（4・オレンジ）／low（3 以下・薄緑。出すのは 3 だけ）"""
     r = intensity_rank(intensity)
     if r >= intensity_rank(STRONG_INTENSITY):
         return "high"

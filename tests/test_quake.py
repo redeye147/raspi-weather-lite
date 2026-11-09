@@ -33,16 +33,18 @@ def test_ignores_other_city_and_out_of_time():
 def test_levels_and_show_hours():
     assert [quake.level_of(i) for i in ("1", "3", "4", "5-", "7")] == ["low", "low", "mid", "high", "high"]
     assert quake.show_hours("3") == 1 and quake.show_hours("4") == 1 and quake.show_hours("5-") == 3
-    es = [_entry("1", "2026-11-06T10:15:00+09:00", "2026-11-06T10:10:00+09:00", "1")]
-    q = quake.find_quake(es, "2321600", NOW)                          # 震度 1・50 分前 → 出す
-    assert q["level"] == "low" and quake.banner_text(q, "常滑市")[0] == "地震 震度1"
+    assert quake.find_quake([_entry("0", "2026-11-06T10:55:00+09:00", "2026-11-06T10:50:00+09:00", "2")],
+                            "2321600", NOW) is None                   # 震度 1〜2 は出さない
+    es = [_entry("1", "2026-11-06T10:15:00+09:00", "2026-11-06T10:10:00+09:00", "3")]
+    q = quake.find_quake(es, "2321600", NOW)                          # 震度 3・50 分前 → 出す
+    assert q["level"] == "low" and quake.banner_text(q, "常滑市")[0] == "地震 震度3"
     assert quake.find_quake(es, "2321600", NOW + datetime.timedelta(minutes=15)) is None   # 1 時間を過ぎたら消す
 
 
 def test_strong_quake_is_kept_over_later_weak_ones():
     """5 弱以上の帯が出ている 3 時間は、あとの弱い揺れ（余震）でそちらに替えない。弱いものどうしは新しい方"""
     strong = _entry("1", "2026-11-06T09:05:00+09:00", "2026-11-06T09:00:00+09:00", "5+")
-    weak = _entry("2", "2026-11-06T10:50:00+09:00", "2026-11-06T10:45:00+09:00", "2")
+    weak = _entry("2", "2026-11-06T10:50:00+09:00", "2026-11-06T10:45:00+09:00", "3")
     mid = _entry("3", "2026-11-06T10:35:00+09:00", "2026-11-06T10:30:00+09:00", "4")
     assert quake.find_quake([weak, strong, mid], "2321600", NOW)["eid"] == "1"
     assert quake.find_quake([weak, mid], "2321600", NOW)["eid"] == "2"
