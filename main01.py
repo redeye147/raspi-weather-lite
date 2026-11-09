@@ -9,6 +9,7 @@ main01.py
 - 起動時スプラッシュ画面（フェードイン/アウト・ローディングステップ・バージョン表示）
 """
 
+import bootcheck
 import quake as quake_mod
 import sys
 import os
@@ -160,6 +161,7 @@ def main():
     print("=== MAIN START ===", flush=True)
     boot_log("main01 開始")
     setup_logging()
+    bootcheck.start_in_background()     # 前回は突然電源が切れたか（起動ごとに 1 回。2 分後に裏で調べる）
     # run_forever は失敗後に pygame.quit() してから main() をやり直す。前回のフォント・描画の
     # キャッシュを使うと Segmentation fault で落ちるので、毎回捨ててから始める
     clear_font_cache()
