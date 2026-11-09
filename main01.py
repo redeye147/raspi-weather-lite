@@ -9,6 +9,7 @@ main01.py
 - 起動時スプラッシュ画面（フェードイン/アウト・ローディングステップ・バージョン表示）
 """
 
+import autocorrect
 import bootcheck
 import quake as quake_mod
 import sys
@@ -33,6 +34,7 @@ import socket
 import requests
 import psutil
 import subprocess
+import threading
 
 import fb_display
 from netretry import get_with_retry
@@ -525,6 +527,9 @@ def main():
     quake_holder = {}
     last_quake_attempt = 0.0
     quake_info = None                               # 帯に出す {"title", "body"}（無ければ None）
+    # 予報の自動補正（試験期間：計算して確かめるだけ。画面には使わない）：6 時以降に 1 日 1 回、裏で計算
+    _ac = autocorrect.load()
+    last_ac_date = str((_ac or {}).get("computed_at", ""))[:10]
     # 降水ナウキャスト：10 分ごとに裏で取得。今の時間帯の降水量を、雨雲レーダーの実測と 1 時間先までの予測に
     rain_holder = {}
     rain_result = None                              # 最後に取れた結果（status ok）
@@ -779,6 +784,11 @@ def main():
                 shown_thunder_kind = _kind
             thunder_info = _new
             needs_redraw = True
+
+        # 予報の自動補正（試験）：1 日 1 回（6 時以降）。記録を読んで計算するだけ（数秒・表示には関係しない）
+        if cfg.get("icao") and now.hour >= 6 and last_ac_date != now.strftime("%Y-%m-%d"):
+            last_ac_date = now.strftime("%Y-%m-%d")
+            threading.Thread(target=autocorrect.run_daily, args=(cfg["icao"],), daemon=True).start()
 
         # 地震（1 分ごと。裏で取得）
         if (not args.quake_test and quake_state.city_code and "pending" not in quake_holder

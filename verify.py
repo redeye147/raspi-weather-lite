@@ -235,6 +235,59 @@ def export_csv(base_dir=None):
     return buf.getvalue(), n
 
 
+IMPORT_MAX_BYTES = 10 * 1024 * 1024
+
+
+def import_csv(text, base_dir=None, now=None):
+    """ほかの Pi の記録（export_csv・診断ページでダウンロードした CSV）を取り込む（2026-11-09）。
+    同じ時刻・同じ空港の行が既にあれば、この Pi の記録を残す（上書きしない）。月ごとのファイルに入れて時刻順に並べ直す。
+    残す期間（4 か月）より古い行は取り込まない。戻り値 (取り込んだ行数, 既にあった行数)。形が違えば ValueError"""
+    base_dir = base_dir or BASE_DIR
+    now = (now or datetime.datetime.now(JST)).astimezone(JST)
+    text = text.lstrip("\ufeff")
+    reader = csv.DictReader(io.StringIO(text))
+    if not reader.fieldnames or "obs_time" not in reader.fieldnames or "icao" not in reader.fieldnames:
+        raise ValueError("予報の精度の記録の CSV ではありません（obs_time・icao の列が無い）")
+    oldest = (now - datetime.timedelta(days=31 * VF_KEEP_MONTHS)).strftime("%Y-%m")
+    by_month = {}
+    for r in reader:
+        t = (r.get("obs_time") or "").strip()
+        try:
+            datetime.datetime.strptime(t, "%Y-%m-%d %H:%M")
+        except ValueError:
+            continue
+        if t[:7] < oldest:
+            continue
+        by_month.setdefault(t[:7].replace("-", ""), []).append({k: (r.get(k) or "").strip() for k in FIELDS})
+    os.makedirs(base_dir, exist_ok=True)
+    added = dup = 0
+    for month, new_rows in sorted(by_month.items()):
+        path = os.path.join(base_dir, f"vf_{month}.csv")
+        _upgrade_header(path)
+        rows = []
+        try:
+            with open(path, encoding="utf-8") as f:
+                rows = [{k: r.get(k) or "" for k in FIELDS} for r in csv.DictReader(f)]
+        except OSError:
+            pass
+        keys = {(r["obs_time"], r["icao"]) for r in rows}
+        for r in new_rows:
+            if (r["obs_time"], r["icao"]) in keys:
+                dup += 1
+                continue
+            keys.add((r["obs_time"], r["icao"]))
+            rows.append(r)
+            added += 1
+        rows.sort(key=lambda r: (r["obs_time"], r["icao"]))
+        buf = io.StringIO()
+        w = csv.DictWriter(buf, fieldnames=FIELDS)
+        w.writeheader()
+        w.writerows(rows)
+        safe_write.write_text(path, buf.getvalue())           # 途中で電源が切れても元の記録が消えないように
+    _obs_cache.clear()
+    return added, dup
+
+
 def _upgrade_header(path):
     """項目が増える前の CSV なら、今の項目で書き直す（足りない項目は空）"""
     try:

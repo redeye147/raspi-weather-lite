@@ -428,9 +428,17 @@ def _accuracy(icao=None):
     """予報の精度（過去 30 日の予報と観測のずれ。verify.py）。今の空港の分だけ"""
     try:
         import verify
-        return verify.summarize(icao=icao)
+        lines = verify.summarize(icao=icao)
     except Exception:
         return []
+    try:                                          # 自動補正（試験期間）の結果。今の空港の分だけ
+        import autocorrect
+        ac = autocorrect.load()
+        if ac and (not icao or ac.get("icao") == icao):
+            lines += autocorrect.summary_lines(ac)
+    except Exception:
+        pass
+    return lines
 
 
 def _rain_item(now, snap):

@@ -210,3 +210,26 @@ def test_now_json_tells_parent_and_child_numbers(client, monkeypatch):
 def test_now_page_does_not_use_flex_gap():
     """子機用のページは flex の gap を使わない（iOS 12 の古い iPad では効かず、間隔が詰まる）"""
     assert "gap:" not in wp.NOW_HTML
+
+
+def test_verify_import_and_autocorrect_csv(client, monkeypatch):
+    """ほかの Pi の記録の取り込み（パスワードが必要）と、自動補正の毎日の結果のダウンロード"""
+    import io
+    import autocorrect
+    import verify
+    got = {}
+    monkeypatch.setattr(verify, "import_csv", lambda text: (got.update(text=text), (5, 2))[1])
+    data = {"file": (io.BytesIO("obs_time,icao\n".encode()), "x.csv")}
+    assert client.post("/diag/verify-import", data=data, content_type="multipart/form-data").status_code == 401
+    client.post("/login", json={"password": "1048"})
+    r = client.post("/diag/verify-import", data={"file": (io.BytesIO("obs_time,icao\n".encode()), "x.csv")},
+                    content_type="multipart/form-data")
+    assert r.status_code == 200 and "5 件" in r.get_data(as_text=True) and got["text"].startswith("obs_time")
+    monkeypatch.setattr(verify, "import_csv", lambda text: (_ for _ in ()).throw(ValueError("違う CSV")))
+    r = client.post("/diag/verify-import", data={"file": (io.BytesIO(b"a,b\n"), "x.csv")},
+                    content_type="multipart/form-data")
+    assert r.status_code == 400
+    monkeypatch.setattr(autocorrect, "history_csv", lambda: "date,icao\n2026-11-10,RJAA\n")
+    r = client.get("/diag/autocorrect.csv")
+    assert r.status_code == 200 and b"2026-11-10,RJAA" in r.data
+    assert "importRecords()" in client.get("/diag").get_data(as_text=True)

@@ -675,7 +675,12 @@ DIAG_HTML = """<!DOCTYPE html>
   <div class="box" id="items"></div>
   <div class="box"><div class="sub">直近の警告・エラー（新しい順・最大20件。同じ内容はまとめて回数を表示）</div><div id="problems"></div></div>
   <div class="box"><div class="sub">予報の精度（予報と空港の観測のずれ）</div><div id="accuracy"></div>
-    <div class="sub" style="margin-top:8px"><a href="/diag/verify.csv" style="color:#7fb8ff">記録をダウンロード（CSV・最大 4 か月分）</a></div></div>
+    <div class="sub" style="margin-top:8px"><a href="/diag/verify.csv" style="color:#7fb8ff">記録をダウンロード（CSV・最大 4 か月分）</a>
+      ・<a href="/diag/autocorrect.csv" style="color:#7fb8ff">自動補正の毎日の結果（CSV）</a></div>
+    <div class="sub" style="margin-top:10px">ほかの Pi の記録を取り込む（その Pi でダウンロードした CSV を選ぶ。同じ時刻の記録はこの Pi の分を残す）</div>
+    <input id="import-file" type="file" accept=".csv,text/csv" style="margin-top:6px;color:#cbd5e1">
+    <button class="sub-btn" onclick="importRecords()">📥 記録を取り込む</button>
+    <p id="import-msg" class="sub"></p></div>
   <div class="sub" id="foot" style="margin-top:10px"></div>
   <button onclick="load()">🔄 再診断</button>
 </div>
@@ -689,6 +694,16 @@ async function login() {
   const res = await fetch('/login', {method: 'POST', headers: {'Content-Type': 'application/json'},
               credentials: 'same-origin', body: JSON.stringify({password: document.getElementById('admin-pw').value})});
   if (res.ok) { load(); } else { document.getElementById('login-msg').textContent = await res.text(); }
+}
+async function importRecords() {
+  const f = document.getElementById('import-file').files[0];
+  const msg = document.getElementById('import-msg');
+  if (!f) { msg.textContent = 'CSV のファイルを選んでください'; return; }
+  msg.textContent = '取り込み中…';
+  const fd = new FormData(); fd.append('file', f);
+  const res = await fetch('/diag/verify-import', {method: 'POST', body: fd, credentials: 'same-origin'});
+  msg.textContent = await res.text();
+  if (res.ok) load();
 }
 async function load() {
   const res = await fetch('/diag/data', {credentials: 'same-origin'});
@@ -947,6 +962,38 @@ def diag_verify_csv():
     resp.headers["Content-Type"] = "text/csv; charset=utf-8"
     resp.headers["Content-Disposition"] = f'attachment; filename="{name}"'
     resp.headers["X-Rows"] = str(n)
+    return _no_cache(resp)
+
+
+@app.route("/diag/verify-import", methods=["POST"])
+@admin_required
+def diag_verify_import():
+    """ほかの Pi の記録（その Pi の /diag/verify.csv）を取り込む。Pi の入れ替え・空港の切り替えのとき、
+    前の記録をすぐ自動補正や診断に使えるように"""
+    import verify
+    f = request.files.get("file")
+    if f is None:
+        return "ファイルがありません", 400
+    data = f.read(verify.IMPORT_MAX_BYTES + 1)
+    if len(data) > verify.IMPORT_MAX_BYTES:
+        return "ファイルが大きすぎます（10MB まで）", 400
+    try:
+        added, dup = verify.import_csv(data.decode("utf-8", errors="replace"))
+    except ValueError as e:
+        return str(e), 400
+    return f"取り込みました：新しい記録 {added} 件（この Pi に既にあった {dup} 件は、この Pi の分を残しました）"
+
+
+@app.route("/diag/autocorrect.csv")
+@admin_required
+def diag_autocorrect_csv():
+    """自動補正（試験期間）の毎日の結果。試験期間の見比べ用"""
+    import socket
+    import autocorrect
+    resp = make_response("\ufeff" + autocorrect.history_csv())
+    resp.headers["Content-Type"] = "text/csv; charset=utf-8"
+    resp.headers["Content-Disposition"] = (f'attachment; filename="autocorrect_{socket.gethostname()}_'
+                                           f'{time.strftime("%Y%m%d")}.csv"')
     return _no_cache(resp)
 
 
