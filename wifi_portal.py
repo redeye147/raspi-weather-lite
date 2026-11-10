@@ -293,9 +293,9 @@ async function init() {
     if (st.airport) document.getElementById('airport').value = st.airport;
     if (st.table_layout) document.getElementById('layout').value = st.table_layout;
     if (st.hostname) {
-      nowUrl = 'http://' + st.hostname + '.local:8080/now';
+      const nameUrl = 'http://' + st.hostname + '.local:8080/now';
       document.getElementById('now-url').textContent =
-        '名前で開く場合：' + nowUrl + '（ルーターによっては見つからないので、基本はサイネージの QR コードから開く）';
+        '名前で開く場合：' + nameUrl + '（ルーターによっては見つからないので、基本はサイネージの QR コードから開く）';
     }
     if (st.admin) showWifi();
   } catch(e) {
@@ -316,8 +316,9 @@ async function saveAirport() {
   }
 }
 
-let nowUrl = '/now';
-function openNow() { location.href = nowUrl; }
+// 子機用のページは、今開いている設定画面と同じアドレス（QR の IP）で開く。
+// 名前（.local）は見つからない現場がある（2026-11-10 の 112：Android のスマホで開けなかった）ので、ボタンには使わない
+function openNow() { location.href = '/now'; }
 
 async function saveLayout() {
   const btn = document.getElementById('layout-btn');

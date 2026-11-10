@@ -194,6 +194,7 @@ def test_status_has_hostname_for_child_page(client, monkeypatch):
     monkeypatch.setattr(wp, "_hostname", lambda: "raspi2w")
     html = client.get("/").get_data(as_text=True)
     assert ".local:8080/now" in html and "openNow()" in html
+    assert "location.href = '/now'" in html                       # ボタンは名前ではなく今のアドレス（IP）で開く
 
 
 def test_now_json_tells_parent_and_child_numbers(client, monkeypatch):
