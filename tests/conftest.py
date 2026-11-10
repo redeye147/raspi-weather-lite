@@ -17,3 +17,12 @@ def _fresh_pygame_fonts():
     import utils
     utils.clear_font_cache()
     yield
+
+
+@pytest.fixture(autouse=True)
+def _card_file_in_tmp(tmp_path, monkeypatch):
+    """カード表示のデータ（fetch_weather.CARD_FILE）をテストの一時フォルダに書く（リポジトリの cache/ を汚さない）"""
+    import fetch_weather
+    monkeypatch.setattr(fetch_weather, "CARD_FILE", str(tmp_path / "card.json"))
+    monkeypatch.setattr(fetch_weather, "CARD", {"hours": [], "pops6": {}})
+    yield

@@ -487,7 +487,57 @@ NOW_HTML = """<!DOCTYPE html>
     font-family: -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; }
   /* 間隔は gap を使わず margin で空ける（flex の gap は iOS 14.5 から。iOS 12 の古い iPad でも同じ見た目に） */
   body { display: flex; flex-direction: column; padding: 2vmin 3vmin; }
-  body > * + * { margin-top: 1.5vmin; }
+  /* 表示は 2 種類：今の表示（#vt）とカード表示（#vc）。右上のボタンで切り替え、端末ごとに覚える（2026-11-11） */
+  .view { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  .view > * + * { margin-top: 1.5vmin; }
+  .hidden { display: none !important; }
+  .vbtn { font-size: 0.7em; color: #888; border: 1px solid #ccc; border-radius: 1vmin; padding: 0.2vmin 1.2vmin;
+    margin-left: 1.5vmin; background: transparent; font-family: inherit; }
+  body.cardmode { background: #eef4fb; color: #1f2d3d; }
+  .c-panel { background: #fff; border-radius: 2vmin; box-shadow: 0 0.3vmin 1vmin rgba(40,80,140,.12); border: 1px solid #d6e4f5; }
+  #c-head { display: flex; align-items: center; padding: 1.2vmin 2.5vmin; }
+  #c-head .c-name { flex: 1; text-align: center; font-size: 5.6vmin; font-weight: 800; color: #1e3a6e; }
+  #c-head .c-date { text-align: right; font-size: 3vmin; font-weight: 700; line-height: 1.3; white-space: nowrap; }
+  #c-head .c-date small { display: block; font-size: 2.1vmin; color: #6b7c93; font-weight: 500; }
+  .c-tmr { display: inline-block; background: #1e3a6e; color: #fff; font-size: 0.75em; border-radius: 1vmin; padding: 0 1vmin; margin-right: 0.8vmin; }
+  #c-top { display: flex; }
+  #c-top > * + * { margin-left: 1.6vmin; }
+  .c-card { flex: 1; min-width: 0; overflow: hidden; padding: 1.2vmin 1.6vmin 1.4vmin; display: flex; flex-direction: column; align-items: center; }
+  .c-tag { font-size: 2.2vmin; font-weight: 700; color: #fff; border-radius: 3vmin; padding: 0.3vmin 2.2vmin; white-space: nowrap; }
+  .c-body { flex: 1; display: flex; align-items: center; justify-content: center; width: 100%; }
+  .c-body > * + * { margin-left: 1.6vmin; }
+  .c-big { font-size: 9vmin; font-weight: 800; line-height: 1; white-space: nowrap; }
+  .c-big .u { font-size: 0.45em; }
+  .c-sub { font-size: 2.3vmin; color: #6b7c93; margin-top: 0.4vmin; white-space: nowrap; }
+  .c-word { font-size: 4.6vmin; font-weight: 800; white-space: nowrap; }
+  .c-temp { background: #fff8f1; border-color: #f6d3ad; } .c-temp .c-tag { background: #f08a24; }
+  .c-umb { background: #f4f8ff; } .c-umb .c-tag { background: #4a90e2; }
+  .c-wind { background: #f5f3ff; border-color: #d9d2fb; } .c-wind .c-tag { background: #6d4fd8; }
+  .c-sect { position: relative; overflow: hidden; }
+  .c-label { display: inline-block; background: #4a90e2; color: #fff; font-size: 2.2vmin; font-weight: 700;
+    padding: 0.4vmin 2vmin; border-bottom-right-radius: 1.4vmin; position: relative; z-index: 2; }
+  .c-cols { display: flex; padding: 0.4vmin 1vmin 1.2vmin; }
+  .c-col { flex: 1; min-width: 0; text-align: center; border-left: 1px dashed #d6e4f5; }
+  .c-col:first-child { border-left: none; }
+  .c-col .p { font-size: 2.5vmin; font-weight: 700; color: #33475b; white-space: nowrap; }
+  .c-col img { height: 8vmin; display: block; margin: 0.4vmin auto; }
+  .c-col .pop { font-size: 3.4vmin; font-weight: 800; color: #2f6fc0; }
+  .c-col .pop .u { font-size: 0.6em; }
+  .c-col .w { display: flex; align-items: center; justify-content: center; font-size: 3.4vmin; font-weight: 800; margin-top: 0.6vmin; }
+  .c-col .w .u { font-size: 0.55em; font-weight: 600; margin-right: 1vmin; }
+  .c-arrow { width: 4.2vmin; height: 4.2vmin; }
+  #c-chart { flex: 1; min-height: 0; }
+  #c-chart svg { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+  .c-pt { position: absolute; width: 2.4vmin; height: 2.4vmin; border-radius: 50%; transform: translate(-50%, -50%); }
+  .c-pl { position: absolute; transform: translate(-50%, -170%); font-size: 3.4vmin; font-weight: 800; color: #33475b; white-space: nowrap; }
+  .c-px { position: absolute; bottom: 1vmin; transform: translateX(-50%); font-size: 2.6vmin; color: #6b7c93; }
+  #c-msg { text-align: center; color: #6b7c93; font-size: 3vmin; }
+  @media (orientation: portrait) {
+    .c-word { font-size: 3.8vmin; } .c-sub { font-size: 1.9vmin; } .c-big { font-size: 7vmin; }
+    .c-body > * + * { margin-left: 1vmin; } .c-wind .c-body svg { width: 7vmin !important; height: 7vmin !important; }
+    .c-body svg.c-pic { height: 8vmin !important; }
+    .c-col img { height: 10vmin; } .c-col .pop, .c-col .w { font-size: 4vmin; } .c-col .p { font-size: 2.4vmin; }
+  }
   #head { display: flex; justify-content: space-between; align-items: baseline; font-size: 3.2vmin; }
   #head b { font-size: 4.4vmin; }
   #stale { color: #c00; font-weight: bold; }
@@ -554,7 +604,8 @@ NOW_HTML = """<!DOCTYPE html>
     #ahead .row { font-size: 3.2vmin; } #ahead .label { font-size: 3.4vmin; }
   }
 </style></head><body>
-<div id="head"><span><b id="airport">--</b></span><span><span id="stale"></span> <span id="time">--</span> 更新<span id="peer"></span><a id="setlink" href="/" aria-label="設定">⚙</a></span></div>
+<div id="vt" class="view">
+<div id="head"><span><b id="airport">--</b></span><span><span id="stale"></span> <span id="time">--</span> 更新<span id="peer"></span><button class="vbtn" onclick="setView('card')">カード表示</button><a id="setlink" href="/" aria-label="設定">⚙</a></span></div>
 <div id="alerts"></div>
 <div id="main">
   <div id="now" class="card"></div>
@@ -562,6 +613,22 @@ NOW_HTML = """<!DOCTYPE html>
 </div>
 <div id="wtitle"></div>
 <div id="week"></div>
+</div>
+<div id="vc" class="view hidden">
+<div id="c-head" class="c-panel">
+  <svg viewBox="-50 -50 100 100" style="width:7vmin;height:7vmin"><g stroke="#f5a623" stroke-width="7" stroke-linecap="round">
+  <line x1="0" y1="-44" x2="0" y2="-32"/><line x1="0" y1="44" x2="0" y2="32"/><line x1="-44" y1="0" x2="-32" y2="0"/><line x1="44" y1="0" x2="32" y2="0"/>
+  <line x1="-31" y1="-31" x2="-23" y2="-23"/><line x1="31" y1="31" x2="23" y2="23"/><line x1="-31" y1="31" x2="-23" y2="23"/><line x1="31" y1="-31" x2="23" y2="-23"/></g>
+  <circle r="22" fill="#ffc83d"/></svg>
+  <div class="c-name" id="c-name">--</div>
+  <div class="c-date"><span id="c-date">--</span><small><span id="c-stale" style="color:#c00;font-weight:bold"></span> <span id="c-time">--</span> 更新<span id="c-peer"></span></small></div>
+  <button class="vbtn" onclick="setView('table')">表の表示</button><a id="c-setlink" href="/" aria-label="設定" style="color:#b6c2d1;text-decoration:none;margin-left:1.5vmin">⚙</a>
+</div>
+<div id="c-msg" class="hidden">カードのデータがまだありません（次の天気の取得のあとに出ます）</div>
+<div id="c-top"></div>
+<div id="c-periods" class="c-panel c-sect"></div>
+<div id="c-chart" class="c-panel c-sect"></div>
+</div>
 <script>
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function arrow(c) {
@@ -587,6 +654,75 @@ function card(c, isNow) {
     '<div class="row wind"><span style="color:' + c.wind_color + ';' + (c.wind >= 9 ? 'font-weight:bold' : '') + '">' +
     (c.wind == null ? '--' : c.wind) + '<span class="unit"> m/s</span></span>' + arrow(c) + '</div>';
 }
+// 表示の切り替え（今の表示／カード表示）。端末ごとに覚える（使えないブラウザでも動くように try）
+let view = 'table';
+try { view = (new URLSearchParams(location.search).get('view')) || localStorage.getItem('nowView') || 'table'; } catch (e) {}
+function setView(v) {
+  view = v === 'card' ? 'card' : 'table';
+  try { localStorage.setItem('nowView', view); } catch (e) {}
+  document.getElementById('vt').classList.toggle('hidden', view === 'card');
+  document.getElementById('vc').classList.toggle('hidden', view !== 'card');
+  document.body.classList.toggle('cardmode', view === 'card');
+}
+setView(view);
+function bigArrow(deg, color, cls, size) {
+  if (deg == null) return '';
+  return '<svg class="' + cls + '" ' + (size ? 'style="width:' + size + ';height:' + size + '" ' : '') +
+    'viewBox="-50 -50 100 100"><g transform="rotate(' + deg + ')"><polygon points="0,44 22,-44 0,-5 -22,-44" fill="' +
+    color + '" stroke="#000" stroke-width="5" stroke-linejoin="round"/></g></svg>';
+}
+function renderCard(d) {
+  const c = d.card;
+  document.getElementById('c-name').textContent = d.airport || '--';
+  document.getElementById('c-time').textContent = d.time || '--';
+  const pe = d.peer || {};
+  document.getElementById('c-peer').textContent = pe.parent || pe.child ? '　P' + (pe.parent || '?') + '／C' + (pe.child || '?') : '';
+  document.getElementById('c-msg').classList.toggle('hidden', !!c);
+  if (!c) { ['c-top', 'c-periods', 'c-chart'].forEach(id => document.getElementById(id).innerHTML = ''); return; }
+  document.getElementById('c-date').innerHTML = (c.tomorrow ? '<span class="c-tmr">明日</span>' : '') + esc(c.date_label);
+  const v = x => x == null ? '--' : x;
+  const diff = c.diff == null ? '' : '昨日比 <b style="color:' + (c.diff > 0 ? '#ef6c00' : c.diff < 0 ? '#2f6fc0' : '#6b7c93') + '">' +
+    (c.diff > 0 ? '+' : '') + c.diff + '℃</b>・';
+  const wm = c.wind_max;
+  document.getElementById('c-top').innerHTML =
+    '<div class="c-card c-panel c-temp"><span class="c-tag">最高気温</span><div class="c-body">' +
+      '<svg class="c-pic" viewBox="0 0 30 80" style="height:11vmin"><rect x="10" y="4" width="10" height="52" rx="5" fill="#fff" stroke="#e57373" stroke-width="2.5"/><rect x="13" y="26" width="4" height="32" fill="#e53935"/><circle cx="15" cy="64" r="11" fill="#e53935"/></svg>' +
+      '<div style="text-align:center"><div class="c-big" style="color:' + (c.max_color !== '#000000' ? c.max_color : '#ef6c00') + '">' + v(c.max) + '<span class="u">℃</span></div>' +
+      '<div class="c-sub">' + diff + '最低 ' + v(c.min) + '℃</div></div></div></div>' +
+    '<div class="c-card c-panel c-umb"><span class="c-tag">傘</span><div class="c-body">' +
+      '<svg class="c-pic" viewBox="0 0 80 80" style="height:11vmin"><path d="M8 40 Q40 2 72 40 Z" fill="#4a90e2"/><line x1="40" y1="40" x2="40" y2="66" stroke="#4a90e2" stroke-width="5"/><path d="M40 66 q0 8 -8 8" fill="none" stroke="#4a90e2" stroke-width="5" stroke-linecap="round"/>' +
+      (c.umbrella ? '' : '<line x1="12" y1="74" x2="70" y2="10" stroke="#2f6fc0" stroke-width="5" stroke-linecap="round"/>') + '</svg>' +
+      '<div class="c-word" style="color:' + (c.umbrella ? '#d0352b' : '#2f6fc0') + '">' + (c.umbrella ? 'いる' : 'いらない') + '</div></div></div>' +
+    '<div class="c-card c-panel c-wind"><span class="c-tag">風（' + (c.tomorrow ? '明日' : '今日') + 'の最大）</span><div class="c-body">' +
+      (wm ? bigArrow(wm.dir, wm.arrow_color, '', '10vmin') + '<div style="text-align:center"><div class="c-big" style="color:' + wm.color + '">' + wm.ms +
+        '<span class="u"> m/s</span></div><div class="c-sub">' + esc(wm.dir_name ? wm.dir_name + 'の風・' : '') + esc(wm.period) + '</div></div>' : '<div class="c-word">--</div>') +
+      '</div></div>';
+  document.getElementById('c-periods').innerHTML = '<span class="c-label">天気と降水確率・風</span><div class="c-cols">' +
+    c.periods.map(p => '<div class="c-col"><div class="p">' + esc(p.name) + ' ' + esc(p.range) + '</div>' +
+      '<img src="/icon/' + esc(p.icon) + '.png" alt="">' +
+      '<div class="pop">💧' + v(p.pop) + '<span class="u">%</span></div>' +
+      '<div class="w"><span style="color:' + p.wind_color + '">' + v(p.wind) + '</span><span class="u">m/s</span>' +
+      (p.calm ? '' : bigArrow(p.wind_dir, p.arrow_color, 'c-arrow')) + '</div></div>').join('') + '</div>';
+  const ps = c.periods.filter(p => p.tmax != null);
+  let h = '<span class="c-label">気温</span>';
+  if (ps.length) {
+    const hi = Math.max(...ps.map(p => p.tmax)), lo = Math.min(...ps.map(p => p.tmin));
+    const y = p => 72 - (hi === lo ? 0.5 : ((p.tmin + p.tmax) / 2 - lo) / (hi - lo)) * 42;   // 上 30%〜下 72%
+    const xs = [12.5, 37.5, 62.5, 87.5];
+    const pts = c.periods.map((p, i) => p.tmax == null ? null : [xs[i], y(p), p]).filter(Boolean);
+    h += '<svg viewBox="0 0 100 100" preserveAspectRatio="none"><defs><linearGradient id="cg" x1="0" x2="1">' +
+      '<stop offset="0" stop-color="#e3eefc"/><stop offset=".45" stop-color="#fff1df"/><stop offset=".75" stop-color="#fde9d4"/><stop offset="1" stop-color="#dfe6f7"/></linearGradient></defs>' +
+      '<rect width="100" height="100" fill="url(#cg)"/><polyline points="' + pts.map(q => q[0] + ',' + q[1]).join(' ') +
+      '" fill="none" stroke="#f08a24" stroke-width="5" vector-effect="non-scaling-stroke"/></svg>';
+    pts.forEach(q => {
+      const warm = q[2].tmax >= (hi + lo) / 2;
+      h += '<div class="c-pt" style="left:' + q[0] + '%;top:' + q[1] + '%;background:' + (warm ? '#f08a24' : '#4a90e2') + '"></div>' +
+        '<div class="c-pl" style="left:' + q[0] + '%;top:' + q[1] + '%">' + q[2].tmin + '〜' + q[2].tmax + '℃</div>';
+    });
+    c.periods.forEach((p, i) => { h += '<div class="c-px" style="left:' + xs[i] + '%">' + esc(p.name) + '</div>'; });
+  }
+  document.getElementById('c-chart').innerHTML = h;
+}
 async function load() {
   try {
     const r = await fetch('/now.json', {cache: 'no-store'});
@@ -600,6 +736,8 @@ async function load() {
     document.getElementById('peer').textContent = pe.parent || pe.child ? 'P' + (pe.parent || '?') + '／C' + (pe.child || '?') : '';
     const age = Date.now() / 1000 - d.written_at;
     document.getElementById('stale').textContent = age > 300 ? '更新が止まっています' : '';
+    document.getElementById('c-stale').textContent = age > 300 ? '更新が止まっています' : '';
+    try { renderCard(d); } catch (e) {}
     document.getElementById('now').innerHTML = card(d.now, true);
     document.getElementById('ahead').innerHTML = d.ahead.map(c => '<div class="card">' + card(c) + '</div>').join('');
     let a = '';
@@ -619,6 +757,7 @@ async function load() {
     ).join('');
   } catch (e) {
     document.getElementById('stale').textContent = 'サイネージにつながりません';
+    document.getElementById('c-stale').textContent = 'サイネージにつながりません';
   }
 }
 load();

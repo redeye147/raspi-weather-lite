@@ -923,7 +923,8 @@ def main():
         _write_now_page(_blended, now, aviation_state.get("metar"), _rain_now, cfg, airport_label,
                         warning_text, headline_text, thunder_info,
                         wbgt_level_info if _wbgt_today else None, sunrise_str, sunset_str, weather_updated_text,
-                        daily=daily)
+                        daily=daily, taf=taf_state.get("taf"),
+                        rain_hours=rainfc_result["hours"] if fetch_rainfcst.is_fresh(rainfc_result, now) else None)
         draw_weather(
             screen, width, height,
             _table_columns(_blended, now, aviation_state.get("metar"), _rain_now, icao=cfg.get("icao")),
@@ -1041,16 +1042,28 @@ def _with_forecasts(hourly, now, taf, rainfc=None):
 
 
 def _write_now_page(blended, now, metar, rain, cfg, airport_label, warning_text, headline_text, thunder,
-                    wbgt, sunrise, sunset, weather_updated, daily=None):
+                    wbgt, sunrise, sunset, weather_updated, daily=None, taf=None, rain_hours=None):
     """子機用のページ（/now）のデータを書き出す（now_page.py）。「今」から並べた列（案 C と同じ並び）を使う"""
     try:
         cols = table_cols.build(blended, now,
                                 observe=lambda h, cur: obs_now.apply_observation(h, cur, metar, rain=rain))
         now_page.write(now_page.build_payload(
             cols, now, airport_label, cfg.get("icao"), warning_text, headline_text, thunder, wbgt,
-            sunrise, sunset, weather_updated, daily=daily))
+            sunrise, sunset, weather_updated, daily=daily, card=_card_for_page(now, daily, taf, rain_hours)))
     except Exception as e:
         logging.info(f"子機用のページのデータを書けなかった: {e}")
+
+
+def _card_for_page(now, daily, taf, rain_hours):
+    """子機用ページのカード表示のデータ（失敗しても今の表示のページは出す）"""
+    try:
+        import fetch_weather as _fw
+        now_utc = datetime.datetime.now(datetime.timezone.utc)
+        return now_page.build_card(now, _fw.card_data(), daily,
+                                   taf if taf_mod.is_valid(taf, now_utc) else None, rain_hours)
+    except Exception as e:
+        logging.info(f"カード表示のデータを作れなかった: {e}")
+        return None
 
 
 def header_label(name, icao):

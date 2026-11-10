@@ -67,6 +67,36 @@ def weather_severity(code):
     return (rank, _INTENSITY.get(code, 0), code)
 
 
+# 子機用ページのカード表示（now_page.build_card）に使う、1 時間ごとの値と 6 時間ごとの降水確率（2026-11-11）
+#   hours：{"t": "2026-11-11T06:00", "temp", "wind"（m/s）, "dir", "wmo", "prec"}（その 1 時間。前の日から 3 日分）
+#   pops6：{"2026-11-11T06": 10}（気象庁の短期予報の 6 時間ごとの降水確率。区切りの始まりの時刻）
+CARD_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache", "card.json")
+CARD = {"hours": [], "pops6": {}}
+_card_lock = threading.Lock()
+
+
+def _save_card():
+    try:
+        os.makedirs(os.path.dirname(CARD_FILE), exist_ok=True)
+        with _card_lock:
+            safe_write.write_json(CARD_FILE, CARD)
+    except Exception as e:
+        logging.info(f"カード表示のデータを保存できなかった: {e}")
+
+
+def card_data():
+    """カード表示のデータ。取得前（起動直後）は前回保存した分"""
+    with _card_lock:
+        if CARD["hours"] or CARD["pops6"]:
+            return {"hours": list(CARD["hours"]), "pops6": dict(CARD["pops6"])}
+    try:
+        with open(CARD_FILE, encoding="utf-8") as f:
+            d = json.load(f)
+        return {"hours": d.get("hours") or [], "pops6": d.get("pops6") or {}}
+    except (OSError, ValueError):
+        return {"hours": [], "pops6": {}}
+
+
 PAST_DAYS = 1
 OPENMETEO_MODEL = "jma_seamless"   # 今日の天気（3 時間ごと）は気象庁の数値予報モデルを使う
 def fetch_weather_openmeteo(latitude=LATITUDE, longitude=LONGITUDE):
@@ -211,6 +241,23 @@ def fetch_weather_openmeteo(latitude=LATITUDE, longitude=LONGITUDE):
                 "wind": "--",
             })
 
+    # -------- カード表示用の 1 時間ごとの値（その 1 時間：気温・風はその時刻、天気・雨は次の時刻の値）----------
+    try:
+        def _at(t, h):
+            return (datetime.datetime.fromisoformat(t) + datetime.timedelta(hours=h)).strftime("%Y-%m-%dT%H:00")
+        card_hours = []
+        for t in h_times:
+            k = t[:13] + ":00"
+            w = H_WND.get(k)
+            card_hours.append({"t": k, "temp": H_TMP.get(k), "wind": round(w / 3.6, 1) if w is not None else None,
+                               "dir": H_WDIR.get(k), "wmo": H_WC.get(_at(k, 1)), "prec": H_PREC.get(_at(k, 1))})
+        if card_hours:
+            with _card_lock:
+                CARD["hours"] = card_hours
+            _save_card()
+    except Exception as e:
+        logging.info(f"カード表示の 1 時間ごとの値を作れなかった: {e}")
+
         # -------- daily ----------
     dd = data.get("daily", {}) or {}
     d_times = dd.get("time", []) or []
@@ -270,6 +317,7 @@ def fetch_weather_jma(office_code, target_area_codes):
     daily_pops = defaultdict(list)
     daily_temps = defaultdict(list)
     daily_rels = {}
+    pops6 = {}
 
     def _pick_area_index(area_list):
         code_to_idx = {a["area"]["code"]: i for i, a in enumerate(area_list)}
@@ -288,7 +336,13 @@ def fetch_weather_jma(office_code, target_area_codes):
             if not areas:
                 continue
             area = areas[_pick_area_index(areas)]
-            days = [iso_parse_datetime(t).astimezone(JST).date() for t in ts.get("timeDefines", [])]
+            dts = [iso_parse_datetime(t).astimezone(JST) for t in ts.get("timeDefines", [])]
+            days = [d.date() for d in dts]
+            if "pops" in area and "temps" not in area and "tempsMax" not in area and len(dts) > 1 \
+                    and (dts[1] - dts[0]) <= datetime.timedelta(hours=6):
+                for d, v in zip(dts, area.get("pops", [])):        # 短期予報の 6 時間ごとの降水確率（カード表示用）
+                    if v not in (None, "", "-"):
+                        pops6[d.strftime("%Y-%m-%dT%H")] = int(v)
 
             def values(key):
                 for d, v in zip(days, area.get(key, [])):
@@ -307,6 +361,10 @@ def fetch_weather_jma(office_code, target_area_codes):
 
     for block in arr:
         _collect(block)
+    if pops6:
+        with _card_lock:
+            CARD["pops6"] = pops6
+        _save_card()
 
     today = datetime.date.today()
     tomorrow = today + datetime.timedelta(days=1)

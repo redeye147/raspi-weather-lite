@@ -139,8 +139,121 @@ def week_day(d, today=None):
     }
 
 
+# ------------------------------------------------------------------ カード表示（2026-11-11）
+CARD_SWITCH_HOUR = 18          # 18 時からは翌日のカードを出す
+PERIODS = [("朝", "6〜12時", 6, 12), ("昼", "12〜18時", 12, 18), ("夕", "18〜24時", 18, 24), ("夜", "0〜6時（翌日）", 24, 30)]
+UMBRELLA_POP = 50              # 降水確率がこれ以上の区切りがあれば「傘 いる」
+UMBRELLA_MM = 1.0              # 降水短時間予報（無い区切りは 1 時間ごとの予報）でこれ以上の雨があれば「いる」
+_DIRS16 = ["北", "北北東", "北東", "東北東", "東", "東南東", "南東", "南南東",
+           "南", "南南西", "南西", "西南西", "西", "西北西", "北西", "北北西"]
+KT_TO_MS = 0.514444
+
+
+def dir_name(deg):
+    """風が吹いてくる方角（度）→「北北西」"""
+    if not isinstance(deg, (int, float)):
+        return ""
+    return _DIRS16[int((deg % 360 + 11.25) // 22.5) % 16]
+
+
+def _max_temp_of(daily, day):
+    for d in daily or []:
+        if d.get("date") == day.isoformat():
+            try:
+                a, b = str(d.get("temp", "")).split("/")
+                return int(a), int(b)
+            except ValueError:
+                return None
+    return None
+
+
+def build_card(now, card, daily=None, taf=None, rain_hours=None):
+    """子機用ページのカード表示のデータ。card = fetch_weather.card_data()（1 時間ごとの値と 6 時間ごとの降水確率）。
+    18 時からは翌日の分。朝 6〜12・昼 12〜18・夕 18〜24・夜 0〜6（翌日）。
+    風は空港の予報（TAF）が出ている時間は TAF（サイネージの表示と同じ。ふだんと「ときどき」の強い方）"""
+    import weather_draw
+    from table_cols import _worst
+    from config import CODE_MAPPING
+    hours = {h["t"]: h for h in (card or {}).get("hours") or [] if h.get("t")}
+    pops6 = (card or {}).get("pops6") or {}
+    if not hours:
+        return None
+    tomorrow = now.hour >= CARD_SWITCH_HOUR
+    day = now.date() + datetime.timedelta(days=1 if tomorrow else 0)
+    base = datetime.datetime.combine(day, datetime.time(0), tzinfo=now.tzinfo)
+
+    def hour(h):
+        t = base + datetime.timedelta(hours=h)
+        v = dict(hours.get(t.strftime("%Y-%m-%dT%H:00")) or {})
+        if not v:
+            return None
+        if taf is not None:
+            try:
+                import taf as taf_mod
+                s = taf_mod.slot_summary(taf, t, hours=1)
+            except Exception:
+                s = None
+            if s and s.get("wind_kt") is not None:
+                v["wind"], v["dir"] = round(s["wind_kt"] * KT_TO_MS, 1), s.get("wind_dir")
+        if rain_hours:
+            mm = rain_hours.get((t + datetime.timedelta(hours=1)).strftime("%Y-%m-%dT%H:00"))
+            if mm is not None:
+                v["rainfc"] = mm
+        return v
+
+    periods, any_wet = [], False
+    for name, label, h0, h1 in PERIODS:
+        hs = [x for x in (hour(h) for h in range(h0, h1)) if x]
+        temps = [x["temp"] for x in hs if isinstance(x.get("temp"), (int, float))]
+        winds = [x for x in hs if isinstance(x.get("wind"), (int, float))]
+        top = max(winds, key=lambda x: x["wind"]) if winds else None
+        codes = [CODE_MAPPING.get(x.get("wmo"), "999") for x in hs if x.get("wmo") is not None]
+        code = _worst(codes) if codes else "999"
+        if name in ("夕", "夜") and code.startswith("1") and len(code) == 3:
+            code = str(int(code) + 600)                      # 夜は晴れ系を月のアイコンに（サイネージと同じ）
+        start = (base + datetime.timedelta(hours=h0)).strftime("%Y-%m-%dT%H")
+        pop = pops6.get(start)
+        rain = [x.get("rainfc") if x.get("rainfc") is not None else (x.get("prec") if pop is None else None)
+                for x in hs]
+        wet = (pop is not None and pop >= UMBRELLA_POP) or any(r is not None and r >= UMBRELLA_MM for r in rain)
+        any_wet = any_wet or wet
+        w = round(top["wind"]) if top else None
+        periods.append({
+            "name": name, "range": label, "icon": code, "pop": pop,
+            "tmin": round(min(temps)) if temps else None, "tmax": round(max(temps)) if temps else None,
+            "wind": w, "wind_dir": top.get("dir") if top else None,
+            "wind_color": _rgb(weather_draw.wind_text_color(w)) if w is not None else "#000000",
+            "arrow_color": _rgb(weather_draw.wind_arrow_color(w)) if w is not None else "#888888",
+            "calm": w == 0,
+        })
+
+    def day_max(d0):
+        ts = [x["temp"] for x in (hours.get((d0 + datetime.timedelta(hours=h)).strftime("%Y-%m-%dT%H:00"))
+                                   for h in range(24)) if x and isinstance(x.get("temp"), (int, float))]
+        return max(ts) if len(ts) >= 20 else None, min(ts) if len(ts) >= 20 else None
+
+    hmax, hmin = day_max(base)
+    pmax, _ = day_max(base - datetime.timedelta(days=1))
+    official = _max_temp_of(daily, day)                      # 気象庁の最高・最低（明日以降は週間・短期予報）
+    tmax = official[0] if official else (round(hmax) if hmax is not None else None)
+    tmin = official[1] if official else (round(hmin) if hmin is not None else None)
+    day_periods = [p for p in periods[:3] if p["wind"] is not None]
+    wtop = max(day_periods, key=lambda p: p["wind"]) if day_periods else None
+    return {
+        "tomorrow": tomorrow,
+        "date_label": f"{day.month}/{day.day}（{WEEKDAYS[day.weekday()]}）",
+        "max": tmax, "min": tmin, "max_color": _max_temp_color(tmax),
+        "diff": round(hmax - pmax) if hmax is not None and pmax is not None else None,
+        "umbrella": any_wet,
+        "wind_max": ({"ms": wtop["wind"], "dir": wtop["wind_dir"], "dir_name": dir_name(wtop["wind_dir"]),
+                      "period": wtop["name"], "color": wtop["wind_color"], "arrow_color": wtop["arrow_color"]}
+                     if wtop else None),
+        "periods": periods,
+    }
+
+
 def build_payload(cols, now, airport_label, icao="", warning_text="", headline_text="",
-                  thunder=None, wbgt=None, sunrise="", sunset="", weather_updated="", daily=None):
+                  thunder=None, wbgt=None, sunrise="", sunset="", weather_updated="", daily=None, card=None):
     """cols：「今」から並んだ列（table_cols.build の結果）。daily：１週間の天気（fetch_weather の daily）"""
     week = [w for w in (week_day(d, now.date()) for d in (daily or [])) if w][:WEEK_DAYS]
     cols = list(cols or [])
@@ -163,6 +276,7 @@ def build_payload(cols, now, airport_label, icao="", warning_text="", headline_t
         "thunder": th,
         "wbgt": ({"label": wbgt.get("label"), "value": wbgt.get("value")} if wbgt else None),
         "week": week,
+        "card": card,
     }
 
 

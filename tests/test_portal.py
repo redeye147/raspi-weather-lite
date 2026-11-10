@@ -234,3 +234,10 @@ def test_verify_import_and_autocorrect_csv(client, monkeypatch):
     r = client.get("/diag/autocorrect.csv")
     assert r.status_code == 200 and b"2026-11-10,RJAA" in r.data
     assert "importRecords()" in client.get("/diag").get_data(as_text=True)
+
+
+def test_now_page_has_card_view_toggle(client):
+    """子機用のページは「今の表示」と「カード表示」を切り替えられる（端末ごとに覚える。?view=card でも開ける）"""
+    html = client.get("/now").get_data(as_text=True)
+    assert "setView('card')" in html and "setView('table')" in html and "renderCard(d)" in html
+    assert "localStorage" in html and "gap:" not in html            # iOS 12 でも間隔が崩れない書き方のまま
