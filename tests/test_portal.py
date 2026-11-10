@@ -237,7 +237,8 @@ def test_verify_import_and_autocorrect_csv(client, monkeypatch):
 
 
 def test_now_page_has_card_view_toggle(client):
-    """子機用のページは「今の表示」と「カード表示」を切り替えられる（端末ごとに覚える。?view=card でも開ける）"""
+    """子機用のページは「週間天気」と「今日の天気」（カード）を切り替えられる。初めては今日の天気。端末ごとに覚える"""
     html = client.get("/now").get_data(as_text=True)
     assert "setView('card')" in html and "setView('table')" in html and "renderCard(d)" in html
     assert "localStorage" in html and "gap:" not in html            # iOS 12 でも間隔が崩れない書き方のまま
+    assert "|| 'card'" in html and ">週間天気<" in html and ">今日の天気<" in html

@@ -487,7 +487,8 @@ NOW_HTML = """<!DOCTYPE html>
     font-family: -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; }
   /* 間隔は gap を使わず margin で空ける（flex の gap は iOS 14.5 から。iOS 12 の古い iPad でも同じ見た目に） */
   body { display: flex; flex-direction: column; padding: 2vmin 3vmin; }
-  /* 表示は 2 種類：今の表示（#vt）とカード表示（#vc）。右上のボタンで切り替え、端末ごとに覚える（2026-11-11） */
+  /* 表示は 2 種類：「週間天気」（今・先の時間・警報・1 週間。#vt）と「今日の天気」（カード表示。#vc）。
+     右上のボタンで切り替え、端末ごとに覚える。初めて開いたときは「今日の天気」（2026-11-11） */
   .view { flex: 1; display: flex; flex-direction: column; min-height: 0; }
   .view > * + * { margin-top: 1.5vmin; }
   .hidden { display: none !important; }
@@ -605,7 +606,7 @@ NOW_HTML = """<!DOCTYPE html>
   }
 </style></head><body>
 <div id="vt" class="view">
-<div id="head"><span><b id="airport">--</b></span><span><span id="stale"></span> <span id="time">--</span> 更新<span id="peer"></span><button class="vbtn" onclick="setView('card')">カード表示</button><a id="setlink" href="/" aria-label="設定">⚙</a></span></div>
+<div id="head"><span><b id="airport">--</b></span><span><span id="stale"></span> <span id="time">--</span> 更新<span id="peer"></span><button class="vbtn" id="to-card" onclick="setView('card')">今日の天気</button><a id="setlink" href="/" aria-label="設定">⚙</a></span></div>
 <div id="alerts"></div>
 <div id="main">
   <div id="now" class="card"></div>
@@ -622,7 +623,7 @@ NOW_HTML = """<!DOCTYPE html>
   <circle r="22" fill="#ffc83d"/></svg>
   <div class="c-name" id="c-name">--</div>
   <div class="c-date"><span id="c-date">--</span><small><span id="c-stale" style="color:#c00;font-weight:bold"></span> <span id="c-time">--</span> 更新<span id="c-peer"></span></small></div>
-  <button class="vbtn" onclick="setView('table')">表の表示</button><a id="c-setlink" href="/" aria-label="設定" style="color:#b6c2d1;text-decoration:none;margin-left:1.5vmin">⚙</a>
+  <button class="vbtn" onclick="setView('table')">週間天気</button><a id="c-setlink" href="/" aria-label="設定" style="color:#b6c2d1;text-decoration:none;margin-left:1.5vmin">⚙</a>
 </div>
 <div id="c-msg" class="hidden">カードのデータがまだありません（次の天気の取得のあとに出ます）</div>
 <div id="c-top"></div>
@@ -654,9 +655,9 @@ function card(c, isNow) {
     '<div class="row wind"><span style="color:' + c.wind_color + ';' + (c.wind >= 9 ? 'font-weight:bold' : '') + '">' +
     (c.wind == null ? '--' : c.wind) + '<span class="unit"> m/s</span></span>' + arrow(c) + '</div>';
 }
-// 表示の切り替え（今の表示／カード表示）。端末ごとに覚える（使えないブラウザでも動くように try）
-let view = 'table';
-try { view = (new URLSearchParams(location.search).get('view')) || localStorage.getItem('nowView') || 'table'; } catch (e) {}
+// 表示の切り替え（週間天気／今日の天気）。端末ごとに覚える。初めては「今日の天気」（使えないブラウザでも動くように try）
+let view = 'card';
+try { view = (new URLSearchParams(location.search).get('view')) || localStorage.getItem('nowView') || 'card'; } catch (e) {}
 function setView(v) {
   view = v === 'card' ? 'card' : 'table';
   try { localStorage.setItem('nowView', view); } catch (e) {}
@@ -680,6 +681,7 @@ function renderCard(d) {
   document.getElementById('c-msg').classList.toggle('hidden', !!c);
   if (!c) { ['c-top', 'c-periods', 'c-chart'].forEach(id => document.getElementById(id).innerHTML = ''); return; }
   document.getElementById('c-date').innerHTML = (c.tomorrow ? '<span class="c-tmr">明日</span>' : '') + esc(c.date_label);
+  document.getElementById('to-card').textContent = c.tomorrow ? '明日の天気' : '今日の天気';   // 18 時からは翌日の分
   const v = x => x == null ? '--' : x;
   const diff = c.diff == null ? '' : '昨日比 <b style="color:' + (c.diff > 0 ? '#ef6c00' : c.diff < 0 ? '#2f6fc0' : '#6b7c93') + '">' +
     (c.diff > 0 ? '+' : '') + c.diff + '℃</b>・';
