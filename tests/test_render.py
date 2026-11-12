@@ -98,13 +98,14 @@ def test_screen_fits(w, h, name):
 
 @pytest.mark.parametrize("w, h", RESOLUTIONS)
 def test_alert_and_fetch_error_are_drawn(w, h):
-    """熱中症アラートの赤帯と通信エラーの赤帯が実際に描かれている（白で上書きされていない）"""
+    """ヘッダーの下の赤い帯と、最上部の通信エラーの帯（2026-11-13 からオレンジ）が実際に描かれている（白で上書きされていない）"""
     arr = pygame.surfarray.array3d(_render(w, h, SCENARIOS["いちばん詰まる"]))
     red = (arr[:, :, 0] > 150) & (arr[:, :, 1] < 60) & (arr[:, :, 2] < 60)
     red_rows = np.where(red.sum(axis=0) > w * 0.8)[0]                # 横いっぱいの赤い行
-    assert len(red_rows) > 0
-    assert red_rows.min() < h * 0.05                                  # 最上部の通信エラーの帯
-    assert red_rows.max() > h * 0.25                                  # ヘッダーの下の熱中症アラートの帯
+    assert len(red_rows) > 0 and red_rows.max() > h * 0.25            # ヘッダーの下の赤い帯（雷接近）
+    orange = np.all(arr == (230, 110, 0), axis=2)
+    orange_rows = np.where(orange.sum(axis=0) > w * 0.8)[0]
+    assert len(orange_rows) > 0 and orange_rows.max() < h * 0.05      # 最上部の通信エラーの帯（オレンジ）
 
 
 @pytest.mark.parametrize("w, h", RESOLUTIONS)

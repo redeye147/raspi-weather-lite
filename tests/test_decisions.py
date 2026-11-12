@@ -316,3 +316,21 @@ def test_select_table_falls_back_when_times_missing():
     got = utils.select_table(old, now, "insert")
     assert got[0]["datetime"].hour == 6 and len(got) == 5
     assert utils.select_table([], now, "insert") == []
+
+
+
+def test_retry_delays_and_fetch_error_bar():
+    """取得に失敗したら 5 分・10 分・以後 30 分後に取り直す。帯は予報が 2 時間以上古いときだけ"""
+    import datetime as _d
+    from decisions import retry_delay_min, show_fetch_error
+    assert [retry_delay_min(n) for n in (1, 2, 3, 4, 10)] == [5, 10, 30, 30, 30]
+    now = _d.datetime(2026, 11, 13, 6, 46)
+    for n, minutes in ((1, 5), (2, 10), (3, 30)):
+        base = retry_base_after_failure(now, 1.0, n)
+        assert periodic_fetch_action(now + _d.timedelta(minutes=minutes - 1), base, False, 1.0) is None
+        assert periodic_fetch_action(now + _d.timedelta(minutes=minutes), base, False, 1.0) == "fetch"
+    t = 1_000_000.0
+    assert show_fetch_error(True, None, t) is False
+    assert show_fetch_error(False, t - 3600, t) is False          # 1 時間前の予報なら出さない
+    assert show_fetch_error(False, t - 2 * 3600, t) is True       # 2 時間以上なら出す
+    assert show_fetch_error(False, None, t) is True               # いつの予報か分からなければ出す

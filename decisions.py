@@ -107,9 +107,27 @@ def startup_refresh_action(now: datetime.datetime, now_ts: float, refresh_at, fe
     return None
 
 
-def retry_base_after_failure(now: datetime.datetime, interval_hours: float) -> datetime.datetime:
-    """取得失敗時の last_weather_update。定期取得の判断で 30 分後に再試行になるように戻す"""
-    return now - datetime.timedelta(hours=interval_hours) + datetime.timedelta(minutes=30)
+RETRY_DELAYS_MIN = (5, 10, 30)   # 天気の取得に失敗したら 5 分後・10 分後・以後 30 分ごとに取り直す（2026-11-13）
+FETCH_ERROR_AFTER_H = 2          # 予報がこの時間より古くなるまでは「通信エラー」の帯を出さない（2026-11-13）
+
+
+def retry_delay_min(failures: int) -> int:
+    """続けて failures 回失敗したときの、次の取り直しまでの分"""
+    return RETRY_DELAYS_MIN[min(max(failures, 1), len(RETRY_DELAYS_MIN)) - 1]
+
+
+def retry_base_after_failure(now: datetime.datetime, interval_hours: float, failures: int = 3) -> datetime.datetime:
+    """取得失敗時の last_weather_update。定期取得の判断で retry_delay_min(failures) 分後に再試行になるように戻す"""
+    return now - datetime.timedelta(hours=interval_hours) + datetime.timedelta(minutes=retry_delay_min(failures))
+
+
+def show_fetch_error(fetch_ok: bool, weather_ok_at, now_ts: float) -> bool:
+    """「通信エラー」の帯を出すか。取得に失敗していても、表示中の予報が 2 時間より新しければ出さない
+    （2026-11-13：Open-Meteo が 1〜2 時間返事をしなかったとき、1 時間前の予報なのに赤い帯が出て驚かせた）。
+    weather_ok_at：最後に天気を取れた時刻（time.time()。分からなければ None）"""
+    if fetch_ok:
+        return False
+    return weather_ok_at is None or now_ts - weather_ok_at >= FETCH_ERROR_AFTER_H * 3600
 
 
 AVIATION_START_HOUR = 6          # 航空気象の帯は 6 時台から表示（0:00 に帯を消す）

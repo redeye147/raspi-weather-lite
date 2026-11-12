@@ -58,7 +58,7 @@ from startup import boot_log, wait_time_sync, save_snapshot, load_snapshot
 from splash import run_splash
 import aviation
 from decisions import (decide_snapshot, should_fetch_2350, should_fetch_0600,
-                       periodic_fetch_action, retry_base_after_failure,
+                       periodic_fetch_action, retry_base_after_failure, retry_delay_min, show_fetch_error,
                        STARTUP_REFRESH_DELAY_S, startup_refresh_action,
                        aviation_fetch_due, aviation_band_visible,
                        wbgt_fetch_due, wbgt_off_season, wbgt_badge_visible)
@@ -425,6 +425,7 @@ def main():
         last_weather_update = datetime.datetime.fromtimestamp(weather_at, JST)
         weather_updated_text = snap_or("weather_updated_text", last_weather_update.strftime("天気更新 %H:%M"))
         fetch_ok = True
+        weather_ok_at = weather_at
         logging.info("前回スナップショットで即表示")
     else:
         # ── スプラッシュ表示 + 初回天気取得 ──────────────────
@@ -434,6 +435,7 @@ def main():
             airport_label, git_version_str, fetcher
         )
         weather_at = time.time()
+        weather_ok_at = weather_at
         last_weather_update = datetime.datetime.now(JST)
         weather_updated_text = last_weather_update.strftime("天気更新 %H:%M")
         if splash_hourly is not None:
@@ -442,9 +444,14 @@ def main():
         else:
             hourly, daily = (snap["hourly"], snap["daily"]) if snap and snap.get("hourly") else load_cached_weather()
             fetch_ok = False
+            # 表示している予報を取った時刻（通信エラーの帯を出すかに使う。分からなければ帯を出す）
+            weather_ok_at = (snap.get("weather_at") if snap and snap.get("hourly") else _cache_mtime()) or None
+            if weather_ok_at:
+                weather_at = weather_ok_at
             logging.warning("スプラッシュ中断またはフェッチ失敗: キャッシュ使用")
         boot_log(f"スプラッシュ終了（取得{'成功' if fetch_ok else '失敗'}）")
 
+    weather_fail_count = 0                          # 天気の取得に続けて失敗した回数（取り直しを 5 分・10 分・30 分後に）
     last_time_update_minute = -1
     xdotool = shutil.which("xdotool")
     needs_redraw = False
@@ -883,6 +890,8 @@ def main():
                     work_summary = build_work_summary(select_table(hourly))
                     fetch_ok = True
                     weather_at = time.time()
+                    weather_ok_at = weather_at
+                    weather_fail_count = 0
                     _save_state()
                     logging.info("天気取得完了")
                     try:
@@ -890,9 +899,11 @@ def main():
                     except Exception as e:
                         logging.info(f"予報の記録に失敗: {e}")
                 else:
-                    last_weather_update = retry_base_after_failure(now, args.interval_hours)
+                    weather_fail_count += 1
+                    last_weather_update = retry_base_after_failure(now, args.interval_hours, weather_fail_count)
                     fetch_ok = False
-                    logging.error("天気取得失敗またはタイムアウト。30分後に再試行")
+                    logging.error(f"天気取得失敗またはタイムアウト。{retry_delay_min(weather_fail_count)}分後に再試行"
+                                  f"（{weather_fail_count}回続けて失敗）")
                 needs_redraw = True
 
         if now.date() != _sunrise_date:
@@ -949,7 +960,7 @@ def main():
             wbgt_level_info=(wbgt_level_info if _wbgt_today else None),
             aviation_metar=(_metar if _show_aviation_band and aviation_band_visible(now)
                             and not aviation.is_stale(_metar, datetime.datetime.now(datetime.timezone.utc)) else None),
-            fetch_error=not fetch_ok,
+            fetch_error=show_fetch_error(fetch_ok, weather_ok_at, time.time()),
         )
 
         draw_conn_label(screen, height, conn_kind)
@@ -1063,6 +1074,15 @@ def _card_for_page(now, daily, taf, rain_hours):
                                    taf if taf_mod.is_valid(taf, now_utc) else None, rain_hours)
     except Exception as e:
         logging.info(f"カード表示のデータを作れなかった: {e}")
+        return None
+
+
+def _cache_mtime():
+    """天気のキャッシュ（weather_cache.json）を書いた時刻（無ければ None）"""
+    try:
+        from config import CACHE_FILE as _cf
+        return os.path.getmtime(_cf)
+    except OSError:
         return None
 
 

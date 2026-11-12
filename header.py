@@ -48,12 +48,13 @@ def draw_aviation_band(screen, x, y, w, h, base_font_path, metar):
 
 
 def draw_fetch_error_bar(screen, width, base_font_path):
-    """画面最上部の「通信エラー」帯（ヘッダーの白塗りの後に描く）"""
+    """画面最上部の「通信エラー」帯（ヘッダーの白塗りの後に描く）。予報が 2 時間以上取れていないときだけ
+    （decisions.show_fetch_error）。赤は雷・地震の帯と紛れるので、2026-11-13 からオレンジ"""
     err_surf = get_font(base_font_path, 20, bold=True).render(
-        "通信エラー：キャッシュデータを表示しています", True, (255, 255, 255)
+        "通信エラー：キャッシュデータを表示しています。（定期時間後に再試行）", True, (255, 255, 255)
     )
     bar_h = err_surf.get_height() + 8
-    pygame.draw.rect(screen, (180, 0, 0), (0, 0, width, bar_h))
+    pygame.draw.rect(screen, (230, 110, 0), (0, 0, width, bar_h))
     screen.blit(err_surf, ((width - err_surf.get_width()) // 2, 4))
 
 def get_ip_last3():
