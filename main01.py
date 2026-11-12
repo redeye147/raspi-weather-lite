@@ -1096,7 +1096,7 @@ def _table_columns(hourly, now, metar, rain=None, icao=None):
             return table_cols.build_insert(hourly, now, observe=observe, observed=observed)
         if _utils.TABLE_LAYOUT == "now":
             return table_cols.build(hourly, now, observe=observe)
-        return _with_observation(hourly, now, metar, rain)
+        return table_cols.mark_now(_with_observation(hourly, now, metar, rain), now)
     except Exception as e:                       # 並べ替えに失敗しても、予報のまま表示を続ける
         logging.warning(f"表の列の並べ替え失敗: {e}")
         return _with_observation(hourly, now, metar, rain)

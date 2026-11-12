@@ -79,6 +79,19 @@ def build_insert(hourly, now, observe=None, observed=None):
     return (list(hourly[:cur + 1]) + [now_item] + list(hourly[cur + 1:]))[:TABLE_COLS]
 
 
+def mark_now(cols, now):
+    """初めの形（fixed）：今の時間帯の列の見出しを「今 18:28」にした写し（2026-11-12。割り込み型と同じ書き方）。
+    この列の中身は空港の今の観測で置き換えてある。夜のアイコン・日の出の印は元の時刻（slot_hour）で決める"""
+    import weather_draw
+    cur = weather_draw.current_slot_index(cols, now)
+    if cur is None:
+        return cols
+    out = list(cols)
+    out[cur] = dict(out[cur], hour=f"今 {now:%H:%M}", slot_hour=out[cur].get("slot_hour") or out[cur].get("hour"),
+                    is_now=True)
+    return out
+
+
 def build(hourly, now, observe=None):
     """案 C：hourly（予報。3 時間ごと・今の時間帯から先）から、表に出す列を作る。
     observe(hourly, cur) は cur 列を観測で置き換えた写しを返す関数（obs_now.apply_observation など）"""

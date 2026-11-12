@@ -119,3 +119,17 @@ def test_past_column_without_recorded_direction_has_no_calm_mark():
     assert out["wind_dir"] is None and not out["wind_variable"]
     vrb = {"2026-10-30 18:00": dict(no_dir["2026-10-30 18:00"], wind_dir="VRB")}
     assert table_cols.fill_with_observed(item, vrb)["wind_variable"]
+
+
+def test_mark_now_labels_current_slot_in_fixed_layout():
+    """初めの形（fixed）でも、今の時間帯の列の見出しを「今 18:28」にする（元の時刻は slot_hour に残す）"""
+    import datetime as _d
+    import table_cols
+    from utils import JST
+    base = _d.datetime(2026, 11, 12, 6, tzinfo=JST)
+    cols = [{"datetime": base + _d.timedelta(hours=3 * i), "hour": f"{(6 + 3 * i) % 24:02d}"} for i in range(10)]
+    out = table_cols.mark_now(cols, _d.datetime(2026, 11, 12, 18, 28, tzinfo=JST))
+    cur = [c for c in out if c.get("is_now")]
+    assert len(cur) == 1 and cur[0]["hour"] == "今 18:28" and cur[0]["slot_hour"] == "18"
+    assert cols[4]["hour"] == "18" and len(out) == 10                  # 元の列は変えない・列の数も同じ
+    assert table_cols.mark_now(cols, _d.datetime(2026, 11, 14, 18, 0, tzinfo=JST)) == cols   # 表の外なら何もしない
