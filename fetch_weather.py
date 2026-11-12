@@ -12,6 +12,8 @@ import threading
 import time
 from collections import defaultdict
 
+import requests
+
 import safe_write
 
 from config import (
@@ -33,6 +35,10 @@ from utils import (
 )
 
 SESS = session_with_retry()
+# 気象庁モデルの 1 回目は、やり直しをしない（2026-11-13：Open-Meteo の気象庁モデルだけが 1 時間近く返事をせず、
+# 4 回 × 10 秒待つうちに天気の取得全体の 60 秒を超え、標準の予報に切り替える前に時間切れになった）
+SESS_QUICK = requests.Session()
+SESS_QUICK.headers.update(SESS.headers)
 
 
 # =====================================================
@@ -130,7 +136,8 @@ def fetch_weather_openmeteo(latitude=LATITUDE, longitude=LONGITUDE):
     # 気象庁の数値予報モデル（日本付近は約 5km・1 時間ごとの MSM、その先は GSM）を指定して取得。
     # 使えなかったとき（Open-Meteo 側の障害・仕様変更）は、指定なし（Open-Meteo の自動選択）で取り直す
     try:
-        r = SESS.get(url + f"&models={OPENMETEO_MODEL}", timeout=10)
+        quick = SESS_QUICK if SESS_QUICK is not None else SESS
+        r = quick.get(url + f"&models={OPENMETEO_MODEL}", timeout=10)     # やり直しなし・最大 10 秒
         r.raise_for_status()
         data = r.json()
         if not (data.get("hourly") or {}).get("time"):

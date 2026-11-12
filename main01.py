@@ -452,6 +452,11 @@ def main():
         boot_log(f"スプラッシュ終了（取得{'成功' if fetch_ok else '失敗'}）")
 
     weather_fail_count = 0                          # 天気の取得に続けて失敗した回数（取り直しを 5 分・10 分・30 分後に）
+    if not fetch_ok:
+        # 起動時（スプラッシュ）に取れなかったときも、5 分後から取り直す（今までは 1 時間後だった。2026-11-13 の 118）
+        weather_fail_count = 1
+        last_weather_update = retry_base_after_failure(datetime.datetime.now(JST), args.interval_hours, 1)
+        logging.info(f"起動時に天気を取れなかった。{retry_delay_min(1)}分後に再試行")
     last_time_update_minute = -1
     xdotool = shutil.which("xdotool")
     needs_redraw = False

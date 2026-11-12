@@ -26,3 +26,12 @@ def _card_file_in_tmp(tmp_path, monkeypatch):
     monkeypatch.setattr(fetch_weather, "CARD_FILE", str(tmp_path / "card.json"))
     monkeypatch.setattr(fetch_weather, "CARD", {"hours": [], "pops6": {}})
     yield
+
+
+@pytest.fixture(autouse=True)
+def _quick_session_is_patched_session(monkeypatch):
+    """気象庁モデルの 1 回目に使う「やり直しなし」の通信（fetch_weather.SESS_QUICK）を、テストでは SESS と同じにする
+    （テストは SESS.get を差し替えて通信の代わりにしているので）"""
+    import fetch_weather
+    monkeypatch.setattr(fetch_weather, "SESS_QUICK", None)
+    yield

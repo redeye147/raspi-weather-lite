@@ -336,3 +336,18 @@ def test_now_page_columns_have_date_and_weekday():
     assert p["today"] == "2026-11-04"
     assert (p["now"]["day_label"], p["now"]["weekday"]) == ("11/4", "水")
     assert (p["ahead"][0]["day"], p["ahead"][0]["weekday"]) == ("2026-11-05", "木")
+
+
+def test_jma_model_is_tried_once_without_retry_then_standard(monkeypatch, today_1013):
+    """気象庁モデルは「やり直しなし」の通信で 1 回だけ。だめならすぐ標準の予報（やり直しありの通信）で取る"""
+    calls = []
+
+    class Quick:
+        def get(self, url, timeout=10):
+            calls.append(("quick", "models=" in url))
+            raise fw.requests.exceptions.ReadTimeout("返事なし")
+
+    monkeypatch.setattr(fw, "SESS_QUICK", Quick())
+    monkeypatch.setattr(fw.SESS, "get", lambda url, timeout=10: (calls.append(("retry", "models=" in url)), _Resp(_om()))[1])
+    hourly, daily = fw.fetch_weather_openmeteo(35.7, 140.4)
+    assert calls == [("quick", True), ("retry", False)] and daily
