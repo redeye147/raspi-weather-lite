@@ -46,7 +46,7 @@ def item(result, code):
 def test_all_ok():
     r = dg.evaluate(healthy(), NOW)
     assert r["overall"] == "ok" and r["codes"] == []
-    assert [i["code"] for i in r["items"]] == ["SVC", "DSP", "NET", "NTP", "WX", "JMA", "WBGT", "AVI", "THN", "RAD", "RSF", "TAF", "TMP", "PWR", "SYS"]
+    assert [i["code"] for i in r["items"]] == ["SVC", "DSP", "NET", "NTP", "WX", "JMA", "WBGT", "AVI", "THN", "RAD", "RSF", "TAF", "MIR", "TMP", "PWR", "SYS"]
     assert item(r, "AVI")["value"].startswith("RJAA 12:00 観測")
     assert "注意 26.1℃" in item(r, "WBGT")["value"]
 

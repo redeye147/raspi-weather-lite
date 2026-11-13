@@ -263,3 +263,13 @@ def test_screen_image_marks_wanted(client, monkeypatch, tmp_path):
     (tmp_path / "screen.jpg").write_bytes(b"\xff\xd8\xff\xe0jpeg")
     r = client.get("/screen.jpg")
     assert r.status_code == 200 and r.headers["Content-Type"].startswith("image/jpeg")
+
+
+
+def test_now_page_reloads_itself_when_parent_updated(client, monkeypatch):
+    """子機用のページの版を now.json に付け、ページの版と違えば子機が自分で読み込み直す"""
+    import now_page
+    monkeypatch.setattr(now_page, "read", lambda path=None: {"now": None, "ahead": [], "week": []})
+    ver = client.get("/now.json").get_json()["page_ver"]
+    html = client.get("/now").get_data(as_text=True)
+    assert len(ver) == 8 and f"const PAGE_VER = '{ver}'" in html and "location.reload()" in html

@@ -441,6 +441,33 @@ def _accuracy(icao=None):
     return lines
 
 
+def _mirror_item(now_ts=None):
+    """子機用のページの「サイネージと同じ画面」の画像（mirror.py）。見ている子機がいるときだけ 1 分ごとに作る"""
+    import time as _t
+    import mirror
+    now_ts = now_ts or _t.time()
+    try:
+        made = os.path.getmtime(mirror.SCREEN_FILE)
+    except OSError:
+        made = None
+    try:
+        wanted = os.path.getmtime(mirror.WANT_FILE)
+    except OSError:
+        wanted = None
+    viewing = wanted is not None and now_ts - wanted <= mirror.WANT_S
+    if made is None:
+        return _item("MIR", "子機用の画面", INFO, "画像なし（サイネージと同じ画面を見ている子機なし）" if not viewing
+                     else "画像を準備中", "見ている子機がいるときだけ 1 分ごとに作る")
+    when = _t.strftime("%m/%d %H:%M", _t.localtime(made))
+    if viewing:
+        late = now_ts - made > 180                     # 見られているのに 3 分以上新しくならない
+        return _item("MIR", "子機用の画面", WARN if late else OK,
+                     f"画像 {when} 作成（{_ago(now_ts - made)}前）・見ている子機あり",
+                     "1 分ごとに新しくなるはずが止まっている（表示プログラムを確認）" if late else "")
+    return _item("MIR", "子機用の画面", INFO, f"画像 {when} 作成（{_ago(now_ts - made)}前）・今は見ている子機なし",
+                 "見ている子機がいるときだけ 1 分ごとに作る")
+
+
 def _rain_item(now, snap):
     """降水ナウキャスト（今の時間帯の降水量に使う雨雲レーダー）"""
     snap = snap or {}
@@ -571,6 +598,7 @@ def evaluate(info: dict, now: datetime.datetime) -> dict:
     items.append(_rain_item(now, snap))
     items.append(_rainfc_item(now, snap))
     items.append(_taf_item(now, snap, info.get("icao")))
+    items.append(_mirror_item())
 
     t = info.get("temp")
     if t is None:

@@ -690,6 +690,8 @@ function card(c, isNow) {
     '<div class="row wind"><span style="color:' + c.wind_color + ';' + (c.wind >= 9 ? 'font-weight:bold' : '') + '">' +
     (c.wind == null ? '--' : c.wind) + '<span class="unit"> m/s</span></span>' + arrow(c) + '</div>';
 }
+// 親の Pi が更新されてページの版が変わったら、自分で読み込み直す（古いページが動き続けないように。2026-11-14）
+const PAGE_VER = '__PAGE_VER__';
 // どの表示を出すかは親の Pi の設定（now.json の view）。?view=card|signage|table を付けると、その表示で開く（確認用）
 let forced = null;
 try { forced = new URLSearchParams(location.search).get('view'); } catch (e) {}
@@ -789,6 +791,7 @@ async function load() {
     document.getElementById('s-stale').textContent = age > 300 ? '更新が止まっています' : '';
     document.getElementById('s-time').textContent = d.screen_at || '--';
     document.getElementById('s-peer').textContent = pe.parent || pe.child ? '　P' + (pe.parent || '?') + '／C' + (pe.child || '?') : '';
+    if (d.page_ver && d.page_ver !== PAGE_VER) { location.reload(); return; }
     if (!forced) setView(d.view);
     if (view === 'signage') loadScreen();
     try { renderCard(d); } catch (e) {}
@@ -1075,7 +1078,13 @@ def status():
 @app.route("/now")
 def now_page_html():
     """子機用のページ（使っていないスマホ・タブレットで開いておく）。パスワード不要（画面と同じ天気の情報だけ）"""
-    return _no_cache(make_response(NOW_HTML))
+    return _no_cache(make_response(NOW_HTML.replace("__PAGE_VER__", _page_ver())))
+
+
+def _page_ver():
+    """子機用のページの版（ページの中身から作る）。親の Pi が更新されてページが変わったら、子機が自分で読み込み直す"""
+    import hashlib
+    return hashlib.md5(NOW_HTML.encode("utf-8")).hexdigest()[:8]
 
 
 @app.route("/now.json")
@@ -1086,6 +1095,7 @@ def now_page_data():
         return "まだデータがありません（表示プログラムが動いていない）", 503
     d["peer"] = _peer_numbers(request.remote_addr)
     d["view"] = _now_view()                       # 子機用のページの表示（設定画面で選んだもの）
+    d["page_ver"] = _page_ver()
     try:
         import mirror
         d["screen_at"] = mirror.screen_time()
