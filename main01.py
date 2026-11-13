@@ -11,6 +11,7 @@ main01.py
 
 import autocorrect
 import bootcheck
+import mirror
 import quake as quake_mod
 import sys
 import os
@@ -593,6 +594,10 @@ def main():
                 raise DisplayAttached("画面出力の状態が変わった（HDMI 接続？）→ 表示を始めるため作り直し")
         if _first_draw_logged:                 # 天気画面を 1 回描いてから（起動画面を撮らないように）
             save_requested_screenshot(screen)
+            try:                               # 子機用のページの「サイネージと同じ画面」（見られているときだけ・1 分に 1 回）
+                mirror.maybe_save(screen)
+            except Exception as e:
+                logging.info(f"子機用の画面の画像を作れなかった: {e}")
 
         if is_ap_mode_active():
             logging.warning("APモード検出: 設定画面を表示")

@@ -236,9 +236,30 @@ def test_verify_import_and_autocorrect_csv(client, monkeypatch):
     assert "importRecords()" in client.get("/diag").get_data(as_text=True)
 
 
-def test_now_page_has_card_view_toggle(client):
-    """子機用のページは「週間天気」と「今日の天気」（カード）を切り替えられる。初めては今日の天気。端末ごとに覚える"""
+def test_now_page_view_is_chosen_in_settings(client, monkeypatch, tmp_path):
+    """子機用のページの表示（今日の天気・サイネージと同じ画面・週間天気）は設定画面で選ぶ。初期値は今日の天気。
+    子機のページには切り替えボタンが無い（⚙ だけ）"""
+    import now_page
+    saved = {}
+    monkeypatch.setattr(wp, "_load_config", lambda: dict(saved))
+    monkeypatch.setattr(wp, "_save_config", lambda u: saved.update(u))
+    monkeypatch.setattr(now_page, "read", lambda path=None: {"now": None, "ahead": [], "week": []})
+    assert client.get("/now.json").get_json()["view"] == "card"
+    assert client.post("/save-now-view", json={"now_view": "signage"}).status_code == 200 and saved["now_view"] == "signage"
+    assert client.get("/now.json").get_json()["view"] == "signage"
+    assert client.post("/save-now-view", json={"now_view": "x"}).status_code == 400
     html = client.get("/now").get_data(as_text=True)
-    assert "setView('card')" in html and "setView('table')" in html and "renderCard(d)" in html
-    assert "localStorage" in html and "gap:" not in html            # iOS 12 でも間隔が崩れない書き方のまま
-    assert "|| 'card'" in html and ">週間天気<" in html and ">今日の天気<" in html
+    assert "setView(d.view)" in html and "localStorage" not in html and "vbtn" not in html and 'aria-label="設定"' in html
+    assert "gap:" not in html
+    assert 'id="now-view"' in client.get("/").get_data(as_text=True)
+
+
+def test_screen_image_marks_wanted(client, monkeypatch, tmp_path):
+    """サイネージと同じ画面の画像：読まれたら「見られている」印。まだ無ければ 503"""
+    import mirror
+    monkeypatch.setattr(mirror, "SCREEN_FILE", str(tmp_path / "screen.jpg"))
+    monkeypatch.setattr(mirror, "WANT_FILE", str(tmp_path / "wanted"))
+    assert client.get("/screen.jpg").status_code == 503 and (tmp_path / "wanted").exists()
+    (tmp_path / "screen.jpg").write_bytes(b"\xff\xd8\xff\xe0jpeg")
+    r = client.get("/screen.jpg")
+    assert r.status_code == 200 and r.headers["Content-Type"].startswith("image/jpeg")

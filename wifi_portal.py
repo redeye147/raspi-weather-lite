@@ -212,6 +212,18 @@ HTML = """<!DOCTYPE html>
   <p id="layout-msg" class="msg"></p>
 </div>
 
+<div class="section-box">
+  <h3>📱 子機用のページの表示</h3>
+  <select id="now-view">
+    <option value="card">今日の天気（カード型。初期値）</option>
+    <option value="signage">サイネージと同じ画面（テレビの画面をそのまま。横置き向き）</option>
+    <option value="table">週間天気（今・先の時間・警報・雷・1 週間の天気）</option>
+  </select>
+  <button id="now-view-btn" onclick="saveNowView()">子機用のページの表示を保存</button>
+  <p id="now-view-msg" class="msg"></p>
+  <p style="font-size:13px;color:#aaa">この Pi の子機用のページ（QR コードから開くページ）を開いている、すべてのスマホ・タブレットがこの表示になります。開いている子機も 1 分以内に切り替わります。表示プログラムは再起動しません。子機のページの ⚙ から、この設定画面に来られます。</p>
+</div>
+
 <button id="wifi-open-btn" class="sub-btn" onclick="openWifi()">🔒 WiFi 設定（パスワードが必要）</button>
 <button class="sub-btn" onclick="openNow()">📱 子機用のページ（今の天気。スマホ・タブレットで開いておく）</button>
 <p id="now-url" class="msg" style="word-break:break-all"></p>
@@ -292,6 +304,7 @@ async function init() {
     }
     if (st.airport) document.getElementById('airport').value = st.airport;
     if (st.table_layout) document.getElementById('layout').value = st.table_layout;
+    if (st.now_view) document.getElementById('now-view').value = st.now_view;
     if (st.hostname) {
       const nameUrl = 'http://' + st.hostname + '.local:8080/now';
       document.getElementById('now-url').textContent =
@@ -319,6 +332,18 @@ async function saveAirport() {
 // 子機用のページは、今開いている設定画面と同じアドレス（QR の IP）で開く。
 // 名前（.local）は見つからない現場がある（2026-11-10 の 112：Android のスマホで開けなかった）ので、ボタンには使わない
 function openNow() { location.href = '/now'; }
+
+async function saveNowView() {
+  const btn = document.getElementById('now-view-btn');
+  btn.disabled = true;
+  try {
+    const r = await post('/save-now-view', {now_view: document.getElementById('now-view').value});
+    setMsg('now-view-msg', r.text, r.ok);
+  } catch(e) {
+    setMsg('now-view-msg', 'エラー: ' + e, false);
+  }
+  btn.disabled = false;
+}
 
 async function saveLayout() {
   const btn = document.getElementById('layout-btn');
@@ -487,14 +512,19 @@ NOW_HTML = """<!DOCTYPE html>
     font-family: -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; }
   /* 間隔は gap を使わず margin で空ける（flex の gap は iOS 14.5 から。iOS 12 の古い iPad でも同じ見た目に） */
   body { display: flex; flex-direction: column; padding: 2vmin 3vmin; }
-  /* 表示は 2 種類：「週間天気」（今・先の時間・警報・1 週間。#vt）と「今日の天気」（カード表示。#vc）。
-     右上のボタンで切り替え、端末ごとに覚える。初めて開いたときは「今日の天気」（2026-11-11） */
+  /* 表示は 3 種類：「今日の天気」（カード表示。#vc。初期値）・「サイネージと同じ画面」（#vs）・「週間天気」（#vt）。
+     どれを出すかは親の Pi の設定画面で選ぶ（now.json の view。2026-11-13。子機のページでは切り替えない） */
   .view { flex: 1; display: flex; flex-direction: column; min-height: 0; }
   .view > * + * { margin-top: 1.5vmin; }
   .hidden { display: none !important; }
-  .vbtn { font-size: 0.7em; color: #888; border: 1px solid #ccc; border-radius: 1vmin; padding: 0.2vmin 1.2vmin;
-    margin-left: 1.5vmin; background: transparent; font-family: inherit; }
   body.cardmode { background: #eef4fb; color: #1f2d3d; }
+  body.sigmode { background: #000; padding: 0; }
+  #vs { align-items: center; justify-content: center; position: relative; }
+  #scr { max-width: 100%; max-height: 100%; display: block; }
+  #s-bar { position: fixed; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-between; align-items: center;
+    color: #777; font-size: 1.8vmin; padding: 0.8vmin 1.6vmin; margin: 0; }
+  #s-bar a { color: #666; text-decoration: none; font-size: 2.4vmin; }
+  #s-msg { color: #aaa; font-size: 3vmin; }
   .c-panel { background: #fff; border-radius: 2vmin; box-shadow: 0 0.3vmin 1vmin rgba(40,80,140,.12); border: 1px solid #d6e4f5; }
   #c-head { display: flex; align-items: center; padding: 1.2vmin 2.5vmin; }
   #c-head .c-name { flex: 1; text-align: center; font-size: 5.6vmin; font-weight: 800; color: #1e3a6e; }
@@ -606,7 +636,7 @@ NOW_HTML = """<!DOCTYPE html>
   }
 </style></head><body>
 <div id="vt" class="view">
-<div id="head"><span><b id="airport">--</b></span><span><span id="stale"></span> <span id="time">--</span> 更新<span id="peer"></span><button class="vbtn" id="to-card" onclick="setView('card')">今日の天気</button><a id="setlink" href="/" aria-label="設定">⚙</a></span></div>
+<div id="head"><span><b id="airport">--</b></span><span><span id="stale"></span> <span id="time">--</span> 更新<span id="peer"></span><a id="setlink" href="/" aria-label="設定">⚙</a></span></div>
 <div id="alerts"></div>
 <div id="main">
   <div id="now" class="card"></div>
@@ -623,12 +653,17 @@ NOW_HTML = """<!DOCTYPE html>
   <circle r="22" fill="#ffc83d"/></svg>
   <div class="c-name" id="c-name">--</div>
   <div class="c-date"><span id="c-date">--</span><small><span id="c-stale" style="color:#c00;font-weight:bold"></span> <span id="c-time">--</span> 更新<span id="c-peer"></span></small></div>
-  <button class="vbtn" onclick="setView('table')">週間天気</button><a id="c-setlink" href="/" aria-label="設定" style="color:#b6c2d1;text-decoration:none;margin-left:1.5vmin">⚙</a>
+  <a id="c-setlink" href="/" aria-label="設定" style="color:#b6c2d1;text-decoration:none;margin-left:1.5vmin">⚙</a>
 </div>
 <div id="c-msg" class="hidden">カードのデータがまだありません（次の天気の取得のあとに出ます）</div>
 <div id="c-top"></div>
 <div id="c-periods" class="c-panel c-sect"></div>
 <div id="c-chart" class="c-panel c-sect"></div>
+</div>
+<div id="vs" class="view hidden">
+  <img id="scr" alt="">
+  <div id="s-msg">サイネージの画面を準備しています…</div>
+  <div id="s-bar"><span><span id="s-stale" style="color:#e66"></span> サイネージと同じ画面（<span id="s-time">--</span> の画面・1 分ごとに更新）<span id="s-peer"></span></span><a href="/" aria-label="設定">⚙</a></div>
 </div>
 <script>
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
@@ -655,17 +690,30 @@ function card(c, isNow) {
     '<div class="row wind"><span style="color:' + c.wind_color + ';' + (c.wind >= 9 ? 'font-weight:bold' : '') + '">' +
     (c.wind == null ? '--' : c.wind) + '<span class="unit"> m/s</span></span>' + arrow(c) + '</div>';
 }
-// 表示の切り替え（週間天気／今日の天気）。端末ごとに覚える。初めては「今日の天気」（使えないブラウザでも動くように try）
-let view = 'card';
-try { view = (new URLSearchParams(location.search).get('view')) || localStorage.getItem('nowView') || 'card'; } catch (e) {}
+// どの表示を出すかは親の Pi の設定（now.json の view）。?view=card|signage|table を付けると、その表示で開く（確認用）
+let forced = null;
+try { forced = new URLSearchParams(location.search).get('view'); } catch (e) {}
+let view = '';
 function setView(v) {
-  view = v === 'card' ? 'card' : 'table';
-  try { localStorage.setItem('nowView', view); } catch (e) {}
-  document.getElementById('vt').classList.toggle('hidden', view === 'card');
-  document.getElementById('vc').classList.toggle('hidden', view !== 'card');
-  document.body.classList.toggle('cardmode', view === 'card');
+  v = (v === 'signage' || v === 'table') ? v : 'card';
+  if (v === view) return;
+  view = v;
+  document.getElementById('vt').classList.toggle('hidden', v !== 'table');
+  document.getElementById('vc').classList.toggle('hidden', v !== 'card');
+  document.getElementById('vs').classList.toggle('hidden', v !== 'signage');
+  document.body.classList.toggle('cardmode', v === 'card');
+  document.body.classList.toggle('sigmode', v === 'signage');
+  if (v === 'signage') loadScreen();
 }
-setView(view);
+setView(forced || 'card');
+// サイネージと同じ画面：親の Pi が 1 分ごとに作る画像を読む。まだ無ければ 10 秒後にもう一度
+function loadScreen() {
+  const img = document.getElementById('scr');
+  img.onload = () => { document.getElementById('s-msg').classList.add('hidden'); img.classList.remove('hidden'); };
+  img.onerror = () => { document.getElementById('s-msg').classList.remove('hidden'); img.classList.add('hidden');
+                        setTimeout(() => { if (view === 'signage') loadScreen(); }, 10000); };
+  img.src = '/screen.jpg?t=' + Date.now();
+}
 function bigArrow(deg, color, cls, size) {
   if (deg == null) return '';
   return '<svg class="' + cls + '" ' + (size ? 'style="width:' + size + ';height:' + size + '" ' : '') +
@@ -681,7 +729,6 @@ function renderCard(d) {
   document.getElementById('c-msg').classList.toggle('hidden', !!c);
   if (!c) { ['c-top', 'c-periods', 'c-chart'].forEach(id => document.getElementById(id).innerHTML = ''); return; }
   document.getElementById('c-date').innerHTML = (c.tomorrow ? '<span class="c-tmr">明日</span>' : '') + esc(c.date_label);
-  document.getElementById('to-card').textContent = c.tomorrow ? '明日の天気' : '今日の天気';   // 18 時からは翌日の分
   const v = x => x == null ? '--' : x;
   const diff = c.diff == null ? '' : '昨日比 <b style="color:' + (c.diff > 0 ? '#ef6c00' : c.diff < 0 ? '#2f6fc0' : '#6b7c93') + '">' +
     (c.diff > 0 ? '+' : '') + c.diff + '℃</b>・';
@@ -739,6 +786,11 @@ async function load() {
     const age = Date.now() / 1000 - d.written_at;
     document.getElementById('stale').textContent = age > 300 ? '更新が止まっています' : '';
     document.getElementById('c-stale').textContent = age > 300 ? '更新が止まっています' : '';
+    document.getElementById('s-stale').textContent = age > 300 ? '更新が止まっています' : '';
+    document.getElementById('s-time').textContent = d.screen_at || '--';
+    document.getElementById('s-peer').textContent = pe.parent || pe.child ? '　P' + (pe.parent || '?') + '／C' + (pe.child || '?') : '';
+    if (!forced) setView(d.view);
+    if (view === 'signage') loadScreen();
     try { renderCard(d); } catch (e) {}
     document.getElementById('now').innerHTML = card(d.now, true);
     document.getElementById('ahead').innerHTML = d.ahead.map(c => '<div class="card">' + card(c) + '</div>').join('');
@@ -760,6 +812,7 @@ async function load() {
   } catch (e) {
     document.getElementById('stale').textContent = 'サイネージにつながりません';
     document.getElementById('c-stale').textContent = 'サイネージにつながりません';
+    document.getElementById('s-stale').textContent = 'サイネージにつながりません';
   }
 }
 load();
@@ -1014,6 +1067,7 @@ def status():
         "admin": bool(session.get("admin")),
         "airport": cfg.get("airport", "centrair"),
         "table_layout": cfg.get("table_layout", "fixed"),
+        "now_view": _now_view(cfg),
         "hostname": _hostname(),
     }))
 
@@ -1031,6 +1085,12 @@ def now_page_data():
     if d is None:
         return "まだデータがありません（表示プログラムが動いていない）", 503
     d["peer"] = _peer_numbers(request.remote_addr)
+    d["view"] = _now_view()                       # 子機用のページの表示（設定画面で選んだもの）
+    try:
+        import mirror
+        d["screen_at"] = mirror.screen_time()
+    except Exception:
+        d["screen_at"] = ""
     return _no_cache(jsonify(d))
 
 
@@ -1250,6 +1310,36 @@ def save_airport():
     _save_config({"airport": airport})
     subprocess.Popen(["bash", "-c", "sleep 3 && reboot"])
     return "空港を変更しました。Piが再起動します。しばらくお待ちください..."
+
+
+NOW_VIEWS = ("card", "signage", "table")
+
+
+def _now_view(cfg=None):
+    """子機用のページの表示（設定画面で選ぶ。初期値は今日の天気）"""
+    v = (cfg if cfg is not None else _load_config()).get("now_view", "card")
+    return v if v in NOW_VIEWS else "card"
+
+
+@app.route("/save-now-view", methods=["POST"])
+def save_now_view():
+    """子機用のページの表示（今日の天気／サイネージと同じ画面／週間天気）。表の形と同じくパスワードは不要。
+    表示プログラムは起動し直さない（子機のページが 1 分ごとに読み直すときに切り替わる）"""
+    v = str((request.get_json() or {}).get("now_view", "")).strip()
+    if v not in NOW_VIEWS:
+        return "表示の種類が正しくありません", 400
+    _save_config({"now_view": v})
+    return "子機用のページの表示を変更しました。開いている子機も 1 分以内に切り替わります。"
+
+
+@app.route("/screen.jpg")
+def screen_image():
+    """サイネージと同じ画面の画像（子機用のページ）。読まれたら「見られている」印を付け、表示プログラムが 1 分ごとに作る"""
+    import mirror
+    mirror.want()
+    if not os.path.exists(mirror.SCREEN_FILE):
+        return "画面の画像を準備しています（数十秒お待ちください）", 503
+    return _no_cache(send_file(mirror.SCREEN_FILE, mimetype=mirror.mimetype_of(mirror.SCREEN_FILE)))
 
 
 @app.route("/save-layout", methods=["POST"])
