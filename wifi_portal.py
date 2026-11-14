@@ -308,7 +308,7 @@ async function init() {
     if (st.hostname) {
       const nameUrl = 'http://' + st.hostname + '.local:8080/now';
       document.getElementById('now-url').textContent =
-        '名前で開く場合：' + nameUrl + '（ルーターによっては見つからないので、基本はサイネージの QR コードから開く）';
+        '名前で開く：' + nameUrl + '（現場が変わっても同じ URL。開けない現場ではサイネージの QR コードから）';
     }
     if (st.admin) showWifi();
   } catch(e) {

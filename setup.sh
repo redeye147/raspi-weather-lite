@@ -127,6 +127,9 @@ sudo systemctl enable watchdog > /dev/null 2>&1
 # HDMI の音声を切る（テレビによってはカーネルのメッセージが 10 秒ごとに出てログが増える）
 sudo bash "$REPO_DIR/wifi_setup/hdmi_noaudio.sh" "$cfg" || true
 
+# Pi の名前（○○.local）で引いたとき IPv4 の住所だけを返す（iPad が IPv6 でつなぎに行って開けなかった。2026-11-14）
+sudo bash "$REPO_DIR/wifi_setup/avahi_ipv4.sh" || true
+
 # ── 設定用テザリング（未登録の Pi だけ聞く）─────────────────
 # 未登録の WiFi 環境でもスマホのテザリングで設定できるよう、全台に setup-hotspot を登録しておく。
 # SSID・パスワードは公開リポジトリに置けないので、ここで入力してもらう（入力は画面に出ない）

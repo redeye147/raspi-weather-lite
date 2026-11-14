@@ -151,3 +151,30 @@ def test_config_json_not_tracked_and_update_leaves_it_alone():
     u = _read("update.sh")
     assert 'rm -f "$CFG"' not in u
     assert u.count('[ "$CFG_TRACKED" = 1 ] && [ -f "$CFG_BAK" ] && cp "$CFG_BAK" "$CFG"') == 3
+
+
+@pytest.mark.parametrize("script", ["update.sh", "setup.sh"])
+def test_scripts_make_avahi_ipv4_only(script):
+    assert 'wifi_setup/avahi_ipv4.sh"' in _read(script)
+
+
+@pytest.mark.parametrize("before, must", [
+    ("[server]\nuse-ipv4=yes\nuse-ipv6=yes\n\n[publish]\n#publish-aaaa-on-ipv4=yes\npublish-workstation=yes\n",
+     ["use-ipv6=no", "publish-aaaa-on-ipv4=no", "use-ipv4=yes", "publish-workstation=yes"]),
+    ("[server]\nuse-ipv4=yes\n\n[publish]\npublish-hinfo=no\n", ["use-ipv6=no", "publish-aaaa-on-ipv4=no"]),   # 行が無い
+    ("[server]\nuse-ipv6=no\n[publish]\npublish-aaaa-on-ipv4=no\n", ["use-ipv6=no", "publish-aaaa-on-ipv4=no"]),
+])
+def test_avahi_ipv4(tmp_path, before, must):
+    import subprocess
+    conf = tmp_path / "avahi-daemon.conf"
+    conf.write_text(before)
+    run = lambda: subprocess.run(["bash", os.path.join(REPO, "wifi_setup/avahi_ipv4.sh"), str(conf), "--no-restart"],
+                                 check=True, capture_output=True, text=True)
+    run()
+    text = conf.read_text()
+    for m in must:
+        assert m in text.splitlines(), (m, text)
+    assert "use-ipv6=yes" not in text
+    assert text.index("use-ipv6=no") < text.index("[publish]") < text.index("publish-aaaa-on-ipv4=no")
+    run()
+    assert conf.read_text() == text                                     # 2 回目は何も変えない
