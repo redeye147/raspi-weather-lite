@@ -1406,5 +1406,18 @@ def save():
     return "設定完了！Piが再起動します。しばらくお待ちください..."
 
 
+def serve_host() -> str:
+    """設定画面のサーバーが待つ住所。IPv6 が使えれば "::"（IPv4 と IPv6 の両方で待つ）、使えなければ "0.0.0.0"。
+    2026-11-14：名前（raspberrypi2.local）で開くと IPv6 の住所が返り、IPv4 だけで待っていたので接続を拒否された"""
+    import socket
+    try:
+        with socket.socket(socket.AF_INET6, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)    # IPv4 の接続も同じ口で受ける
+            s.bind(("::", 0))
+        return "::"
+    except (OSError, AttributeError):
+        return "0.0.0.0"
+
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080)
+    app.run(host=serve_host(), port=8080)

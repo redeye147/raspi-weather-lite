@@ -273,3 +273,23 @@ def test_now_page_reloads_itself_when_parent_updated(client, monkeypatch):
     ver = client.get("/now.json").get_json()["page_ver"]
     html = client.get("/now").get_data(as_text=True)
     assert len(ver) == 8 and f"const PAGE_VER = '{ver}'" in html and "location.reload()" in html
+
+
+def test_serve_host_listens_on_ipv6_when_available(monkeypatch):
+    """IPv6 が使えれば "::"（IPv4 と IPv6 の両方で待つ）、使えなければ "0.0.0.0"（名前で開くと IPv6 の住所が返るため）"""
+    import socket
+
+    class OK:
+        def __init__(self, *a): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def setsockopt(self, *a): pass
+        def bind(self, addr): pass
+
+    class NG(OK):
+        def bind(self, addr): raise OSError(97, "Address family not supported")
+
+    monkeypatch.setattr(socket, "socket", OK)
+    assert wp.serve_host() == "::"
+    monkeypatch.setattr(socket, "socket", NG)
+    assert wp.serve_host() == "0.0.0.0"
