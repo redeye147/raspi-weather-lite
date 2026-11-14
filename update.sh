@@ -34,6 +34,7 @@ APT_PKGS=(
     python3-qrcode
     python3-flask
     fonts-ipafont-gothic
+    avahi-utils
 )
 MISSING_APT=()
 for pkg in "${APT_PKGS[@]}"; do
@@ -133,6 +134,7 @@ echo -e "\n${YELLOW}[3/5] systemd サービスファイルを更新中...${NC}"
 chmod +x "$REPO_DIR/start.sh"
 sudo cp "$REPO_DIR/main01.service"      /etc/systemd/system/main01.service
 sudo cp "$REPO_DIR/wifi-portal.service" /etc/systemd/system/wifi-portal.service
+sudo cp "$REPO_DIR/tenki-alias.service" /etc/systemd/system/tenki-alias.service   # 共通の呼び名 tenki.local（子機用）
 # 旧方式（.profile / .bashrc からの main01.py 起動）を無効化し、systemd の main01.service に一本化
 for _f in /home/pi/.bashrc /home/pi/.xinitrc /home/pi/.profile /home/pi/.bash_profile; do
     [ -f "$_f" ] || continue
@@ -170,6 +172,8 @@ sudo journalctl --flush 2>/dev/null || true   # メモリにある今の起動�
 sudo systemctl daemon-reload
 sudo systemctl enable main01
 sudo systemctl enable wifi-portal
+sudo systemctl enable tenki-alias > /dev/null 2>&1
+sudo systemctl restart tenki-alias > /dev/null 2>&1 || true
 # .profile から pi ユーザーで起動していた旧インスタンスが画面を掴んでいると二重起動になるので止める
 pkill -u pi -f "raspi-weather-lite/main01.py" 2>/dev/null || true
 # 短時間に何度も更新・再起動すると StartLimitBurst（10分で5回）に達して起動できなくなるため記録を消す

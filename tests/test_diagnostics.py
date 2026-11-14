@@ -46,7 +46,7 @@ def item(result, code):
 def test_all_ok():
     r = dg.evaluate(healthy(), NOW)
     assert r["overall"] == "ok" and r["codes"] == []
-    assert [i["code"] for i in r["items"]] == ["SVC", "DSP", "NET", "NTP", "WX", "JMA", "WBGT", "AVI", "THN", "RAD", "RSF", "TAF", "MIR", "TMP", "PWR", "SYS"]
+    assert [i["code"] for i in r["items"]] == ["SVC", "DSP", "NET", "NTP", "WX", "JMA", "WBGT", "AVI", "THN", "RAD", "RSF", "TAF", "MIR", "MDN", "TMP", "PWR", "SYS"]
     assert item(r, "AVI")["value"].startswith("RJAA 12:00 観測")
     assert "注意 26.1℃" in item(r, "WBGT")["value"]
 
@@ -338,3 +338,23 @@ def test_taf_item():
     snap = dict(healthy()["snap"], taf_raw="TAF RJAA 022305Z 0300/0406 02008KT 9999 FEW020")
     it = item(dg.evaluate(healthy(snap=snap), NOW), "TAF")
     assert it["level"] == "bad" and "期間が終わっています" in it["detail"]
+
+
+def test_mdns_item():
+    """名前（MDN）：tenki.local をこの Pi が名乗っているか・ほかの Pi か・見つからないか"""
+    import types
+    def run_with(holder, mine="192.168.1.118 2408::1"):
+        def run(cmd, **k):
+            if cmd[0] == "hostname":
+                return types.SimpleNamespace(stdout=mine)
+            return types.SimpleNamespace(stdout=f"tenki.local\t{holder}\n" if holder else "")
+        return run
+    assert dg._mdns_item(run_with("192.168.1.118"))["level"] == "ok"
+    it = dg._mdns_item(run_with("192.168.1.119"))
+    assert it["level"] == "info" and "ほかの Pi" in it["value"]
+    assert "見つからない" in dg._mdns_item(run_with(""))["value"]
+    def boom(cmd, **k):
+        if cmd[0] == "hostname":
+            return types.SimpleNamespace(stdout="")
+        raise FileNotFoundError("avahi-resolve")
+    assert dg._mdns_item(boom)["level"] == "info"

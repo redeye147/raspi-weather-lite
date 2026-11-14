@@ -41,6 +41,7 @@ sudo apt install -y \
   python3-pil python3-qrcode python3-pytz \
   fonts-ipafont \
   network-manager git \
+  avahi-utils \
   watchdog
 # Trixie / Python 3.13 では PyPI の wheel が無くソースビルドで失敗しやすいため、apt に無い astral だけ pip で入れる
 # main01.service は root で動くので、pi のユーザー領域ではなくシステム全体に入れる
@@ -105,6 +106,10 @@ sudo cp "$REPO_DIR/wifi-portal.service" /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable wifi-portal
 sudo systemctl start wifi-portal
+# 共通の呼び名 tenki.local（子機はどの現場でも http://tenki.local:8080/now で開ける）
+sudo cp "$REPO_DIR/tenki-alias.service" /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now tenki-alias > /dev/null 2>&1 || true
 echo 'pi ALL=(ALL) NOPASSWD: /sbin/reboot' | sudo tee /etc/sudoers.d/pi-reboot > /dev/null
 
 # ── [6/6] watchdog ────────────────────────────────

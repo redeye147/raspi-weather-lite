@@ -306,9 +306,10 @@ async function init() {
     if (st.table_layout) document.getElementById('layout').value = st.table_layout;
     if (st.now_view) document.getElementById('now-view').value = st.now_view;
     if (st.hostname) {
-      const nameUrl = 'http://' + st.hostname + '.local:8080/now';
+      // 子機はどの現場でも共通の呼び名 tenki.local で開く（同じ WiFi に親が何台もいるときは、この Pi の名前で）
       document.getElementById('now-url').textContent =
-        '名前で開く：' + nameUrl + '（現場が変わっても同じ URL。開けない現場ではサイネージの QR コードから）';
+        '名前で開く：http://tenki.local:8080/now（どの現場でも同じ URL）／この Pi の名前：http://' + st.hostname +
+        '.local:8080/now（同じ WiFi に親が何台もいるとき）。開けない現場ではサイネージの QR コードから';
     }
     if (st.admin) showWifi();
   } catch(e) {

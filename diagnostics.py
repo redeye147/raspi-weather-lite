@@ -441,6 +441,39 @@ def _accuracy(icao=None):
     return lines
 
 
+ALIAS = "tenki.local"
+
+
+def _mdns_item(run=None):
+    """名前（mDNS）：この Pi の名前と、共通の呼び名 tenki.local をどの Pi が名乗っているか（2026-11-14）"""
+    import socket
+    import subprocess
+    run = run or subprocess.run
+    host = socket.gethostname().split(".")[0]
+    try:
+        mine = set(run(["hostname", "-I"], capture_output=True, text=True, timeout=3).stdout.split())
+    except Exception:
+        mine = set()
+    try:
+        out = run(["avahi-resolve", "-4", "-n", ALIAS], capture_output=True, text=True, timeout=4).stdout.split()
+        holder = out[1] if len(out) >= 2 else ""
+    except Exception:
+        holder = None
+    name = f"{host}.local"
+    if holder is None:
+        return _item("MDN", "名前", INFO, f"{name}（{ALIAS} は確認できません）", "avahi-utils が入っていない")
+    if holder and holder in mine:
+        return _item("MDN", "名前", OK, f"{name}・{ALIAS} はこの Pi（{holder}）",
+                     "子機は http://tenki.local:8080/now で開ける")
+    if holder:
+        return _item("MDN", "名前", INFO, f"{name}・{ALIAS} はほかの Pi（{holder}）",
+                     f"同じ WiFi にほかの親がいる。この Pi の子機は http://{name}:8080/now で開く")
+    lvl = WARN if host == "raspberrypi" else INFO
+    return _item("MDN", "名前", lvl, f"{name}・{ALIAS} を名乗っている Pi が見つからない",
+                 "初期の名前（raspberrypi）のまま。tenki-01〜06 に変える" if host == "raspberrypi"
+                 else "tenki-alias（共通の呼び名）が動いていない可能性")
+
+
 def _mirror_item(now_ts=None):
     """子機用のページの「サイネージと同じ画面」の画像（mirror.py）。見ている子機がいるときだけ 1 分ごとに作る"""
     import time as _t
@@ -599,6 +632,7 @@ def evaluate(info: dict, now: datetime.datetime) -> dict:
     items.append(_rainfc_item(now, snap))
     items.append(_taf_item(now, snap, info.get("icao")))
     items.append(_mirror_item())
+    items.append(_mdns_item())
 
     t = info.get("temp")
     if t is None:

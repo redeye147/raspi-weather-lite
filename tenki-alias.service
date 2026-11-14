@@ -1,0 +1,14 @@
+[Unit]
+Description=Weather Signage common name (tenki.local) for child devices
+After=avahi-daemon.service network.target
+Wants=avahi-daemon.service
+
+[Service]
+Type=simple
+User=root
+ExecStart=/bin/bash /home/pi/raspi-weather-lite/wifi_setup/mdns_alias.sh
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

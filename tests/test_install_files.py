@@ -178,3 +178,31 @@ def test_avahi_ipv4(tmp_path, before, must):
     assert text.index("use-ipv6=no") < text.index("[publish]") < text.index("publish-aaaa-on-ipv4=no")
     run()
     assert conf.read_text() == text                                     # 2 回目は何も変えない
+
+
+@pytest.mark.parametrize("script", ["update.sh", "setup.sh"])
+def test_scripts_install_tenki_alias(script):
+    s = _read(script)
+    assert "tenki-alias.service" in s and "avahi-utils" in s
+
+
+def test_mdns_alias_publishes_current_ipv4(tmp_path):
+    """共通の呼び名：今の IPv4 で tenki.local を名乗る（avahi-publish -a -R tenki.local <IP>）"""
+    import subprocess
+    import time
+    bin_ = tmp_path / "bin"
+    bin_.mkdir()
+    log = tmp_path / "published"
+    (bin_ / "ip").write_text("#!/bin/bash\necho '1.1.1.1 via 192.168.29.1 dev wlan0 src 192.168.29.56 uid 0'\n")
+    (bin_ / "avahi-publish").write_text(f"#!/bin/bash\necho \"$@\" >> {log}\nsleep 30\n")
+    for f in bin_.iterdir():
+        f.chmod(0o755)
+    env = dict(os.environ, PATH=f"{bin_}:{os.environ['PATH']}", MDNS_CHECK_S="1")
+    p = subprocess.Popen(["bash", os.path.join(REPO, "wifi_setup/mdns_alias.sh")], env=env,
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    time.sleep(2.5)
+    p.terminate()
+    out, _ = p.communicate(timeout=5)
+    assert "tenki.local を 192.168.29.56 で名乗ります" in out
+    assert log.read_text().strip().splitlines()[0] == "-a -R tenki.local 192.168.29.56"
+    assert len(log.read_text().strip().splitlines()) == 1             # 名乗り続けている間は名乗り直さない
