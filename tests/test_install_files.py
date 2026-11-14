@@ -206,3 +206,11 @@ def test_mdns_alias_publishes_current_ipv4(tmp_path):
     assert "tenki.local を 192.168.29.56 で名乗ります" in out
     assert log.read_text().strip().splitlines()[0] == "-a -R tenki.local 192.168.29.56"
     assert len(log.read_text().strip().splitlines()) == 1             # 名乗り続けている間は名乗り直さない
+
+
+def test_update_reexecs_itself_when_changed():
+    """update.sh が取ってきたコードで新しくなったら、新しい update.sh でやり直す（1 回だけ）"""
+    s = _read("update.sh")
+    assert 'SELF_SUM=$(md5sum "$REPO_DIR/update.sh"' in s
+    assert 'UPDATE_REEXEC=1 exec bash "$REPO_DIR/update.sh" "$@"' in s and '[ -z "$UPDATE_REEXEC" ]' in s
+    assert s.index("SELF_SUM=") < s.index("git pull --ff-only") < s.index("UPDATE_REEXEC=1 exec")

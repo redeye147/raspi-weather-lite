@@ -82,6 +82,8 @@ git diff HEAD --numstat | awk '$1=="0" && $2=="0" {print $3}' | while read -r f;
     git checkout HEAD -- "$f"
 done
 
+# 取ってくる前の update.sh の中身（取ってきて変わっていたら、新しい update.sh でやり直す。下の sync の後）
+SELF_SUM=$(md5sum "$REPO_DIR/update.sh" 2>/dev/null | cut -d' ' -f1)
 # ネットの一時的な不調（DNS 引けない等）は 10 秒おきに 3 回まで試す
 PULL_OUT=""
 for i in 1 2 3; do
@@ -110,6 +112,14 @@ if [ "$PULL_OUT" = "__fail__" ]; then
 fi
 [ "$CFG_TRACKED" = 1 ] && [ -f "$CFG_BAK" ] && cp "$CFG_BAK" "$CFG"
 sync    # 取ってきたコードと戻した設定を SD に書き込む（自動更新の直後に電源が切れても壊れないように）
+# update.sh そのものが新しくなっていたら、新しい update.sh で最初からやり直す（1 回だけ）。
+# 動いているのは取ってくる前の古い update.sh なので、新しく足した手順（例 2026-11-14 の tenki-alias.service）が
+# 次の更新まで実行されなかった
+if [ -z "$UPDATE_REEXEC" ] && [ -n "$SELF_SUM" ] && \
+   [ "$(md5sum "$REPO_DIR/update.sh" 2>/dev/null | cut -d' ' -f1)" != "$SELF_SUM" ]; then
+    echo "  update.sh が新しくなったので、新しい update.sh でやり直します"
+    UPDATE_REEXEC=1 exec bash "$REPO_DIR/update.sh" "$@"
+fi
 # 天気の取得間隔：以前の既定（2 時間）のままの Pi は 1 時間に（2026-10。気象庁モデルの新しい計算を早く反映）。
 # 2 時間以外に変えてある Pi はそのまま
 python3 - "$CFG" <<'PYEOF' || true
