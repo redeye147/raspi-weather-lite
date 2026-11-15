@@ -249,7 +249,7 @@ def test_now_page_view_is_chosen_in_settings(client, monkeypatch, tmp_path):
     assert client.get("/now.json").get_json()["view"] == "signage"
     assert client.post("/save-now-view", json={"now_view": "x"}).status_code == 400
     html = client.get("/now").get_data(as_text=True)
-    assert "setView(d.view)" in html and "localStorage" not in html and "vbtn" not in html and 'aria-label="設定"' in html
+    assert "setView(d.view)" in html and "nowView" not in html and "vbtn" not in html and 'aria-label="設定"' in html
     assert "gap:" not in html
     assert 'id="now-view"' in client.get("/").get_data(as_text=True)
 
@@ -293,3 +293,15 @@ def test_serve_host_listens_on_ipv6_when_available(monkeypatch):
     assert wp.serve_host() == "::"
     monkeypatch.setattr(socket, "socket", NG)
     assert wp.serve_host() == "0.0.0.0"
+
+
+def test_now_json_gives_parent_ip_and_allows_ip_access(client, monkeypatch):
+    """子機は親の IPv4 を覚えておき、名前で引けないときは IP で読む（now.json に parent_ip・どこからでも読める）"""
+    import now_page
+    monkeypatch.setattr(now_page, "read", lambda path=None: {"now": None, "ahead": [], "week": []})
+    r = client.get("/now.json", environ_base={"REMOTE_ADDR": "127.0.0.1"})
+    assert r.headers["Access-Control-Allow-Origin"] == "*" and r.get_json()["parent_ip"] == "127.0.0.1"
+    html = client.get("/now").get_data(as_text=True)
+    assert "localStorage.getItem('parentIp')" in html and "BASE + '/icon/'" in html and "visibilitychange" in html
+    assert "if (!BASE && d.page_ver" in html
+    assert wp._peer_numbers("::ffff:192.168.1.107")["parent_ip"].count(".") == 3

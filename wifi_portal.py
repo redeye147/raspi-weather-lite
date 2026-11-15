@@ -685,7 +685,7 @@ function card(c, isNow) {
   if (!c) return '';
   const pop = c.pop == null ? '--' : c.pop.toFixed(1);
   return dayLine(c, isNow) + '<div class="label">' + esc(c.label) + '</div>' +
-    '<img class="icon" src="/icon/' + esc(c.icon) + '.png" alt="">' +
+    '<img class="icon" src="' + BASE + '/icon/' + esc(c.icon) + '.png" alt="">' +
     '<div class="row"><span class="' + (c.pop_strong ? 'strong' : '') + '">' + pop + '</span><span class="unit"> mm/h</span></div>' +
     '<div class="row" style="color:' + c.temp_color + '">' + (c.temp == null ? '--' : c.temp) + '<span class="unit">℃</span></div>' +
     '<div class="row wind"><span style="color:' + c.wind_color + ';' + (c.wind >= 9 ? 'font-weight:bold' : '') + '">' +
@@ -715,7 +715,7 @@ function loadScreen() {
   img.onload = () => { document.getElementById('s-msg').classList.add('hidden'); img.classList.remove('hidden'); };
   img.onerror = () => { document.getElementById('s-msg').classList.remove('hidden'); img.classList.add('hidden');
                         setTimeout(() => { if (view === 'signage') loadScreen(); }, 10000); };
-  img.src = '/screen.jpg?t=' + Date.now();
+  img.src = BASE + '/screen.jpg?t=' + Date.now();
 }
 function bigArrow(deg, color, cls, size) {
   if (deg == null) return '';
@@ -751,7 +751,7 @@ function renderCard(d) {
       '</div></div>';
   document.getElementById('c-periods').innerHTML = '<span class="c-label">天気と降水確率・風</span><div class="c-cols">' +
     c.periods.map(p => '<div class="c-col"><div class="p">' + esc(p.name) + ' ' + esc(p.range) + '</div>' +
-      '<img src="/icon/' + esc(p.icon) + '.png" alt="">' +
+      '<img src="' + BASE + '/icon/' + esc(p.icon) + '.png" alt="">' +
       '<div class="pop">💧' + v(p.pop) + '<span class="u">%</span></div>' +
       '<div class="w"><span style="color:' + p.wind_color + '">' + v(p.wind) + '</span><span class="u">m/s</span>' +
       (p.calm ? '' : bigArrow(p.wind_dir, p.arrow_color, 'c-arrow')) + '</div></div>').join('') + '</div>';
@@ -775,11 +775,30 @@ function renderCard(d) {
   }
   document.getElementById('c-chart').innerHTML = h;
 }
-async function load() {
+// 名前（tenki.local など）で開いているとき、親の Pi の IPv4 を覚えておき、名前で引けなくなったら IP で読む
+// （2026-11-15：親の Pi の再起動の後、iPad が名前の答えを古いまま覚えていて、WiFi をオフ→オンするまで開けなかった）
+let BASE = '';                 // '' は今のページと同じ所。名前で引けないときは 'http://<覚えた IP>:<同じ番号>'
+let savedIp = '';
+try { savedIp = localStorage.getItem('parentIp') || ''; } catch (e) {}
+async function getNow() {
   try {
     const r = await fetch('/now.json', {cache: 'no-store'});
-    if (!r.ok) throw new Error(r.status);
-    const d = await r.json();
+    if (r.ok) { BASE = ''; return await r.json(); }
+  } catch (e) {}
+  if (savedIp && savedIp !== location.hostname) {
+    const base = 'http://' + savedIp + ':' + (location.port || '8080');
+    const r = await fetch(base + '/now.json', {cache: 'no-store'});
+    if (r.ok) { BASE = base; return await r.json(); }
+  }
+  throw new Error('つながらない');
+}
+async function load() {
+  try {
+    const d = await getNow();
+    if (!BASE && d.parent_ip && d.parent_ip !== savedIp) {
+      savedIp = d.parent_ip;
+      try { localStorage.setItem('parentIp', savedIp); } catch (e) {}
+    }
     document.getElementById('airport').textContent = d.airport + (d.icao ? '（' + d.icao + '）' : '');
     document.getElementById('time').textContent = d.time;
     today = d.today || '';
@@ -792,7 +811,8 @@ async function load() {
     document.getElementById('s-stale').textContent = age > 300 ? '更新が止まっています' : '';
     document.getElementById('s-time').textContent = d.screen_at || '--';
     document.getElementById('s-peer').textContent = pe.parent || pe.child ? '　P' + (pe.parent || '?') + '／C' + (pe.child || '?') : '';
-    if (d.page_ver && d.page_ver !== PAGE_VER) { location.reload(); return; }
+    // ページの読み込み直しは、名前でつながっているときだけ（IP で読んでいる間に読み込み直すと、ページごと開けなくなる）
+    if (!BASE && d.page_ver && d.page_ver !== PAGE_VER) { location.reload(); return; }
     if (!forced) setView(d.view);
     if (view === 'signage') loadScreen();
     try { renderCard(d); } catch (e) {}
@@ -808,7 +828,7 @@ async function load() {
     document.getElementById('wtitle').textContent = wk.length ? '1 週間の天気（降水確率・最高／最低気温。A・B・C は予報の確からしさ）' : '';
     document.getElementById('week').innerHTML = wk.map(w =>
       '<div class="day ' + w.weekend + '"><div class="d">' + esc(w.label) + '<span class="wd">（' + esc(w.weekday) + '）</span></div>' +
-      '<img src="/icon/' + esc(w.icon) + '.png" alt="">' +
+      '<img src="' + BASE + '/icon/' + esc(w.icon) + '.png" alt="">' +
       '<div class="p">' + (w.pop == null ? '--' : w.pop) + '%' + (w.rel ? '<span class="rel rel-' + w.rel + '">' + w.rel + '</span>' : '') + '</div>' +
       '<div class="t"><span style="color:' + w.tmax_color + (w.tmax >= 28 ? ';font-weight:bold' : '') + '">' +
       (w.tmax == null ? '--' : w.tmax) + '</span>／<span>' + (w.tmin == null ? '--' : w.tmin) + '</span>℃</div></div>'
@@ -821,6 +841,9 @@ async function load() {
 }
 load();
 setInterval(load, 60000);
+// スリープから戻ったら（朝ホームボタンを押したら）すぐ読み直す（次の 1 分を待たない）
+document.addEventListener('visibilitychange', function () { if (!document.hidden) load(); });
+window.addEventListener('pageshow', function () { load(); });
 </script></body></html>
 """
 
@@ -1102,7 +1125,10 @@ def now_page_data():
         d["screen_at"] = mirror.screen_time()
     except Exception:
         d["screen_at"] = ""
-    return _no_cache(jsonify(d))
+    d["parent_ip"] = d["peer"].get("parent_ip", "")  # 子機が覚えておく親の IPv4（名前で引けないときに使う）
+    resp = _no_cache(jsonify(d))
+    resp.headers["Access-Control-Allow-Origin"] = "*"  # 子機が IP アドレスで読みに来られるように（中身は画面と同じ天気だけ）
+    return resp
 
 
 def _ip_tail(addr) -> str:
@@ -1128,7 +1154,23 @@ def _peer_numbers(child_addr) -> dict:
             parent = s.getsockname()[0]
     except (OSError, ValueError):
         pass
-    return {"parent": _ip_tail(parent), "child": _ip_tail(child_addr), "host": _hostname()}
+    if ":" in parent and not parent.startswith("::ffff:"):
+        parent_ip = _own_ipv4()                    # 子機が IPv6 で来たときは、自分の IPv4 を別に調べる
+    else:
+        parent_ip = parent[7:] if parent.startswith("::ffff:") else parent
+    return {"parent": _ip_tail(parent_ip or parent), "child": _ip_tail(child_addr), "host": _hostname(),
+            "parent_ip": parent_ip}
+
+
+def _own_ipv4() -> str:
+    """この Pi の IPv4（外へ出るときの住所。外への道が無ければ空）"""
+    import socket
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("192.0.2.1", 9))            # 送りはしない（例示用の住所）
+            return s.getsockname()[0]
+    except OSError:
+        return ""
 
 
 @app.route("/icon/<name>.png")
