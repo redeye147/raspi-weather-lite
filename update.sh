@@ -52,12 +52,13 @@ fi
 # （pi のユーザー領域 ~/.local に入っているだけだと root からは見えず、起動失敗→再起動を繰り返す）
 if ! sudo python3 -c "import pytz" &>/dev/null; then
     echo "  pytz 未インストール → apt で導入"
-    sudo apt install -y python3-pytz
+    sudo apt install -y "$PYTZ_PKG"
 fi
 if ! sudo python3 -c "from astral.sun import sun" &>/dev/null; then
     echo "  astral 未インストール（root） → pip で導入"
-    sudo pip3 install "astral>=2.0" --prefer-binary --break-system-packages -q
+    sudo pip3 install "astral>=2.0" --prefer-binary $PIP_BSP -q
 fi
+ensure_pygame2
 echo -e "  ${GREEN}パッケージ確認完了${NC}"
 
 # ── [2/5] コード更新 ──────────────────────────────────
@@ -169,12 +170,12 @@ fi
       "$_f" || true
 done
 # 有線 LAN の経路優先度を WiFi より下げる（両方つながっていれば WiFi を使う）
-sudo cp "$REPO_DIR/wifi_setup/nm-wired-lower-priority.conf" /etc/NetworkManager/conf.d/98-wired-lower-priority.conf
+[ -d /etc/NetworkManager/conf.d ] && sudo cp "$REPO_DIR/wifi_setup/nm-wired-lower-priority.conf" /etc/NetworkManager/conf.d/98-wired-lower-priority.conf
 # 有線＋WiFi 同時接続時の「IP 重複」誤検知を防ぐ ARP 設定
 sudo cp "$REPO_DIR/wifi_setup/sysctl-arp.conf" /etc/sysctl.d/98-raspi-weather-arp.conf
 sudo sysctl -q -p /etc/sysctl.d/98-raspi-weather-arp.conf || true
 # WiFi の省電力を切る（Pi の内蔵 WiFi は省電力で不安定になることがある）。今の接続にもすぐ反映
-sudo cp "$REPO_DIR/wifi_setup/nm-wifi-powersave-off.conf" /etc/NetworkManager/conf.d/98-wifi-powersave-off.conf
+[ -d /etc/NetworkManager/conf.d ] && sudo cp "$REPO_DIR/wifi_setup/nm-wifi-powersave-off.conf" /etc/NetworkManager/conf.d/98-wifi-powersave-off.conf
 sudo iw dev wlan0 set power_save off 2>/dev/null || true
 # ログ（journal）を SD カードにも保存し、前回の起動の記録を後から見られるようにする（上限 50MB）
 sudo mkdir -p /var/log/journal /etc/systemd/journald.conf.d

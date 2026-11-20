@@ -28,7 +28,9 @@ _CLEAN = re.compile(
 def _time_of(line):
     """short-iso の 1 行の先頭の時刻（"2026-11-09T07:17:01+0900 raspi2w CRON[..]: ..."）"""
     try:
-        return datetime.datetime.fromisoformat(line.split(" ", 1)[0])
+        t = line.split(" ", 1)[0]
+        t = re.sub(r"([+-]\d\d)(\d\d)$", r"\1:\2", t)   # "+0900" → "+09:00"（Python 3.9 の fromisoformat 用）
+        return datetime.datetime.fromisoformat(t)
     except (ValueError, IndexError):
         return None
 

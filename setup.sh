@@ -36,17 +36,22 @@ echo -e "空港: ${GREEN}$AIRPORT${NC}"
 # ── [1/6] パッケージ ───────────────────────────────
 echo -e "\n${YELLOW}[1/6] パッケージをインストール中...${NC}"
 sudo apt update -qq
+# NetworkManager は、デスクトップの機械（Pi 4）にまだ無ければ入れない（Bullseye は dhcpcd で WiFi を管理していて、
+# 入れると今のネットワークの設定が変わり、現場サイネージがつながらなくなるおそれがある）
+NM_PKG=network-manager
+[ "$DESKTOP" = 1 ] && ! dpkg -s network-manager &> /dev/null && NM_PKG=""
 sudo apt install -y \
   python3-pygame python3-requests python3-psutil \
   python3-flask python3-pip \
-  python3-pil python3-qrcode python3-pytz \
+  python3-pil python3-qrcode "$PYTZ_PKG" \
   fonts-ipafont-gothic \
-  network-manager git \
+  $NM_PKG git \
   avahi-utils \
   watchdog
+ensure_pygame2
 # Trixie / Python 3.13 では PyPI の wheel が無くソースビルドで失敗しやすいため、apt に無い astral だけ pip で入れる
 # main01.service は root で動くので、pi のユーザー領域ではなくシステム全体に入れる
-sudo pip3 install "astral>=2.0" --prefer-binary --break-system-packages -q
+sudo pip3 install "astral>=2.0" --prefer-binary $PIP_BSP -q
 
 # ── [2/6] リポジトリ ───────────────────────────────
 echo -e "\n${YELLOW}[2/6] リポジトリをクローン中...${NC}"
@@ -73,7 +78,8 @@ EOF
 # ── [4/6] 自動起動（kmsdrm / X不要）─────────────────
 echo -e "\n${YELLOW}[4/6] 自動起動を設定中...${NC}"
 
-sudo raspi-config nonint do_boot_behaviour B2
+# コンソールに自動ログイン（デスクトップを起動しない）。デスクトップの機械（Pi 4 の 2 画面）では変えない
+[ "$DESKTOP" = 1 ] || sudo raspi-config nonint do_boot_behaviour B2
 sudo usermod -a -G video,render "$OWNER"
 
 # 旧方式（.profile / .bashrc からの main01.py 起動）を無効化し、systemd の main01.service に一本化
@@ -88,12 +94,12 @@ install_unit main01.service
 sudo systemctl daemon-reload
 sudo systemctl enable main01
 # 有線 LAN の経路優先度を WiFi より下げる（両方つながっていれば WiFi を使う）
-sudo cp "$REPO_DIR/wifi_setup/nm-wired-lower-priority.conf" /etc/NetworkManager/conf.d/98-wired-lower-priority.conf
+[ -d /etc/NetworkManager/conf.d ] && sudo cp "$REPO_DIR/wifi_setup/nm-wired-lower-priority.conf" /etc/NetworkManager/conf.d/98-wired-lower-priority.conf
 # 有線＋WiFi 同時接続時の「IP 重複」誤検知を防ぐ ARP 設定
 sudo cp "$REPO_DIR/wifi_setup/sysctl-arp.conf" /etc/sysctl.d/98-raspi-weather-arp.conf
 sudo sysctl -q -p /etc/sysctl.d/98-raspi-weather-arp.conf || true
 # WiFi の省電力を切る（Pi の内蔵 WiFi は省電力で不安定になることがある）。今の接続にもすぐ反映
-sudo cp "$REPO_DIR/wifi_setup/nm-wifi-powersave-off.conf" /etc/NetworkManager/conf.d/98-wifi-powersave-off.conf
+[ -d /etc/NetworkManager/conf.d ] && sudo cp "$REPO_DIR/wifi_setup/nm-wifi-powersave-off.conf" /etc/NetworkManager/conf.d/98-wifi-powersave-off.conf
 sudo iw dev wlan0 set power_save off 2>/dev/null || true
 # ログ（journal）を SD カードにも保存し、前回の起動の記録を後から見られるようにする（上限 50MB）
 sudo mkdir -p /var/log/journal /etc/systemd/journald.conf.d
