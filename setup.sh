@@ -40,7 +40,7 @@ sudo apt install -y \
   python3-pygame python3-requests python3-psutil \
   python3-flask python3-pip \
   python3-pil python3-qrcode python3-pytz \
-  fonts-ipafont \
+  fonts-ipafont-gothic \
   network-manager git \
   avahi-utils \
   watchdog
