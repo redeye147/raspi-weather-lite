@@ -320,6 +320,34 @@ WantedBy=multi-user.target
 
 ---
 
+## Raspberry Pi 4 で 2 画面（左：天気サイネージ・右：現場サイネージ）
+
+Raspberry Pi 4B の 2 つの HDMI に、**左＝天気サイネージ・右＝現場サイネージ（[genba_signage](https://github.com/redeye147/genba_signage)）**を出せます（2026-11-20）。
+
+**仕組み**：Pi 4 はデスクトップ（X11）で動かし、2 つの画面を横につなげて使う。天気サイネージは今の表示プログラムを**デスクトップのウィンドウで描く**（`--render` は自動で x11 になる）。画面が 2 つあれば **1 つ目の画面（左）いっぱい**に出す。現場サイネージの Chromium は 2 つ目の画面（右）に出す（genba_signage 側の `kiosk_switch.sh`）。
+
+**入れ方**（Pi 4 の現場サイネージのユーザー（例 `pi4b`）で）
+1. デスクトップを **X11** にしておく（現場サイネージは X11 で動いている。`sudo raspi-config` →「Advanced Options」→「Wayland」→「X11」）
+2. `git clone https://github.com/redeye147/raspi-weather-lite.git ~/raspi-weather-lite && cd ~/raspi-weather-lite && bash setup.sh`
+   - 置き場所とユーザーは決め打ちしない（`install_lib.sh`：リポジトリの場所・持ち主から決める）。サービスファイルの中の `/home/pi/raspi-weather-lite` も、入れるときに今の場所へ置き換える
+3. 家の WiFi で起動したときに自動で更新するなら、`auto_update_ssids.txt` に家の WiFi の名前を書く（Pi Zero と同じ）
+4. 再起動 → 左に天気サイネージ、右に現場サイネージ
+
+**設定**（`config.json`。書かなければ、画面が 2 つなら 1 つ目に出す）
+| 項目 | 例 | 意味 |
+|---|---|---|
+| `x11_display` | `0` | 何番目の画面いっぱいに出すか（0 = 1 つ目） |
+| `x11_geometry` | `"1920x1080+0+0"` | 位置と大きさを決めて、枠なしのウィンドウで出す（`x11_display` より優先） |
+
+**デスクトップの機械では変えないこと**（`systemctl get-default` が `graphical.target` なら、`update.sh`・`setup.sh` が自動で判断）
+- HDMI の音声は切らない（現場サイネージのテンキーのクリック音を HDMI で鳴らすため）
+- `.profile` の `startx` は触らない
+- 表示プログラムは、デスクトップ（X）が起動するのを最大 90 秒待ってから起動する（`start.sh`）
+
+**ポート**：天気サイネージ 8080（設定画面・子機用のページ）、現場サイネージ 8002・5000。ぶつからない
+
+**負担**：現場サイネージは GPU を使わない Chromium（SwiftShader）なので、天気の描画と合わせて CPU を使う。夏は本体温度に注意（天気サイネージの診断ページで見られる）。電源は Pi 4 用の USB-C（5V・3A）
+
 ## 使い方
 
 ### 天気画面
@@ -1155,6 +1183,7 @@ raspi-weather-lite/
 ├── wifi_setup/avahi_ipv4.sh  # Pi の名前（.local）で引いたとき IPv4 の住所だけを返す（iPad で開けるように）
 ├── tenki-alias.service  # 共通の呼び名 tenki.local を名乗る（wifi_setup/mdns_alias.sh）
 ├── mirror.py            # 子機用のページの「サイネージと同じ画面」：見られているときだけ画面を 1 分ごとに画像にする
+├── install_lib.sh       # update.sh・setup.sh 共通：置き場所・持ち主・デスクトップの機械か（Pi 4 の 2 画面）
 ├── bootcheck.py         # 前回は突然電源が切れて終了したかを起動時に調べ、診断ページの「直近の警告」に残す
 ├── quake.py             # 地震（気象庁の地震情報）：空港の市区町村の震度で帯（3 薄緑・4 オレンジ 1 時間／5 弱以上 紫 3 時間）
 ├── fetch_thunder.py     # 雷ナウキャスト（気象庁）：空港から 20km 以内の雷の距離・方向と帯の表示判断

@@ -24,7 +24,7 @@ app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Strict"
 DEFAULT_ADMIN_PASSWORD = "1048"
 _login_fail = {"count": 0, "until": 0.0}
 
-CONFIG_PATH = "/home/pi/raspi-weather-lite/config.json"
+CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
 
 
 # ==========================================

@@ -73,7 +73,7 @@ def test_update_auto_mode_never_asks_or_restarts_display():
         assert guard != -1, prompt
     restart = s.index("sudo systemctl restart main01")
     assert s.rfind('if [ "$AUTO" = 1 ]; then', 0, restart) > s.index("[3/5]")
-    assert "runuser -u pi -- /usr/bin/git" in s          # root で動いても git は pi として
+    assert 'runuser -u "$OWNER" -- /usr/bin/git' in s   # root で動いても git はリポジトリの持ち主（Pi Zero は pi）として
 
 
 def test_start_sh_auto_update_only_on_listed_wifi_once_per_boot():
@@ -214,3 +214,33 @@ def test_update_reexecs_itself_when_changed():
     assert 'SELF_SUM=$(md5sum "$REPO_DIR/update.sh"' in s
     assert 'UPDATE_REEXEC=1 exec bash "$REPO_DIR/update.sh" "$@"' in s and '[ -z "$UPDATE_REEXEC" ]' in s
     assert s.index("SELF_SUM=") < s.index("git pull --ff-only") < s.index("UPDATE_REEXEC=1 exec")
+
+
+def test_scripts_do_not_hardcode_home_pi():
+    """置き場所とユーザーを決め打ちにしない（Raspberry Pi 4 の 2 画面機は /home/pi4b など）"""
+    for name in ("update.sh", "setup.sh", "start.sh", "auto_update.sh"):
+        s = _read(name)
+        lines = [l.split("#")[0] for l in s.splitlines() if not l.lstrip().startswith("#")]
+        lines = [l for l in lines if "/home/pi" in l and "main01\\.py" not in l]
+        assert not lines, (name, lines)
+    assert "install_unit main01.service" in _read("update.sh") and "install_unit main01.service" in _read("setup.sh")
+    assert 'runuser -u "$OWNER"' in _read("update.sh")
+
+
+def test_install_lib_detects_repo_and_owner(tmp_path):
+    import shutil
+    import subprocess
+    d = tmp_path / "home" / "pi4b" / "raspi-weather-lite"
+    d.mkdir(parents=True)
+    shutil.copy(os.path.join(REPO, "install_lib.sh"), d / "install_lib.sh")
+    (d / "main01.service").write_text("ExecStart=/home/pi/raspi-weather-lite/start.sh\n")
+    out = subprocess.run(["bash", "-c", f". {d}/install_lib.sh; echo $REPO_DIR; echo $DESKTOP"],
+                         capture_output=True, text=True, check=True).stdout.split()
+    assert out[0] == str(d) and out[1] in ("0", "1")
+
+
+@pytest.mark.parametrize("script", ["update.sh", "setup.sh"])
+def test_desktop_machine_keeps_hdmi_audio_and_startx(script):
+    """デスクトップで動く機械（Pi 4 の 2 画面）では HDMI の音声と startx を触らない"""
+    s = _read(script)
+    assert '[ "$DESKTOP" = 1 ] || sudo bash "$REPO_DIR/wifi_setup/hdmi_noaudio.sh"' in s

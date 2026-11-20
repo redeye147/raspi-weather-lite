@@ -1,19 +1,39 @@
 #!/bin/bash
-REPO=/home/pi/raspi-weather-lite
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"     # この場所（Pi 4 の 2 画面機は /home/pi4b/... など）
+OWNER="$(stat -c %U "$REPO" 2>/dev/null || echo pi)"
+[ "$OWNER" = root ] && OWNER=pi
+OWNER_HOME="$(getent passwd "$OWNER" | cut -d: -f6)"
+[ -n "$OWNER_HOME" ] || OWNER_HOME="/home/$OWNER"
 
 # Display mode auto-detection:
 #   lightdm active  -> Pi OS Desktop (X11)
 #   X11 socket exists -> X11 (fallback)
 #   otherwise       -> Pi OS Lite (kmsdrm)
 
-if systemctl is-active --quiet lightdm 2>/dev/null; then
-    # デスクトップ環境: lightdm が完全起動するまで待つ
-    sleep 15
+if [ "$(systemctl get-default 2>/dev/null)" = "graphical.target" ] || systemctl is-active --quiet lightdm 2>/dev/null; then
+    # デスクトップ環境（Raspberry Pi 4 の 2 画面など）：X が起動するまで最大 90 秒待つ
+    for _ in $(seq 1 90); do
+        [ -S /tmp/.X11-unix/X0 ] && break
+        sleep 1
+    done
+    sleep 5                                    # デスクトップ（パネルなど）が落ち着くまで
     export DISPLAY=:0
-    export XAUTHORITY=/home/pi/.Xauthority
+    export XAUTHORITY="$OWNER_HOME/.Xauthority"
+    # どちらの画面に出すか（config.json の "x11_display"：0 = 1 つ目の画面・"x11_geometry"："1920x1080+0+0"）
+    eval "$(/usr/bin/python3 - "$REPO/config.json" <<'PYEOF'
+import json, shlex, sys
+try:
+    c = json.load(open(sys.argv[1]))
+except Exception:
+    c = {}
+for key, env in (("x11_display", "SIGNAGE_X11_DISPLAY"), ("x11_geometry", "SIGNAGE_X11_GEOMETRY")):
+    if c.get(key) not in (None, ""):
+        print(f"export {env}={shlex.quote(str(c[key]))}")
+PYEOF
+)"
 elif [ -S /tmp/.X11-unix/X0 ]; then
     export DISPLAY=:0
-    export XAUTHORITY=/home/pi/.Xauthority
+    export XAUTHORITY="$OWNER_HOME/.Xauthority"
 else
     # Pi OS Lite: KMS/DRM 直接描画
     export SDL_VIDEODRIVER=kmsdrm
@@ -43,4 +63,4 @@ if [ -s "$AUTO_SSIDS" ] && [ ! -e "$AUTO_MARK" ]; then
     wait "$splash" 2>/dev/null
 fi
 
-exec /usr/bin/python3 /home/pi/raspi-weather-lite/main01.py "$@"
+exec /usr/bin/python3 "$REPO/main01.py" "$@"

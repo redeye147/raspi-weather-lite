@@ -30,7 +30,8 @@ case "$airport_choice" in
 esac
 echo -e "空港: ${GREEN}$AIRPORT${NC}"
 
-REPO_DIR="/home/pi/raspi-weather-lite"
+# 置き場所・持ち主・デスクトップの機械か（install_lib.sh。Pi 4 の 2 画面機は /home/pi4b など）
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/install_lib.sh"
 
 # ── [1/6] パッケージ ───────────────────────────────
 echo -e "\n${YELLOW}[1/6] パッケージをインストール中...${NC}"
@@ -73,17 +74,17 @@ EOF
 echo -e "\n${YELLOW}[4/6] 自動起動を設定中...${NC}"
 
 sudo raspi-config nonint do_boot_behaviour B2
-sudo usermod -a -G video,render pi
+sudo usermod -a -G video,render "$OWNER"
 
 # 旧方式（.profile / .bashrc からの main01.py 起動）を無効化し、systemd の main01.service に一本化
-for _f in /home/pi/.bashrc /home/pi/.xinitrc /home/pi/.profile /home/pi/.bash_profile; do
+for _f in "$OWNER_HOME/.bashrc" "$OWNER_HOME/.xinitrc" "$OWNER_HOME/.profile" "$OWNER_HOME/.bash_profile"; do
     [ -f "$_f" ] || continue
     sed -i \
       's|^\([[:space:]]*\)\(exec \)\{0,1\}python3 \(/home/pi/raspi-weather-lite/\)\{0,1\}main01\.py|\1# &  # moved to systemd main01.service|g' \
       "$_f" || true
 done
 chmod +x "$REPO_DIR/start.sh"
-sudo cp "$REPO_DIR/main01.service" /etc/systemd/system/
+install_unit main01.service
 sudo systemctl daemon-reload
 sudo systemctl enable main01
 # 有線 LAN の経路優先度を WiFi より下げる（両方つながっていれば WiFi を使う）
@@ -102,15 +103,15 @@ sudo journalctl --flush 2>/dev/null || true   # メモリにある今の起動�
 
 # ── [5/6] WiFiポータル systemd ────────────────────
 echo -e "\n${YELLOW}[5/6] WiFiポータルをsystemdに登録中...${NC}"
-sudo cp "$REPO_DIR/wifi-portal.service" /etc/systemd/system/
+install_unit wifi-portal.service
 sudo systemctl daemon-reload
 sudo systemctl enable wifi-portal
 sudo systemctl start wifi-portal
 # 共通の呼び名 tenki.local（子機はどの現場でも http://tenki.local:8080/now で開ける）
-sudo cp "$REPO_DIR/tenki-alias.service" /etc/systemd/system/
+install_unit tenki-alias.service
 sudo systemctl daemon-reload
 sudo systemctl enable --now tenki-alias > /dev/null 2>&1 || true
-echo 'pi ALL=(ALL) NOPASSWD: /sbin/reboot' | sudo tee /etc/sudoers.d/pi-reboot > /dev/null
+echo "$OWNER ALL=(ALL) NOPASSWD: /sbin/reboot" | sudo tee /etc/sudoers.d/pi-reboot > /dev/null
 
 # ── [6/6] watchdog ────────────────────────────────
 echo -e "\n${YELLOW}[6/6] watchdogを設定中...${NC}"
@@ -130,7 +131,7 @@ EOF
 sudo systemctl enable watchdog > /dev/null 2>&1
 
 # HDMI の音声を切る（テレビによってはカーネルのメッセージが 10 秒ごとに出てログが増える）
-sudo bash "$REPO_DIR/wifi_setup/hdmi_noaudio.sh" "$cfg" || true
+[ "$DESKTOP" = 1 ] || sudo bash "$REPO_DIR/wifi_setup/hdmi_noaudio.sh" "$cfg" || true   # デスクトップの機械では切らない
 
 # Pi の名前（○○.local）で引いたとき IPv4 の住所だけを返す（iPad が IPv6 でつなぎに行って開けなかった。2026-11-14）
 sudo bash "$REPO_DIR/wifi_setup/avahi_ipv4.sh" || true

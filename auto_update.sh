@@ -5,7 +5,8 @@
 #   「WiFi の接続を確認しています」「最新の版に更新しています」の画面を出す（今していることを PHASE に書く）。
 #   （2026-10-25 に一度「裏で更新して表示を先に出す」にしたが、表示プログラムと同時に動いて空港の設定が
 #    既定に戻って見えるなど危ういので、この形に戻した）
-REPO=/home/pi/raspi-weather-lite
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"     # この場所（Pi 4 の 2 画面機は /home/pi4b/... など）
+OWNER="$(stat -c %U "$REPO" 2>/dev/null || echo pi)"
 AUTO_SSIDS="$REPO/auto_update_ssids.txt"
 PHASE=/run/raspi-weather/update_phase
 mkdir -p "$(dirname "$PHASE")"
@@ -24,7 +25,7 @@ mkdir -p "$REPO/cache"
 log="$REPO/cache/auto_update.log"
 echo "[auto-update] $(date '+%F %T') WiFi「$ssid」→ 最新に更新してから表示" | tee -a "$log"
 if timeout 600 bash "$REPO/update.sh" --auto >> "$log" 2>&1; then
-    echo "[auto-update] 完了 $(runuser -u pi -- git -C "$REPO" log -1 --format='%h %s' 2>/dev/null)" | tee -a "$log"
+    echo "[auto-update] 完了 $(runuser -u "$OWNER" -- git -C "$REPO" log -1 --format='%h %s' 2>/dev/null)" | tee -a "$log"
 else
     echo "[auto-update] 失敗（今の版で表示を続ける）。詳細: $log" | tee -a "$log"
 fi

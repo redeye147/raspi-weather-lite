@@ -5,18 +5,19 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-REPO_DIR="/home/pi/raspi-weather-lite"
+# 置き場所・持ち主・デスクトップの機械か（install_lib.sh。Pi 4 の 2 画面機は /home/pi4b など）
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/install_lib.sh"
 
 # --auto: 起動時の自動更新（start.sh から root で実行）。質問をせず、表示プログラムの再起動もしない
 #         （このあと start.sh がそのまま新しい版の表示プログラムを起動するので、再起動は 1 回で済む）
 AUTO=0
 [ "${1:-}" = "--auto" ] && AUTO=1
 
-# リポジトリは pi の持ち物。root で動くときも git は pi として実行する（root の git は「所有者が違う」で止まる・
+# リポジトリは持ち主（OWNER。Pi Zero は pi）の持ち物。root で動くときも git は持ち主として実行する（root の git は「所有者が違う」で止まる・
 # 更新したファイルが root の持ち物になって、あとで pi から更新できなくなる）
 git() {
     if [ "$(id -u)" = 0 ]; then
-        runuser -u pi -- /usr/bin/git "$@"
+        runuser -u "$OWNER" -- /usr/bin/git "$@"
     else
         command git "$@"
     fi
@@ -142,11 +143,11 @@ echo -e "  ${GREEN}完了${NC}"
 # ── [3/5] サービスファイル更新 ────────────────────────────
 echo -e "\n${YELLOW}[3/5] systemd サービスファイルを更新中...${NC}"
 chmod +x "$REPO_DIR/start.sh"
-sudo cp "$REPO_DIR/main01.service"      /etc/systemd/system/main01.service
-sudo cp "$REPO_DIR/wifi-portal.service" /etc/systemd/system/wifi-portal.service
-sudo cp "$REPO_DIR/tenki-alias.service" /etc/systemd/system/tenki-alias.service   # 共通の呼び名 tenki.local（子機用）
+install_unit main01.service
+install_unit wifi-portal.service
+install_unit tenki-alias.service   # 共通の呼び名 tenki.local（子機用）
 # 旧方式（.profile / .bashrc からの main01.py 起動）を無効化し、systemd の main01.service に一本化
-for _f in /home/pi/.bashrc /home/pi/.xinitrc /home/pi/.profile /home/pi/.bash_profile; do
+for _f in "$OWNER_HOME/.bashrc" "$OWNER_HOME/.xinitrc" "$OWNER_HOME/.profile" "$OWNER_HOME/.bash_profile"; do
     [ -f "$_f" ] || continue
     sed -i \
       's|^\([[:space:]]*\)\(exec \)\{0,1\}python3 \(/home/pi/raspi-weather-lite/\)\{0,1\}main01\.py|\1# &  # moved to systemd main01.service|g' \
@@ -159,7 +160,8 @@ if [ -f /etc/systemd/system/raspi-weather.service ]; then
 fi
 # 旧方式の startx（X サーバー起動）を無効化。X が画面を掴むと kmsdrm で直接描画できない。
 # if ブロックの中身が空になると .profile が構文エラーになるため、コメントではなく ':' に置き換える
-for _f in /home/pi/.profile /home/pi/.bash_profile; do
+# （デスクトップで動く機械（Pi 4 の 2 画面）では X を使うので触らない）
+[ "$DESKTOP" = 1 ] || for _f in "$OWNER_HOME/.profile" "$OWNER_HOME/.bash_profile"; do
     [ -f "$_f" ] || continue
     sed -i \
       -e 's|^\([[:space:]]*\)\(exec \)\{0,1\}startx\b.*$|\1:  # startx disabled: main01.service が直接描画（kmsdrm）|' \
@@ -238,7 +240,8 @@ else
 fi
 
 # HDMI の音声を切る（テレビによってはカーネルのメッセージが 10 秒ごとに出てログが増える。再起動後に有効）
-sudo bash "$REPO_DIR/wifi_setup/hdmi_noaudio.sh" /boot/firmware/config.txt || true
+# （デスクトップで動く機械では切らない：現場サイネージのテンキーのクリック音を HDMI で鳴らすため）
+[ "$DESKTOP" = 1 ] || sudo bash "$REPO_DIR/wifi_setup/hdmi_noaudio.sh" /boot/firmware/config.txt || true
 
 # Pi の名前（○○.local）で引いたとき IPv4 の住所だけを返す（iPad が IPv6 でつなぎに行って開けなかった。2026-11-14）
 sudo bash "$REPO_DIR/wifi_setup/avahi_ipv4.sh" || true

@@ -227,6 +227,45 @@ def display_attached() -> bool:
     return RENDER_MODE == 'headless' and display_signature() != _headless_signature
 
 
+def x11_target(env=None, desktop_sizes=None):
+    """X11（デスクトップ）でどこに出すか（2026-11-20。Raspberry Pi 4 の 2 画面で、左の画面に天気・右に現場サイネージ）。
+    戻り値 ("geometry", (w, h, x, y)) / ("display", index, (w, h)) / ("all", None)
+      SIGNAGE_X11_GEOMETRY="1920x1080+0+0" … その位置・大きさの枠なしウィンドウ
+      SIGNAGE_X11_DISPLAY=0 …… その番号の画面いっぱい（全画面）
+      どちらも無く画面が 2 つ以上 …… 1 つ目の画面いっぱい（つないだ画面全体に広がらないように）
+      画面が 1 つ …………………… 今までどおり（全画面）"""
+    import re
+    env = os.environ if env is None else env
+    g = re.fullmatch(r"\s*(\d+)x(\d+)\+(-?\d+)\+(-?\d+)\s*", env.get("SIGNAGE_X11_GEOMETRY", "") or "")
+    if g:
+        return ("geometry", tuple(int(v) for v in g.groups()))
+    sizes = list(desktop_sizes or [])
+    idx = env.get("SIGNAGE_X11_DISPLAY", "")
+    if str(idx).strip().isdigit() or len(sizes) >= 2:
+        i = int(idx) if str(idx).strip().isdigit() else 0
+        if 0 <= i < len(sizes):
+            return ("display", i, tuple(sizes[i]))
+    return ("all", None)
+
+
+def _x11_set_mode():
+    try:
+        sizes = pygame.display.get_desktop_sizes()
+    except Exception:
+        sizes = []
+    target = x11_target(desktop_sizes=sizes)
+    if target[0] == "geometry":
+        w, h, x, y = target[1]
+        os.environ["SDL_VIDEO_WINDOW_POS"] = f"{x},{y}"
+        print(f"[display] x11: {w}x{h} の枠なしウィンドウを {x},{y} に", flush=True)
+        return pygame.display.set_mode((w, h), pygame.NOFRAME)
+    if target[0] == "display":
+        i, size = target[1], target[2]
+        print(f"[display] x11: {i} 番目の画面（{size[0]}x{size[1]}）いっぱいに", flush=True)
+        return pygame.display.set_mode(size, pygame.FULLSCREEN, display=i)
+    return pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+
+
 def init_display(mode_request, allow_headless=False):
     """描画モードを決定して pygame の display を初期化。
     mode_request: 'auto' | 'kmsdrm' | 'fb0' | 'x11'
@@ -248,7 +287,7 @@ def init_display(mode_request, allow_headless=False):
     if mode_request == 'x11' or (mode_request == 'auto' and os.environ.get('DISPLAY')):
         pygame.init()
         pygame.mouse.set_visible(False)
-        screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+        screen = _x11_set_mode()
         RENDER_MODE = 'x11'
         print(f"[display] mode=x11 size={screen.get_size()}", flush=True)
         return screen
