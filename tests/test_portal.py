@@ -305,3 +305,61 @@ def test_now_json_gives_parent_ip_and_allows_ip_access(client, monkeypatch):
     assert "localStorage.getItem('parentIp')" in html and "BASE + '/icon/'" in html and "visibilitychange" in html
     assert "if (!BASE && d.page_ver" in html
     assert wp._peer_numbers("::ffff:192.168.1.107")["parent_ip"].count(".") == 3
+
+
+# ---------------------------------------------------------------- /now の ?view= 指定
+_NOW_HARNESS = r"""
+const fs = require('fs');
+const src = fs.readFileSync(process.argv[2], 'utf8');
+const search = process.argv[3];
+const els = {};
+function el(id) {
+  if (els[id]) return els[id];
+  const cls = new Set();
+  const o = { id, style: {}, dataset: {}, innerHTML: '', textContent: '', children: [],
+    classList: { add: c => cls.add(c), remove: c => cls.delete(c),
+      toggle: (c, on) => { if (on === undefined ? !cls.has(c) : on) cls.add(c); else cls.delete(c); },
+      contains: c => cls.has(c) },
+    addEventListener() {}, appendChild() {}, setAttribute() {} };
+  return (els[id] = o);
+}
+global.document = { getElementById: el, body: el('body'), documentElement: el('html'),
+  querySelector: () => el('q'), querySelectorAll: () => [], addEventListener() {}, title: '' };
+global.location = { search, hostname: 'tenki.local', port: '8080', reload() {} };
+global.localStorage = { getItem: () => null, setItem() {} };
+global.fetch = () => Promise.reject(new Error('stub'));
+global.setTimeout = () => 0;
+global.setInterval = () => 0;
+global.window = global;
+global.addEventListener = () => {};
+process.on('unhandledRejection', () => {});
+new Function(src)();
+const hidden = id => el(id).classList.contains('hidden');
+console.log(JSON.stringify({ vt: hidden('vt'), vc: hidden('vc'), vs: hidden('vs'), scr: el('scr').src || '' }));
+"""
+
+
+@pytest.mark.parametrize("query,shown", [
+    ("", "vc"),
+    ("?view=card", "vc"),
+    ("?view=table", "vt"),
+    ("?view=signage", "vs"),
+])
+def test_now_page_script_runs_with_forced_view(query, shown, tmp_path):
+    """?view=signage だと最初の setView が loadScreen → BASE を使うので、BASE の宣言が後ろにあると
+    ReferenceError（TDZ）でスクリプト全体が止まり、「準備しています…」のままになる"""
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node が無い環境")
+    import json
+    js = "\n".join(re.findall(r"<script>(.*?)</script>", wp.NOW_HTML.replace("__PAGE_VER__", "t"), re.S))
+    (tmp_path / "now.js").write_text(js, encoding="utf-8")
+    (tmp_path / "h.js").write_text(_NOW_HARNESS, encoding="utf-8")
+    r = subprocess.run([node, str(tmp_path / "h.js"), str(tmp_path / "now.js"), query],
+                       capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    state = json.loads(r.stdout.strip().splitlines()[-1])
+    for v in ("vt", "vc", "vs"):
+        assert state[v] == (v != shown), (v, state)
+    if shown == "vs":
+        assert state["scr"].startswith("/screen.jpg?t=")

@@ -691,6 +691,10 @@ function card(c, isNow) {
     '<div class="row wind"><span style="color:' + c.wind_color + ';' + (c.wind >= 9 ? 'font-weight:bold' : '') + '">' +
     (c.wind == null ? '--' : c.wind) + '<span class="unit"> m/s</span></span>' + arrow(c) + '</div>';
 }
+// BASE / savedIp は最初の setView(...) より前に宣言する（?view=signage だと setView が loadScreen → BASE を使うため、後ろだと TDZ で ReferenceError）
+let BASE = '';                 // '' は今のページと同じ所。名前で引けないときは 'http://<覚えた IP>:<同じ番号>'
+let savedIp = '';
+try { savedIp = localStorage.getItem('parentIp') || ''; } catch (e) {}
 // 親の Pi が更新されてページの版が変わったら、自分で読み込み直す（古いページが動き続けないように。2026-11-14）
 const PAGE_VER = '__PAGE_VER__';
 // どの表示を出すかは親の Pi の設定（now.json の view）。?view=card|signage|table を付けると、その表示で開く（確認用）
@@ -777,9 +781,6 @@ function renderCard(d) {
 }
 // 名前（tenki.local など）で開いているとき、親の Pi の IPv4 を覚えておき、名前で引けなくなったら IP で読む
 // （2026-11-15：親の Pi の再起動の後、iPad が名前の答えを古いまま覚えていて、WiFi をオフ→オンするまで開けなかった）
-let BASE = '';                 // '' は今のページと同じ所。名前で引けないときは 'http://<覚えた IP>:<同じ番号>'
-let savedIp = '';
-try { savedIp = localStorage.getItem('parentIp') || ''; } catch (e) {}
 async function getNow() {
   try {
     const r = await fetch('/now.json', {cache: 'no-store'});
