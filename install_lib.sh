@@ -30,6 +30,12 @@ ensure_pygame2() {
         echo "  pygame 2 が無い → pip で導入"
         sudo pip3 install "pygame>=2" --prefer-binary $PIP_BSP -q
     fi
+    # pip の pygame 2 は、文字・画像・音の部品（SDL2_ttf など）を OS のものを使う。無いと文字が描けずに止まる
+    # （2026-11-21 の Pi 4・Bullseye：「libSDL2_ttf-2.0.so.0 が無い」で表示プログラムが起動しなかった）
+    if ! sudo python3 -c "import pygame.font; pygame.font.init()" &> /dev/null; then
+        echo "  pygame の文字・画像の部品（SDL2）を apt で導入"
+        sudo apt install -y libsdl2-ttf-2.0-0 libsdl2-image-2.0-0 libsdl2-mixer-2.0-0
+    fi
 }
 
 # 起動の設定ファイル（Bookworm 以降は /boot/firmware/config.txt、Bullseye は /boot/config.txt）
