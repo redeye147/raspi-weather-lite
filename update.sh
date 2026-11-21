@@ -205,7 +205,7 @@ echo -e "\n${YELLOW}[4/5] watchdog を確認中...${NC}"
 _setup_watchdog() {
     sudo apt install -y watchdog -qq
 
-    local cfg=/boot/firmware/config.txt
+    local cfg="$BOOT_CONFIG"
     if ! grep -q "dtparam=watchdog=on" "$cfg" 2>/dev/null; then
         echo 'dtparam=watchdog=on' | sudo tee -a "$cfg" > /dev/null
         echo "  DTパラメータを追加しました（再起動後に有効）"
@@ -233,7 +233,9 @@ _update_watchdog_conf() {
     fi
 }
 
-if systemctl is-active --quiet watchdog 2>/dev/null; then
+if [ "$DESKTOP" = 1 ]; then
+    echo "  デスクトップの機械なので watchdog は入れません"
+elif systemctl is-active --quiet watchdog 2>/dev/null; then
     echo "  既に稼働中です"
     _update_watchdog_conf
 else
@@ -242,7 +244,7 @@ fi
 
 # HDMI の音声を切る（テレビによってはカーネルのメッセージが 10 秒ごとに出てログが増える。再起動後に有効）
 # （デスクトップで動く機械では切らない：現場サイネージのテンキーのクリック音を HDMI で鳴らすため）
-[ "$DESKTOP" = 1 ] || sudo bash "$REPO_DIR/wifi_setup/hdmi_noaudio.sh" /boot/firmware/config.txt || true
+[ "$DESKTOP" = 1 ] || sudo bash "$REPO_DIR/wifi_setup/hdmi_noaudio.sh" "$BOOT_CONFIG" || true
 
 # Pi の名前（○○.local）で引いたとき IPv4 の住所だけを返す（iPad が IPv6 でつなぎに行って開けなかった。2026-11-14）
 sudo bash "$REPO_DIR/wifi_setup/avahi_ipv4.sh" || true

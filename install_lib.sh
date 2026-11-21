@@ -31,3 +31,7 @@ ensure_pygame2() {
         sudo pip3 install "pygame>=2" --prefer-binary $PIP_BSP -q
     fi
 }
+
+# 起動の設定ファイル（Bookworm 以降は /boot/firmware/config.txt、Bullseye は /boot/config.txt）
+BOOT_CONFIG=/boot/firmware/config.txt
+[ -f "$BOOT_CONFIG" ] || BOOT_CONFIG=/boot/config.txt

@@ -46,8 +46,10 @@ sudo apt install -y \
   python3-pil python3-qrcode "$PYTZ_PKG" \
   fonts-ipafont-gothic \
   $NM_PKG git \
-  avahi-utils \
-  watchdog
+  avahi-utils
+# watchdog（固まったら自動で再起動）は Pi Zero だけ。デスクトップの機械（Pi 4 の 2 画面）では入れない
+# （現場サイネージの Chromium は CPU を多く使い、負荷の上限で再起動してしまうおそれがある。2026-11-21）
+[ "$DESKTOP" = 1 ] || sudo apt install -y watchdog
 ensure_pygame2
 # Trixie / Python 3.13 では PyPI の wheel が無くソースビルドで失敗しやすいため、apt に無い astral だけ pip で入れる
 # main01.service は root で動くので、pi のユーザー領域ではなくシステム全体に入れる
@@ -122,7 +124,10 @@ echo "$OWNER ALL=(ALL) NOPASSWD: /sbin/reboot" | sudo tee /etc/sudoers.d/pi-rebo
 # ── [6/6] watchdog ────────────────────────────────
 echo -e "\n${YELLOW}[6/6] watchdogを設定中...${NC}"
 
-cfg=/boot/firmware/config.txt
+cfg="$BOOT_CONFIG"
+if [ "$DESKTOP" = 1 ]; then
+  echo "  デスクトップの機械なので watchdog は入れません"
+else
 if ! grep -q "dtparam=watchdog=on" "$cfg" 2>/dev/null; then
   echo 'dtparam=watchdog=on' | sudo tee -a "$cfg" > /dev/null
 fi
@@ -135,6 +140,7 @@ min-memory = 1
 EOF
 
 sudo systemctl enable watchdog > /dev/null 2>&1
+fi
 
 # HDMI の音声を切る（テレビによってはカーネルのメッセージが 10 秒ごとに出てログが増える）
 [ "$DESKTOP" = 1 ] || sudo bash "$REPO_DIR/wifi_setup/hdmi_noaudio.sh" "$cfg" || true   # デスクトップの機械では切らない
