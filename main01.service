@@ -11,7 +11,8 @@ Type=simple
 User=root
 Group=root
 WorkingDirectory=/home/pi/raspi-weather-lite
-ExecStart=/home/pi/raspi-weather-lite/start.sh
+# bash 経由で起動する：start.sh に実行権が無くても（更新で git がファイルを入れ替えたとき等）、起動に失敗しない（status=203/EXEC の対策）
+ExecStart=/bin/bash /home/pi/raspi-weather-lite/start.sh
 Restart=on-failure
 RestartSec=30
 # 停止指示から 10 秒で強制終了（既定の 90 秒待ちで再起動・シャットダウンが遅くならないように）

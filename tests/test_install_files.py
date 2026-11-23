@@ -244,3 +244,21 @@ def test_desktop_machine_keeps_hdmi_audio_and_startx(script):
     """デスクトップで動く機械（Pi 4 の 2 画面）では HDMI の音声と startx を触らない"""
     s = _read(script)
     assert '[ "$DESKTOP" = 1 ] || sudo bash "$REPO_DIR/wifi_setup/hdmi_noaudio.sh"' in s
+
+def test_main01_service_runs_start_sh_via_bash():
+    """起動は bash 経由。start.sh に実行権が無くても失敗しない（更新で実行権が外れ、再起動で status=203/EXEC になった。2026-11-23）"""
+    lines = [l for l in _read("main01.service").splitlines() if l.startswith("ExecStart=")]
+    assert len(lines) == 1, lines
+    assert lines[0].startswith("ExecStart=/bin/bash ") and lines[0].endswith("/start.sh"), lines[0]
+
+
+def test_start_sh_and_update_sh_are_executable_in_git():
+    """git の記録でも start.sh・update.sh に実行権を付けておく（git pull で入れ替わっても外れないように）"""
+    import shutil
+    import subprocess
+    if not shutil.which("git") or not os.path.isdir(os.path.join(REPO, ".git")):
+        pytest.skip("git の作業ツリーではない")
+    out = subprocess.run(["git", "ls-files", "-s", "start.sh", "update.sh"], cwd=REPO,
+                         capture_output=True, text=True, check=True).stdout.split("\n")
+    modes = {l.split("\t")[1]: l.split()[0] for l in out if l.strip()}
+    assert modes == {"start.sh": "100755", "update.sh": "100755"}, modes
