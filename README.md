@@ -1363,6 +1363,18 @@ sudo crontab -e
 
 ## トラブルシューティング
 
+### 再起動したら天気画面が出ない（`main01` が `status=203/EXEC` で失敗する）
+
+```bash
+systemctl status main01 --no-pager | head -8      # Active: failed … code=exited, status=203/EXEC
+ls -l ~/raspi-weather-lite/start.sh               # -rw-r--r--（実行権なし）なら、これが原因
+```
+
+`start.sh` に実行権が無いと、サービスが `start.sh` を実行できず、起動に失敗する（2026-11-23：更新で `git` がファイルを入れ替えたときに実行権が外れ、動いていたあいだは気づかず、次の再起動で止まった）。
+
+- **直し方**：`chmod +x ~/raspi-weather-lite/start.sh && sudo systemctl reset-failed main01 && sudo systemctl restart main01`
+- **再発防止（2026-11-23 以降の版）**：`main01.service` は `ExecStart=/bin/bash …/start.sh`（実行権に頼らない）。git の記録でも `start.sh`・`update.sh` に実行権を付けてある。**古い版の `main01.service` が入ったままの Pi では、`bash update.sh` を 1 回実行すると、新しいサービスファイルに入れ替わる**
+
 ### 天気画面の上でカーソルが点滅する
 
 2026-10 以前の版では、fb0 モードのときにコンソールの切り替えが失敗し、コンソールのカーソルが天気画面の上で点滅していました（systemd から起動すると `/dev/tty` が開けないため）。`update.sh` で最新版に更新してください。次で確認できます。
