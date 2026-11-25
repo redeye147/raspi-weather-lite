@@ -244,3 +244,10 @@ def test_desktop_machine_keeps_hdmi_audio_and_startx(script):
     """デスクトップで動く機械（Pi 4 の 2 画面）では HDMI の音声と startx を触らない"""
     s = _read(script)
     assert '[ "$DESKTOP" = 1 ] || sudo bash "$REPO_DIR/wifi_setup/hdmi_noaudio.sh"' in s
+
+
+def test_start_sh_disables_screen_blanking_on_x11():
+    """X11 のデスクトップでは、画面の自動ブランク・DPMS を切る（2 画面の左が消えた対策）"""
+    s = _read("start.sh")
+    assert "xset s off s noblank -dpms" in s
+    assert s.index("xset s off") < s.index("exec /usr/bin/python3")

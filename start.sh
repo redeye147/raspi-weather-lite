@@ -63,4 +63,15 @@ if [ -s "$AUTO_SSIDS" ] && [ ! -e "$AUTO_MARK" ]; then
     wait "$splash" 2>/dev/null
 fi
 
+# 画面が勝手に消える（スリープする）のを止める（X11 のデスクトップのとき。2026-11-25：2 画面の左が消えていた）
+# 画面の自動ブランク・省電力（DPMS）を切る。lightdm の再起動や HDMI の抜き差しで戻ることがあるので 60 秒ごとにかけ直す
+if [ -n "$DISPLAY" ] && command -v xset >/dev/null 2>&1; then
+    (
+        while true; do
+            xset s off s noblank -dpms >/dev/null 2>&1
+            sleep 60
+        done
+    ) &
+fi
+
 exec /usr/bin/python3 "$REPO/main01.py" "$@"
